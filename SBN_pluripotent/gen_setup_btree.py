@@ -80,9 +80,8 @@ def generate(n):
         f"",
         f"#const d = {n}.",
     ]
-    for i in range(n):
+    for i in range(n+1):
         lines.append(f"#const v{i} = 0.")
-    lines.append(f"#const v{n} = 1.")
     lines.append("")
 
     vecs = list(valid_vecs(n))
