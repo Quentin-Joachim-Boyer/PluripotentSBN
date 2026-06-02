@@ -1,3 +1,10 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Ceci est une extension du PTBN_undercontrol.lp vérifiant que les 
+% sous réseaux sont effectivement des SBN.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 #include "PTBN_undercontrol.lp".
 
 % Declaration du domaine des poids des sous réseaux engendrés par les contextes.

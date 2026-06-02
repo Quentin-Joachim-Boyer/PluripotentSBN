@@ -8,3 +8,5 @@
 
 &sum{w(NI,N) : node(NI), activated(NI,S), NI <= N ; offset(N,context(D,O))} <= 0 :- viol_neg_pos(N,S,D,O).
 &sum{w(NI,N,context(D,O)) : node(NI), activated(NI,S), NI <= D}             >  0 :- viol_neg_pos(N,S,D,O).
+
+#show witness/4.
