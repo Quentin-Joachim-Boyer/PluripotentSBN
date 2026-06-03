@@ -23,8 +23,9 @@
 
 % Dimension 3
 % btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil).
-% btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil).
+btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil).
 % btree(nil,nil,3,nil).
+% btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil).
 
 % Dimension 4
 % btree(btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil),btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil),4,nil).
@@ -55,7 +56,8 @@ activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 btree(T11,T12,D1,O0)       :- btree(btree(T11,T12,D1,_),btree(_,_,_,_),_,O0).
 btree(T21,T22,D2,c(D0,O0)) :- btree(btree(_,_,_,_),btree(T21,T22,D2,_),D0,O0).
 
-% Déclaration des noeuds de contrôle sous contexte.
+% Déclaration des noeuds de contrôle sous chaîne d'activation O 
+% et des contextes associés à leur fils droit (le gauche est forcement déjà un SBN).
 context(D-1,c(D,O)) :- btree(btree(_,_,_,_),btree(_,_,_,_),D,O), D > 1.
 control_node(D,O)   :- btree(btree(_,_,_,_),btree(_,_,_,_),D,O).
 
@@ -64,15 +66,15 @@ control_node(D,O)   :- btree(btree(_,_,_,_),btree(_,_,_,_),D,O).
 offset_node(N,C,c(N,C)) :- context(_,c(N,C)).
 offset_node(N,C,O) :- offset_node(_,c(N,C),O).
 
-% % Contrainte assurant que le noeud CN soit bien un noeud de contrôle sous le contexte O (Cf rapport Danwen)
+% % Contrainte assurant que le noeud CN soit bien un noeud de contrôle sous la chaîne d'activation O (Cf rapport Danwen)
 % Contrainte de non activation externe.
 &sum{w(ON,CN) : offset_node(ON,_,O) ; pos_w(I,CN) : node(I), I < CN} <= 0 :- control_node(CN,O), d(D).
-% Variables auxiliaires.
+% Variables auxiliaires : pos_w(I,J) >= max(0,w(I,J)).
 &dom{0..D} = pos_w(I,J) :- node(I),control_node(J,_), d(D),I < J.
 &sum{pos_w(I,J) ; -1*w(I,J)} >= 0 :- node(I),control_node(J,_), d(D),I < J.
 % Contrainte de non désactivation externe.
 &sum{w(ON,CN) : offset_node(ON,_,O) ; neg_w(I,CN) : node(I), I < CN ; w(CN,CN)} > 0 :- control_node(CN,O), d(D).
-% Variables auxiliaires.
+% Variables auxiliaires : neg_w(I,J) <= min(0,w(I,J)).
 &dom{-(D)..0} = neg_w(I,J) :- node(I),control_node(J,_), d(D), I < J.
 &sum{neg_w(I,J) ; -1*w(I,J)} <= 0 :- node(I),control_node(J,_), d(D),I < J.
 

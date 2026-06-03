@@ -135,18 +135,25 @@ def write_csv(solutions, n, output_path):
     w_cols = [f"w_{i},{j}" for i in range(1, n + 1) for j in range(1, n + 1)]
 
     written = skipped = 0
+    rows = []
+    for sol in solutions:
+        fvals = [sol['funcs'].get(j, 0)              for j in range(1, n + 1)]
+        wvals = [sol['weights'].get((i, j), 0)
+                    for i in range(1, n + 1) for j in range(1, n + 1)]
+        
+        if len(fvals) == n and len(wvals) == n * n:
+            rows.append(fvals + wvals)
+            written += 1
+        else:
+            skipped += 1
+
+    rows.sort()
     with open(output_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(f_cols + w_cols)
-        for sol in solutions:
-            fvals = [sol['funcs'].get(j, 0)              for j in range(1, n + 1)]
-            wvals = [sol['weights'].get((i, j), 0)
-                     for i in range(1, n + 1) for j in range(1, n + 1)]
-            if len(fvals) == n and len(wvals) == n * n:
-                writer.writerow(fvals + wvals)
-                written += 1
-            else:
-                skipped += 1
+        for row in rows:
+            writer.writerow(row)
+
     if skipped:
         print(f"  Warning: {skipped} incomplete solutions skipped", file=sys.stderr)
     return written
@@ -195,7 +202,8 @@ def main():
     for vec in vecs:
         vec_str = ",".join(map(str, vec))
         vec_tag = "_".join(map(str, vec))
-        csv_name = f"{n}d__{vec_tag}__output.csv"
+        lp_name = args.lp.removesuffix(".lp")
+        csv_name = f"{n}d__{vec_tag}__{lp_name}__output.csv"
         csv_path = os.path.join(args.out, csv_name)
 
         # Build constants dict: d=n, v0=vec[0], v1=vec[1], ...

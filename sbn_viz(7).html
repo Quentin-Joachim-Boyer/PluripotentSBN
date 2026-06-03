@@ -90,24 +90,11 @@
   }
   select:focus { outline: none; border-color: var(--accent); }
 
-  .nav-btn {
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    width: 28px; height: 28px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 16px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* Hide number input spinners */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-  .sol-counter {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
-    min-width: 80px;
-  }
+
 
   .main {
     display: flex;
@@ -392,10 +379,15 @@
   <input type="file" id="file-input" accept=".csv" multiple>
 
   <div class="controls">
-    <select id="file-select" style="max-width:280px"></select>
-    <button class="nav-btn" onclick="navigate(-1)">‹</button>
-    <span class="sol-counter" id="sol-counter">— / —</span>
-    <button class="nav-btn" onclick="navigate(1)">›</button>
+    <select id="file-select" style="max-width:380px;flex:1"></select>
+    <div style="display:flex;align-items:center;gap:6px">
+      <input id="sol-input" type="number" min="1" value="1"
+             style="width:80px;background:var(--bg);color:var(--text);border:1px solid var(--border);
+                    padding:5px 8px;border-radius:6px;font-size:13px;font-family:'JetBrains Mono',monospace;
+                    -moz-appearance:textfield"
+             onchange="onSolInput()" onkeydown="if(event.key==='Enter')onSolInput()">
+      <span id="sol-counter" style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap">/ —</span>
+    </div>
   </div>
 </header>
 
@@ -506,15 +498,29 @@ const DIM_COLORS = {
 
 function dimColor(d) { return DIM_COLORS[d] || '#94a3b8'; }
 
-const GROUP_PALETTE = [
-  '#06b6d4', '#8b5cf6', '#f59e0b', '#ec4899',
-  '#34d399', '#f97316', '#a78bfa', '#22d3ee',
-];
-// groupKey is a string like "0,1" — convert binary tuple to index
+// Perceptually distinct color palette using golden-angle hue spacing.
+// Works for up to 64 groups; each color is clearly distinct regardless of dimension.
 function groupColor(groupKey) {
-  // groupKey is now a simple numeric string index (0, 1, 2, ...)
   const idx = parseInt(groupKey);
-  return GROUP_PALETTE[idx % GROUP_PALETTE.length];
+  const hue = (220 + idx * 34) % 360;
+  // Alternate saturation/lightness slightly for extra distinction at high counts
+  const sat   = 68 + (idx % 3) * 4;
+  const light = 52 + (idx % 2) * 12;
+  // HSL -> hex
+  const h = hue, s = sat/100, l = light/100;
+  const c = (1 - Math.abs(2*l - 1)) * s;
+  const x = c * (1 - Math.abs((h/60) % 2 - 1));
+  const m = l - c/2;
+  let r, g, b;
+  if      (h < 60)  { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else              { r=c; g=0; b=x; }
+  return '#' + [r+m, g+m, b+m].map(v =>
+    Math.round(v*255).toString(16).padStart(2,'0')
+  ).join('');
 }
 
 function weightColor(w) {
@@ -601,6 +607,7 @@ document.getElementById('file-input').addEventListener('change', e => {
         curFile = files.length - loaded;
         curSol  = 0;
         document.getElementById('file-select').selectedIndex = curFile;
+        populateSolSelect();
         render();
       }
     };
@@ -619,16 +626,54 @@ function populateFileSelect() {
   });
 }
 
+function populateSolSelect() {
+  if (!files.length) return;
+  const f   = files[curFile];
+  const inp = document.getElementById('sol-input');
+  const ctr = document.getElementById('sol-counter');
+  if (inp) { inp.min = 1; inp.max = f.rows.length; inp.value = curSol + 1; }
+  if (ctr) ctr.textContent = '/ ' + f.rows.length;
+}
+
 document.getElementById('file-select').addEventListener('change', e => {
   curFile = parseInt(e.target.value);
   curSol  = 0;
+  renderCache.clear();
+  populateSolSelect();
   render();
 });
+
+// ─── Render cache (keyed by "fileIdx:solIdx") ────────────────────────────────
+const renderCache = new Map();
+function getCached(fileIdx, solIdx) {
+  return renderCache.get(`${fileIdx}:${solIdx}`);
+}
+function setCached(fileIdx, solIdx, data) {
+  // Keep cache bounded to last 200 entries to avoid memory bloat
+  if (renderCache.size > 200) {
+    const firstKey = renderCache.keys().next().value;
+    renderCache.delete(firstKey);
+  }
+  renderCache.set(`${fileIdx}:${solIdx}`, data);
+}
 
 function navigate(delta) {
   if (!files.length) return;
   const f = files[curFile];
   curSol = Math.max(0, Math.min(f.rows.length - 1, curSol + delta));
+  const inp = document.getElementById('sol-input');
+  if (inp) inp.value = curSol + 1;
+  render();
+}
+
+
+
+function onSolInput() {
+  const inp = document.getElementById('sol-input');
+  if (!inp || !files.length) return;
+  const f = files[curFile];
+  curSol = Math.max(0, Math.min(f.rows.length - 1, parseInt(inp.value) - 1 || 0));
+  inp.value = curSol + 1;
   render();
 }
 
@@ -645,7 +690,7 @@ function render() {
   const row = f.rows[curSol];
   const n   = f.dim;
 
-  document.getElementById('sol-counter').textContent = `${curSol+1} / ${f.rows.length}`;
+
   document.getElementById('dim-tag').textContent = `d = ${n}`;
   document.getElementById('sbn-empty').style.display = 'none';
   document.getElementById('sbn-svg').style.display = 'block';
@@ -656,11 +701,18 @@ function render() {
 
   renderFunctions(row, n);
 
-  const weights = extractWeights(row, n);
-  renderSBN(weights, n, row);
+  // Use cache to avoid recomputing weights/transitions for visited solutions
+  let cached = getCached(curFile, curSol);
+  if (!cached) {
+    const weights     = extractWeights(row, n);
+    const transitions = computeTransitions(weights, n);
+    const decomp      = findDecomposition(transitions, n, f.decomp_vec);
+    cached = { weights, transitions, decomp };
+    setCached(curFile, curSol, cached);
+  }
+  const { weights, transitions, decomp } = cached;
 
-  const transitions = computeTransitions(weights, n);
-  const decomp = findDecomposition(transitions, n, f.decomp_vec);
+  renderSBN(weights, n, row);
   renderDecompInfo(decomp, n);
   renderHypercube(transitions, n, decomp);
 
@@ -975,11 +1027,11 @@ function renderDecompInfo(decomp, n) {
       nd.children.forEach(c => drawNode(c));
     } else if (topLeaf && isGrey) {
       // Grey topological leaf
-      const col = '#475569';
+      const col = '#94a3b8';
       const bw = leafW - 8, bh = nodeR * 2;
       svg += '<rect x="' + (x - bw/2) + '" y="' + (y - nodeR)
            + '" width="' + bw + '" height="' + bh
-           + '" rx="4" fill="#1e253588" stroke="' + col + '" stroke-width="1.5"'
+           + '" rx="4" fill="#2d374899" stroke="' + col + '" stroke-width="1.5"'
            + ' stroke-dasharray="3,3"/>';
       const label = nd.states.length <= 4
         ? nd.states.join(',')
@@ -988,14 +1040,17 @@ function renderDecompInfo(decomp, n) {
            + ' font-size="9" font-family="monospace" fill="' + col + '">' + label + '</text>';
     } else {
       // Internal circle (colored or grey)
-      const stroke = isGrey ? '#475569' : '#4f8ef7';
+      const stroke   = isGrey ? '#64748b' : '#4f8ef7';
+      const fillCirc = isGrey ? '#2d3748' : '#1e2535';
+      const textCol  = isGrey ? '#94a3b8' : '#94a3b8';
+      const numCol   = isGrey ? '#cbd5e1' : '#e2e8f0';
       const dash = isGrey ? ' stroke-dasharray="3,3"' : '';
       svg += '<circle cx="' + x + '" cy="' + y + '" r="' + nodeR
-           + '" fill="#1e2535" stroke="' + stroke + '" stroke-width="1.5"' + dash + '/>';
+           + '" fill="' + fillCirc + '" stroke="' + stroke + '" stroke-width="1.5"' + dash + '/>';
       svg += '<text x="' + x + '" y="' + (y - 1) + '" text-anchor="middle"'
-           + ' font-size="8" font-family="monospace" fill="' + (isGrey ? '#475569' : '#94a3b8') + '">x</text>';
+           + ' font-size="8" font-family="monospace" fill="' + textCol + '">x</text>';
       svg += '<text x="' + (x + 4) + '" y="' + (y + 6) + '" text-anchor="middle"'
-           + ' font-size="8" font-family="monospace" fill="' + (isGrey ? '#475569' : '#e2e8f0') + '">'
+           + ' font-size="8" font-family="monospace" fill="' + numCol + '">'
            + (nd.splitBit + 1) + '</text>';
       nd.children.forEach(c => drawNode(c));
     }
@@ -1489,7 +1544,7 @@ function drawHC() {
   // Draw transition arrows: start on source rim, end on target rim, with arrowhead
   const N = 1<<n;
   ctx.save();
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2.5;
   for (let s = 0; s < N; s++) {
     const t = T[s];
     if (s === t) continue;
@@ -1504,8 +1559,8 @@ function drawHC() {
       const group = decomp.find(g => g.states.includes(s));
       if (group) col = groupColor(group.groupKey);
     }
-    ctx.strokeStyle = col + 'bb';
-    ctx.fillStyle   = col + 'bb';
+    ctx.strokeStyle = col + 'ee';
+    ctx.fillStyle   = col + 'ee';
 
     const ux = dx/dist, uy = dy/dist;
     // Perpendicular for curve offset
@@ -1520,15 +1575,15 @@ function drawHC() {
     const qcx = (x1+x2)/2 + nx*curve, qcy = (y1+y2)/2 + ny*curve;
 
     // Arrow tip: slightly before target rim so head lands on rim
-    const hs = 5;
+    const hs = 13;
     // Direction at endpoint: tangent of quadratic at t=1
     const endDx = x2 - qcx, endDy = y2 - qcy;
     const endLen = Math.sqrt(endDx*endDx + endDy*endDy);
     const ang = Math.atan2(endDy, endDx);
 
     // Draw curve stopping just before arrowhead base
-    const tipX = x2 - (hs*0.8)*endDx/endLen;
-    const tipY = y2 - (hs*0.8)*endDy/endLen;
+    const tipX = x2 - (hs*0.85)*endDx/endLen;
+    const tipY = y2 - (hs*0.85)*endDy/endLen;
 
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -1568,9 +1623,9 @@ function drawHC() {
     // Self-loop: small teardrop loop in the radial direction from node centre
     if (T[s] === s) {
       ctx.save();
-      ctx.strokeStyle = stateColor + 'cc';
-      ctx.fillStyle   = stateColor + 'cc';
-      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = stateColor + 'ee';
+      ctx.fillStyle   = stateColor + 'ee';
+      ctx.lineWidth = 2.5;
       // Radial angle: from centre of canvas toward node
       const radAng = Math.atan2(py_ - cy, px_ - cx);
       const loopDist = nr * 1.6;
@@ -1588,7 +1643,7 @@ function drawHC() {
       ctx.stroke();
       // Arrowhead at lex,ley
       const aAng = Math.atan2(ley - lc2y, lex - lc2x);
-      const hs = 4.5;
+      const hs = 10;
       ctx.beginPath();
       ctx.moveTo(lex, ley);
       ctx.lineTo(lex - hs*Math.cos(aAng-0.38), ley - hs*Math.sin(aAng-0.38));
@@ -1720,6 +1775,8 @@ window.addEventListener('resize', () => {
     });
   }
 })();
+
 </script>
+
 </body>
 </html>

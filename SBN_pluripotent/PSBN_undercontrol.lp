@@ -19,6 +19,6 @@
 % Contraintes assurant que la dynamique du sous réseau sous contexte 
 % correspondent bien à celle d'un SBN (avec d'autres poids, mais de seuil 0).
 &sum{w(NI,N,context(D,O)) : node(NI), activated(NI,S), NI <= D} >  0 :- 
-    &sum{w(NI,N) : node(NI), activated(NI,S), NI <= N; offset(N, context(D,O))} >  0, node(N), state(S), context(D,O), N <= D.
+    &sum{w(NI,N) : node(NI), activated(NI,S), NI <= D; offset(N, context(D,O))} >  0, node(N), state(S), context(D,O), N <= D.
 &sum{w(NI,N,context(D,O)) : node(NI), activated(NI,S), NI <= D} <= 0 :- 
-    &sum{w(NI,N) : node(NI), activated(NI,S), NI <= N; offset(N, context(D,O))} <= 0, node(N), state(S), context(D,O), N <= D.
+    &sum{w(NI,N) : node(NI), activated(NI,S), NI <= D; offset(N, context(D,O))} <= 0, node(N), state(S), context(D,O), N <= D.
