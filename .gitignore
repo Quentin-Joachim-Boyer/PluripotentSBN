@@ -2,4 +2,4 @@
 Pipeline/bin/*.class
 
 # ASP output
-SBN_pluripotent/*.csv
+**/*.csv
