@@ -2,19 +2,19 @@ package PSBN.Processors;
 
 import com.gitlab.jpp.Processor;
 
+import java.util.ArrayList;
 
-public class Enumerator_PSBN implements Processor<Integer,Void> {
+import PSBN.util.Decomp_vector;
+import PSBN.util.SBN;
+
+public class Enumerator_PSBN implements Processor<Decomp_vector,ArrayList<SBN>> {
         
     @Override
     public void reset() {
     }
 
     @Override
-    public Void process(Integer input) {
-        int d = input;
-        for (int i = 0; i < d; ++i) {
-            System.out.println("Hello World !!");
-        }
+    public ArrayList<SBN> process(Decomp_vector input) {
         return null;
     } 
 }

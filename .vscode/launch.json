@@ -6,7 +6,8 @@
             "name": "Main",
             "request": "launch",
             "mainClass": "PSBN.Main",
-            "projectName": "SBN_e508df1f"
+            "projectName": "SBN_e508df1f",
+            "args": ["3"]
         },
         {
             "type": "java",
