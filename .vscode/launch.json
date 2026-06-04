@@ -3,6 +3,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "Main",
+            "request": "launch",
+            "mainClass": "PSBN.Main",
+            "projectName": "SBN_e508df1f"
+        },
+        {
+            "type": "java",
             "name": "Hello World Pipeline",
             "request": "launch",
             "mainClass": "hello_world.Main",

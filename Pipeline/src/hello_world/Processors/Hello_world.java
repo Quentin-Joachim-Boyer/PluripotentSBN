@@ -3,7 +3,7 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package hello_world;
+package hello_world.Processors;
 
 import com.gitlab.jpp.Processor;
 
@@ -25,6 +25,5 @@ public class Hello_world implements Processor<Integer,Void> {
             System.out.println("Hello World !!");
         }
         return null;
-    }
-    
+    } 
 }

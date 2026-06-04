@@ -1,27 +1,23 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
-package hello_world;
+package PSBN;
 
 import com.gitlab.jpp.Job;
 import com.gitlab.jpp.Pipeline;
 import com.gitlab.jpp.TaskHolder;
-
-import hello_world.Processors.Hello_world;
+import PSBN.Processors.Decomposer;
 
 /**
  *
- * @author defosser
+ * @author BOYER
  */
+
+
 public class Pipe extends Pipeline<Integer,Void> {
 
     private final Job hello_worldJob;
     
     public Pipe() {
         super(Runtime.getRuntime().availableProcessors());
-        this.hello_worldJob = new Job.JobBuilder<>(this, new Hello_world())
+        this.hello_worldJob = new Job.JobBuilder<>(this, new Decomposer())
                 .setTaskSubmitter(new TaskHolder(this.startSignal))
                 .build();
     }
