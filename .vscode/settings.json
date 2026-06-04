@@ -1,4 +1,12 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda"
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "java.project.referencedLibraries": [
+        "lib/**/*.jar",
+        "Pipeline/lib/jpp.jar"
+    ],
+    "java.project.sourcePaths": [
+        "Pipeline/src"
+    ],
+    "java.project.outputPath": "Pipeline/bin"
 }

@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Hello World Pipeline",
+            "request": "launch",
+            "mainClass": "hello_world.Main",
+            "classPaths": [
+                "${workspaceFolder}/Pipeline/bin",
+                "${workspaceFolder}/Pipeline/lib/jpp.jar"
+            ],
+            "cwd": "${workspaceFolder}/Pipeline"
+        }
+    ]
+}
