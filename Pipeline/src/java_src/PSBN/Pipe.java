@@ -29,7 +29,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
 
     // Au dela de ce nombre de solutions pour un vecteur, l'enumeration
     // monolithique fait sauter le garde-fou et le vecteur est subdivise par masque.
-    private static final int SUBDIVISION_THRESHOLD = 1000;
+    private static final int SUBDIVISION_THRESHOLD = 100000;
 
     private final IntegerParameter dim;
     private final StringParameter lp_enumeratorFile;
