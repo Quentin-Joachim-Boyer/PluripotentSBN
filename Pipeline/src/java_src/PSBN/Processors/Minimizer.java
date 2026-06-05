@@ -1,15 +1,16 @@
 package PSBN.Processors;
 
-import com.gitlab.jpp.Processor;
-import PSBN.util.SBN;
+import PSBN.util.SBNP;
 
-public class Minimizer implements Processor<SBN,SBN>{
+import com.gitlab.jpp.Processor;
+
+public class Minimizer implements Processor<SBNP, SBNP> {
     @Override
     public void reset() {
     }
 
     @Override
-    public SBN process(SBN input) {
+    public SBNP process(SBNP input) {
         return input;
-    } 
+    }
 }

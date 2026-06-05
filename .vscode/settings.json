@@ -6,7 +6,7 @@
         "Pipeline/lib/jpp.jar"
     ],
     "java.project.sourcePaths": [
-        "Pipeline/src"
+        "Pipeline/src/java_src"
     ],
     "java.project.outputPath": "Pipeline/bin"
 }

@@ -5,11 +5,11 @@
  */
 package hello_world;
 
+import hello_world.Processors.Hello_world;
+
 import com.gitlab.jpp.Job;
 import com.gitlab.jpp.Pipeline;
 import com.gitlab.jpp.TaskHolder;
-
-import hello_world.Processors.Hello_world;
 
 /**
  *

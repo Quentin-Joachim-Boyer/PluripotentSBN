@@ -5,9 +5,23 @@
             "type": "java",
             "name": "Main",
             "request": "launch",
+            "mainClass": "java.hello_world.Main",
+            "projectName": "SBN_e508df1f"
+        },
+        {
+            "type": "java",
+            "name": "Main",
+            "request": "launch",
             "mainClass": "PSBN.Main",
             "projectName": "SBN_e508df1f",
-            "args": ["3"]
+            "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
+            "args": [
+                "4",
+                "${workspaceFolder}/Pipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
+                "${workspaceFolder}/Pipeline/src/asp",
+                "0",
+                "${workspaceFolder}/Pipeline/out"
+            ]
         },
         {
             "type": "java",

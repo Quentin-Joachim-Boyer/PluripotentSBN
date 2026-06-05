@@ -17,6 +17,7 @@ import java.util.logging.Logger;
 /**
  *
  * @author segretar
+ * @author boyerque
  */
 public class DataStringLineCollectorProcessor implements Processor<String, Void> {
 

@@ -84,7 +84,6 @@ def parse_weights(line):
 def run_clingcon(lp_files, constants, n_solutions, time_limit, parallel):
     """Run clingcon and return stdout."""
     const_args = [f"-c {k}={v}" for k, v in constants.items()]
-    # clingcon expects each -c as a separate argument
     const_flat = []
     for c in const_args:
         const_flat.extend(c.split())
@@ -116,7 +115,6 @@ def parse_output(output, n):
         if line.startswith("Answer:"):
             atoms_line = next(lines, "").strip()
             bits    = parse_transition_bits(atoms_line)
-            # Reconstruct truth-table integer per node: sum(2**S for active S)
             funcs   = {node: bits_to_int(active) for node, active in bits.items()}
 
             next(lines, "")

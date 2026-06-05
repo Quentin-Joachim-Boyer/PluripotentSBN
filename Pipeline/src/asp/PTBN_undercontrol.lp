@@ -33,7 +33,7 @@
 % btree(btree(nil,nil,3,nil),btree(nil,nil,3,nil),4,nil).
 % btree(btree(nil,nil,3,nil),btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil),4,nil).
 % btree(btree(nil,nil,3,nil),btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil),4,nil).
-btree(nil,nil,4,nil).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% CONTRAINTES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -48,10 +48,7 @@ state(0..2**D-1) :- d(D).
 activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 
 % Declaration du domaine des poids des noeuds du réseau principal.
-&dom{(-D)..(D)} = w(I,J) :- node(I), node(J), d(D).
-
-% &dom{(-D)..(0)} = w(I,J) :- node(I), node(J), d(D), I != J.
-% &dom{(0)..(D)} = w(I,I) :- node(I), d(D).
+&dom{(-D)..D} = w(I,J) :- node(I), node(J), d(D).
 
 
 % Déballage de l'arbre de décomposition. 
@@ -89,7 +86,7 @@ transition_function_bit(N,S) :- node(N), state(S), &sum{w(NI,N) : node(NI), acti
 
 % % ATTENTION : Le bout de code ci-dessous fais exploser le grouding à partir de D=4.
 % % (C'est probablement dû à l'unification sur X à partir de prédicats dépendant de Clingcon)
-% % Déclaration de l'encodage binaire de la fonction de transition du réseau principal.
+% % Déclaration de son encodage binaire.
 % % transition_function(N,X) :- node(N), d(D), 
 % %     X = #sum {2**S : state(S),transition_function_bit(N,S)}.
 
@@ -110,4 +107,3 @@ transition_function_bit(N,S) :- node(N), state(S), &sum{w(NI,N) : node(NI), acti
 % #show node/2.
 % #show state/1.
 % #show activated/3.
-#show fixed_state/2.

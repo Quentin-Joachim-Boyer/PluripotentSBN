@@ -2,9 +2,9 @@ package PSBN.util;
 
 public class SBN {
 
-    private final int n;
-    private final int[][] weights;
-    private final boolean[][] TT;
+    protected final int n;
+    protected final int[][] weights;
+    protected final boolean[][] TT;
 
     public SBN(int n, int[][] weights, boolean[][] TT) {
         this.n = n;

@@ -3,7 +3,6 @@ package PSBN.Processors;
 import com.gitlab.jpp.Processor;
 
 import PSBN.util.Decomp_vector;
-
 import java.util.ArrayList;
 
 public class Decomposer implements Processor<Integer, ArrayList<Decomp_vector>> {
