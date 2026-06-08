@@ -8,6 +8,7 @@ import PSBN.Processors.Minimizer;
 import PSBN.Processors.Statifier;
 import PSBN.util.Decomp_vector;
 import PSBN.util.EnumerationResult;
+import PSBN.util.RealizableMasks;
 import PSBN.util.SBNP;
 import java.util.ArrayList;
 
@@ -29,7 +30,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
 
     // Au dela de ce nombre de solutions pour un vecteur, l'enumeration
     // monolithique fait sauter le garde-fou et le vecteur est subdivise par masque.
-    private static final int SUBDIVISION_THRESHOLD = 100000;
+    private static final int SUBDIVISION_THRESHOLD = 10000;
 
     private final IntegerParameter dim;
     private final StringParameter lp_enumeratorFile;
@@ -86,15 +87,17 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                                 MinimizationJob.buildNewTask(sbn);
                             }
                         } else {
-                            // Vecteur trop gros : on subdivise par masque du noeud 1.
+                            // Vecteur trop gros : on subdivise par masque du noeud 1,
+                            // en ne retenant que les masques realisables par un vecteur
+                            // de poids entier (les autres seraient de toute facon UNSAT).
                             int n = result.dv.getDimension();
-                            long numMasks = 1L << (1 << n); // 2^(2^n)
-                            for (long mask = 0; mask < numMasks; mask++) {
-                                SubdividedEnumerationJob.buildNewTask(new Pair<>(result.dv, (int) mask));
+                            for (int mask : RealizableMasks.forDimension(n)) {
+                                SubdividedEnumerationJob.buildNewTask(new Pair<>(result.dv, mask));
                             }
                         }
                     }
                 })
+                .setMaximumParallelTasks(10)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Enumeration Job terminated"))
                 .build();
         // L'enumeration subdivisee streame chaque solution directement vers la
@@ -103,6 +106,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         this.subdividedEnumerator = new Enumerator_PSBN(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions);
         this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<Decomp_vector, Integer>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Subdivided Enumeration Job terminated"))
+                .setMaximumParallelTasks(10)
                 .build();
         this.MinimizationJob = new Job.JobBuilder<SBNP,SBNP>(this, new Minimizer(), this.EnumerationJob, this.SubdividedEnumerationJob)
                 .setOutputHandler(new OutputHandler<SBNP>() {
@@ -110,8 +114,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                     public void handle(SBNP processorOutput) {
                         StatificationJob.buildNewTask(processorOutput);
                     }
-                })
-                .build();
+                })                .build();
         // Le sink de streaming pousse chaque SBNP comme une tache de minimisation.
         // Sur (cf. analyse JPP) : appele depuis process() d'une tache subdivisee
         // encore en cours, donc MinimizationJob n'est jamais prematurement termine.
@@ -153,12 +156,13 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                 csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
                 if (i < n || j < n) csv_header.append(",");
             }
+        csv_header.append(",AtrSize,SumWeights");
         this.dataCollector.process(csv_header.toString());
     }
 
     @Override
     protected void initialTasks() {
-        System.out.println("BOUH !!!");
+        System.out.println(String.format("The pipeline is starting to bring itself to the idea of working on the dimension d=%d BOUHH !!!",input.dim));
         this.DecompositionJob.buildNewTask(input.dim);
     }
     @Override

@@ -1,5 +1,13 @@
 package PSBN.util;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 public class SBN {
 
     protected final int n;
@@ -24,6 +32,72 @@ public class SBN {
         return TT[i][state];
     }
 
+    /**
+     * Calcule l'etat suivant d'un etat donne:
+     * le bit i de l'etat suivant vaut TT[i][state].
+     */
+    private int nextState(int state) {
+        int next = 0;
+        for (int i = 0; i < n; i++) {
+            if (TT[i][state]) next |= (1 << i);
+        }
+        return next;
+    }
+
+    /**
+     * Calcule l'ensemble des bassins d'attraction du SBN, par parcours de trajectoire avec memoisation.
+     *
+     * Pour chaque etat de depart non encore traite, on suit sa trajectoire
+     * jusqu'a soit rejoindre un bassin deja connu, soit retomber sur un etat
+     * deja visite dans la trajectoire courante (ce qui revele un nouvel
+     * attracteur, point fixe ou cycle limite). Tous les etats de la
+     * trajectoire (transitoires + cycle) sont alors rattaches a ce bassin.
+     *
+     * @return une table associant a chaque attracteur (cycle d'etats, dans
+     *         l'ordre de la trajectoire, de longueur 1 pour un point fixe)
+     *         l'ensemble des etats de son bassin d'attraction (attracteur inclus).
+     */
+    public Map<List<Integer>, Set<Integer>> computeAttractionBasins() {
+        int nbStates = 1 << n;
+        int[] attractorOf = new int[nbStates];
+        java.util.Arrays.fill(attractorOf, -1);
+
+        List<List<Integer>> attractors = new ArrayList<>();
+        Map<List<Integer>, Set<Integer>> basins = new LinkedHashMap<>();
+
+        for (int start = 0; start < nbStates; start++) {
+            if (attractorOf[start] != -1) continue;
+
+            List<Integer> path = new ArrayList<>();
+            Map<Integer, Integer> positionInPath = new HashMap<>();
+            int current = start;
+            while (attractorOf[current] == -1 && !positionInPath.containsKey(current)) {
+                positionInPath.put(current, path.size());
+                path.add(current);
+                current = nextState(current);
+            }
+
+            int id;
+            if (attractorOf[current] != -1) {
+                id = attractorOf[current];
+            } else {
+                int cycleStart = positionInPath.get(current);
+                List<Integer> cycle = new ArrayList<>(path.subList(cycleStart, path.size()));
+                attractors.add(cycle);
+                id = attractors.size() - 1;
+                basins.put(cycle, new LinkedHashSet<>());
+            }
+
+            Set<Integer> basin = basins.get(attractors.get(id));
+            for (int s : path) {
+                attractorOf[s] = id;
+                basin.add(s);
+            }
+        }
+
+        return basins;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
@@ -37,9 +111,38 @@ public class SBN {
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
                 sb.append(weights[i][j]);
-                if (i < n - 1 || j < n - 1) sb.append(",");
+                sb.append(",");
             }
         }
+        sb.append(meanSquaredAttractorSize()).append(",");
+        sb.append(sumOfWeights());
         return sb.toString();
+    }
+
+    /**
+     * Somme de tous les poids des arcs du reseau.
+     */
+    public int sumOfWeights() {
+        int sum = 0;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < n; j++) {
+                sum += weights[i][j];
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * Moyenne des carres des tailles des attracteurs (longueurs de cycle),
+     * tous attracteurs confondus.
+     */
+    private double meanSquaredAttractorSize() {
+        Set<List<Integer>> attractors = computeAttractionBasins().keySet();
+        long sumOfSquares = 0;
+        for (List<Integer> attractor : attractors) {
+            long size = attractor.size();
+            sumOfSquares += size * size;
+        }
+        return (double) sumOfSquares / attractors.size();
     }
 }

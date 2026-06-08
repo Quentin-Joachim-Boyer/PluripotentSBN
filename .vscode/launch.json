@@ -16,7 +16,7 @@
             "projectName": "SBN_e508df1f",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "4",
+                "3",
                 "${workspaceFolder}/Pipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
                 "${workspaceFolder}/Pipeline/src/asp",
                 "0",

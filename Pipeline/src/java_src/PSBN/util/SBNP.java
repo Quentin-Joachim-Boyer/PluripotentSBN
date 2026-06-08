@@ -13,6 +13,7 @@ public class SBNP extends SBN {
         return decomp;
     }
 
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();

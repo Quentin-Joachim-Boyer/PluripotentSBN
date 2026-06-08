@@ -1,0 +1,242 @@
+\documentclass[12pt, a4paper]{article}
+
+% ----- Encodage et langue -----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ----- Mise en page -----
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Mathématiques -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+
+\newtheorem{definition}{Définition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{exemple}{Exemple}[section]
+
+% ----- Figures et tableaux -----
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{array}
+
+% ----- Algorithmes -----
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ----- Liens et références -----
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=green!50!black,
+    urlcolor=blue!60!black,
+}
+\usepackage[french]{cleveref}
+
+% ----- Bibliographie -----
+\usepackage[backend=biber, style=numeric, sorting=none]{biblatex}
+\addbibresource{references.bib}
+
+% ----- Divers -----
+\usepackage{xcolor}
+\usepackage{lipsum} % à supprimer quand tu rédiges
+
+% ----- Métadonnées -----
+\title{
+    \vspace{2cm}
+    {\Large Rapport de stage --- M1 AM}\\[0.5cm]
+    \rule{\linewidth}{0.4pt}\\[0.4cm]
+    {\LARGE \textbf{Génération et exploration du paysage des\\
+    Réseaux Booléens à Signe}}\\[0.4cm]
+    \rule{\linewidth}{0.4pt}\\[1cm]
+    {\large Équipe BCM --- Laboratoire TIMC, Grenoble}
+}
+\author{
+    \textbf{Quentin Boyer}\\[0.3cm]
+    \small Encadrants : Nicolas Glade, Laurent Trilling\\
+    \small Université Grenoble Alpes, Grenoble INP ENSIMAG
+}
+\date{\small Juin 2026}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+% ----- Résumé -----
+\begin{abstract}
+\noindent
+% FR : ~150 mots
+\textbf{Résumé.}
+[À rédiger en dernier. Présenter en 3 phrases : la problématique biologique (évolution des
+systèmes vivants), la contribution technique (génération efficace des SBN via ASP et pipeline
+parallèle), et les résultats obtenus sur l'exploration du paysage (robustesse, évolutivité,
+complexité).]
+
+\bigskip
+\noindent
+\textbf{Abstract.}
+[English version of the abstract.]
+
+\bigskip
+\noindent
+\textbf{Mots-clés :} réseaux booléens à signe, paysage des réseaux, robustesse, évolutivité,
+Answer Set Programming, pipeline parallèle, modèles de comptage.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+\subsection{Motivations}
+
+% Fil directeur : comment un système biologique évolue-t-il en un autre ?
+% S'appuyer sur la question posée dans la thèse de Rémi et le rapport d'Ai-Ling.
+% Robustesse vs évolutivité : le paradoxe de Wagner (2007).
+
+\lipsum[1] % à remplacer
+
+\subsection{Positionnement dans les travaux de l'équipe}
+
+% Lignée : Kauffman 1969 → Hopfield 1982 → travaux COSMO
+% Defossez (théorisation) → Ai-Ling Bonnet (implémentation dim 2-3) → ce stage
+% Citer \cite{defossez2021} et \cite{bonnet2023}
+
+\lipsum[2] % à remplacer
+
+\subsection{Contributions de ce stage}
+
+% Deux axes :
+% 1. Génération efficace des SBN (ASP + JPP) rendant l'exploration possible à grande échelle
+% 2. Exploration des propriétés du paysage : robustesse, évolutivité, complexité
+
+\lipsum[3] % à remplacer
+
+% ============================================================
+\section{Formalisme des Réseaux Booléens à Signe}
+% ============================================================
+
+\subsection{Structure et dynamique}
+
+\begin{definition}[Réseau Booléen à Signe]
+Un SBN est un graphe orienté pondéré $G = (V, W)$ où $V = \{v_1, \ldots, v_n\}$ est un
+ensemble de $n$ nœuds à valeur dans $\{0,1\}$, et $W \in \mathbb{Z}^{n \times n}$ est la
+matrice de poids. Un poids $w_{ij} > 0$ représente une activation de $v_i$ sur $v_j$,
+un poids $w_{ij} < 0$ une inhibition.
+\end{definition}
+
+% Fonction booléenne de seuil (SBF), graphe de transition, attracteurs, bassins d'attraction.
+
+\lipsum[4] % à remplacer
+
+\subsection{Distances et classes d'équivalence}
+
+% Distance structurelle de Hamming (HSTR)
+% Distance dynamique (HDYN)
+% Distance sur les cycles (CYCL)
+% Classes d'équivalence dynamique
+
+\begin{definition}[Distance structurelle HSTR]
+Pour deux SBN $g, g'$ de même dimension $d$ :
+\[
+    HSTR(g, g') = \sum_{i=1}^{d} \sum_{j=1}^{d} |g_{ij} - g'_{ij}|
+\]
+\end{definition}
+
+\lipsum[5] % à remplacer
+
+\subsection{Le paysage des réseaux}
+
+% Métagraphe : SBNs comme sommets, arêtes = voisinage structural (epsilon)
+% Robustesse et évolutivité dans ce paysage
+% Référence : figure du métagraphe dim 2 d'Ai-Ling
+
+\lipsum[6] % à remplacer
+
+% ============================================================
+\section{Exploration du paysage des réseaux}
+% ============================================================
+
+\subsection{Méthodologie et périmètre d'exploration}
+
+% Pourquoi une approche naïve ne passe pas à l'échelle
+% (explosion combinatoire du nombre de SBN avec la dimension)
+% Choix des dimensions explorées, paramètres epsilon et delta
+
+\lipsum[7] % à remplacer
+
+\subsection{Robustesse et évolutivité}
+
+% Rappel des définitions opérationnelles (formules)
+% Résultats obtenus : distribution dans le paysage, corrélations observées
+% Comparaison avec les dimensions inférieures (Ai-Ling, dim 2-3)
+
+\lipsum[8] % à remplacer
+
+\subsection{Complexité}
+
+% [À définir précisément selon l'avancement du stage]
+% Piste : complexité du graphe de transition ? entropie des attracteurs ?
+
+\lipsum[9] % à remplacer
+
+\subsection{Résultats et limites}
+
+% Synthèse des résultats obtenus
+% Limites : dimensions accessibles, choix de distances, hypothèses de travail
+% Perspectives ouvertes
+
+\lipsum[10] % à remplacer
+
+% ============================================================
+\section{Aspects techniques}
+% ============================================================
+
+\subsection{Génération des SBN : ASP et pipeline parallèle Java}
+
+% Answer Set Programming : pourquoi ASP pour énumérer/contraindre les SBN
+% Java Parallel Pipeline : architecture, gains obtenus
+% Lien avec les travaux d'Ai-Ling déjà implémentés
+
+\lipsum[11] % à remplacer
+
+\subsection{Usage des grands modèles de langage en recherche}
+
+% Retour d'expérience méthodologique honnête
+% Pour quoi ils ont été utiles (génération de code, reformulation, exploration d'idées)
+% Limites constatées (hallucinations, confiance aveugle, dépendance)
+% Réflexion sur la place de ces outils dans un workflow de recherche
+
+\lipsum[12] % à remplacer
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+% Rappel des contributions
+% Ce que ça ouvre pour la suite (dimensions supérieures, contraintes de viabilité,
+% lien avec des systèmes biologiques réels)
+
+\lipsum[13] % à remplacer
+
+% ============================================================
+\newpage
+\printbibliography[title={Références}]
+% ============================================================
+
+\end{document}
