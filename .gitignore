@@ -1,5 +1,10 @@
 # Java
-Pipeline/bin/*.class
+Pipeline/bin/**/*.class
 
 # ASP output
-**/*.csv
+**/*output.csv
+
+# Latex compilation
+Redaction/rapport_stage.*
+!Redaction/rapport_stage.tex
+!Redaction/rapport_stage.pdf
