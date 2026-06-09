@@ -1,5 +1,5 @@
 # Java
-Pipeline/bin/**/*.class
+JPPipeline/bin/**/*.class
 
 # ASP output
 **/*output.csv

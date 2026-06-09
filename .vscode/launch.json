@@ -17,22 +17,22 @@
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
                 "3",
-                "${workspaceFolder}/Pipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
-                "${workspaceFolder}/Pipeline/src/asp",
+                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
+                "${workspaceFolder}/JPPipeline/src/asp",
                 "0",
-                "${workspaceFolder}/Pipeline/out"
+                "${workspaceFolder}/JPPipeline/out"
             ]
         },
         {
             "type": "java",
-            "name": "Hello World Pipeline",
+            "name": "Hello World JPPipeline",
             "request": "launch",
             "mainClass": "hello_world.Main",
             "classPaths": [
-                "${workspaceFolder}/Pipeline/bin",
-                "${workspaceFolder}/Pipeline/lib/jpp.jar"
+                "${workspaceFolder}/JPPipeline/bin",
+                "${workspaceFolder}/JPPipeline/lib/jpp.jar"
             ],
-            "cwd": "${workspaceFolder}/Pipeline"
+            "cwd": "${workspaceFolder}/JPPipeline"
         }
     ]
 }

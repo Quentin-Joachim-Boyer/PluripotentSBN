@@ -3,10 +3,10 @@
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "java.project.referencedLibraries": [
         "lib/**/*.jar",
-        "Pipeline/lib/jpp.jar"
+        "JPPipeline/lib/jpp.jar"
     ],
     "java.project.sourcePaths": [
-        "Pipeline/src/java_src"
+        "JPPipeline/src/java_src"
     ],
-    "java.project.outputPath": "Pipeline/bin"
+    "java.project.outputPath": "JPPipeline/bin"
 }
