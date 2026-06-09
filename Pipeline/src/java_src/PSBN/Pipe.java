@@ -2,11 +2,11 @@ package PSBN;
 
 import PSBN.Processors.DataStringLineCollectorProcessor;
 import PSBN.Processors.Decomposer;
-import PSBN.Processors.Enumerator_PSBN;
-import PSBN.Processors.Enumerator_PSBN_full;
+import PSBN.Processors.EnumeratorPSBN;
+import PSBN.Processors.EnumeratorPSBNFull;
 import PSBN.Processors.Minimizer;
 import PSBN.Processors.Statifier;
-import PSBN.util.Decomp_vector;
+import PSBN.util.DecompVector;
 import PSBN.util.EnumerationResult;
 import PSBN.util.RealizableMasks;
 import PSBN.util.SBNP;
@@ -40,14 +40,14 @@ public class Pipe extends Pipeline<PipeInput,Void> {
     private final StringParameter outputFilePath;
 
 
-    private final Job<Integer, ArrayList<Decomp_vector>> DecompositionJob;
-    private final Job<Decomp_vector, EnumerationResult> EnumerationJob;
-    private final Job<Pair<Decomp_vector, Integer>, Void> SubdividedEnumerationJob;
+    private final Job<Integer, ArrayList<DecompVector>> DecompositionJob;
+    private final Job<DecompVector, EnumerationResult> EnumerationJob;
+    private final Job<Pair<DecompVector, Integer>, Void> SubdividedEnumerationJob;
     private final Job<SBNP, SBNP> MinimizationJob;
     private final Job<SBNP,String> StatificationJob;
 
     // Conserve pour injecter le sink de streaming une fois MinimizationJob construit.
-    private final Enumerator_PSBN subdividedEnumerator;
+    private final EnumeratorPSBN subdividedEnumerator;
 
     private final DataStringLineCollectorProcessor dataCollector;
 
@@ -63,12 +63,12 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         this.outputFilePath = new StringParameter("");;
 
         
-        this.DecompositionJob = new Job.JobBuilder<Integer, ArrayList<Decomp_vector>>(this, new Decomposer())
+        this.DecompositionJob = new Job.JobBuilder<Integer, ArrayList<DecompVector>>(this, new Decomposer())
                 .setTaskSubmitter(new TaskHolder(this.startSignal))
-                .setOutputHandler(new OutputHandler<ArrayList<Decomp_vector>>() {
+                .setOutputHandler(new OutputHandler<ArrayList<DecompVector>>() {
                     @Override
-                    public void handle(ArrayList<Decomp_vector> processorOutput) {
-                        for (Decomp_vector dv : processorOutput) {
+                    public void handle(ArrayList<DecompVector> processorOutput) {
+                        for (DecompVector dv : processorOutput) {
                             EnumerationJob.buildNewTask(dv);
                         }
                     }
@@ -78,7 +78,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         // Enumeration monolithique avec garde-fou. Selon le resultat, l'output
         // handler route soit directement vers la minimisation (cas majoritaire),
         // soit vers l'enumeration subdivisee par masque (vecteurs lourds).
-        this.EnumerationJob = new Job.JobBuilder<Decomp_vector, EnumerationResult>(this, new Enumerator_PSBN_full(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions,SUBDIVISION_THRESHOLD), this.DecompositionJob)
+        this.EnumerationJob = new Job.JobBuilder<DecompVector, EnumerationResult>(this, new EnumeratorPSBNFull(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions,SUBDIVISION_THRESHOLD), this.DecompositionJob)
                 .setOutputHandler(new OutputHandler<EnumerationResult>() {
                     @Override
                     public void handle(EnumerationResult result) {
@@ -103,8 +103,8 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         // L'enumeration subdivisee streame chaque solution directement vers la
         // minimisation (via le sink injecte plus bas), sans accumuler : son output
         // est Void et elle n'a pas d'output handler.
-        this.subdividedEnumerator = new Enumerator_PSBN(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions);
-        this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<Decomp_vector, Integer>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
+        this.subdividedEnumerator = new EnumeratorPSBN(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions);
+        this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<DecompVector, Integer>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Subdivided Enumeration Job terminated"))
                 .setMaximumParallelTasks(10)
                 .build();

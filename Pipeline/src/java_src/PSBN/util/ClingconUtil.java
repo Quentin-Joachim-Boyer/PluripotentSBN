@@ -32,7 +32,7 @@ public final class ClingconUtil {
      * @param sink       consommateur appele une fois par solution.
      */
     public static void stream(List<String> lpFiles, Map<String, Integer> constants, int nSolutions,
-                              int n, Decomp_vector dv, Consumer<SBNP> sink) {
+                              int n, DecompVector dv, Consumer<SBNP> sink) {
         List<String> cmd = new ArrayList<>();
         cmd.add("clingcon");
         cmd.add(String.valueOf(nSolutions));
@@ -99,7 +99,7 @@ public final class ClingconUtil {
         }
     }
 
-    private static SBNP buildSBNP(String atomsLine, String assignLine, int n, Decomp_vector dv) {
+    private static SBNP buildSBNP(String atomsLine, String assignLine, int n, DecompVector dv) {
         Map<Integer, Set<Integer>> bits = new HashMap<>();
         Matcher bm = BIT_PATTERN.matcher(atomsLine);
         while (bm.find()) {

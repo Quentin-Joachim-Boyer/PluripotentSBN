@@ -12,21 +12,21 @@ import java.util.ArrayList;
  */
 public class EnumerationResult {
 
-    public final Decomp_vector dv;
+    public final DecompVector dv;
     public final ArrayList<SBNP> solutions;
     public final boolean overflowed;
 
-    private EnumerationResult(Decomp_vector dv, ArrayList<SBNP> solutions, boolean overflowed) {
+    private EnumerationResult(DecompVector dv, ArrayList<SBNP> solutions, boolean overflowed) {
         this.dv = dv;
         this.solutions = solutions;
         this.overflowed = overflowed;
     }
 
-    public static EnumerationResult solved(Decomp_vector dv, ArrayList<SBNP> solutions) {
+    public static EnumerationResult solved(DecompVector dv, ArrayList<SBNP> solutions) {
         return new EnumerationResult(dv, solutions, false);
     }
 
-    public static EnumerationResult overflow(Decomp_vector dv) {
+    public static EnumerationResult overflow(DecompVector dv) {
         return new EnumerationResult(dv, null, true);
     }
 }

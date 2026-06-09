@@ -2,14 +2,14 @@ package PSBN.util;
 
 public class SBNP extends SBN {
 
-    private final Decomp_vector decomp;
+    private final DecompVector decomp;
 
-    public SBNP(int n, int[][] weights, boolean[][] TT, Decomp_vector decomp) {
+    public SBNP(int n, int[][] weights, boolean[][] TT, DecompVector decomp) {
         super(n, weights, TT);
         this.decomp = decomp;
     }
 
-    public Decomp_vector getDecomp() {
+    public DecompVector getDecomp() {
         return decomp;
     }
 

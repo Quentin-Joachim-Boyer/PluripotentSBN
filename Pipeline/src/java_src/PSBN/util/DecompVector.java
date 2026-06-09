@@ -1,10 +1,10 @@
 package PSBN.util;
 
-public class Decomp_vector {
+public class DecompVector {
 
     private final int[] values;
 
-    public Decomp_vector(int[] values) {
+    public DecompVector(int[] values) {
         this.values = values.clone();
     }
 

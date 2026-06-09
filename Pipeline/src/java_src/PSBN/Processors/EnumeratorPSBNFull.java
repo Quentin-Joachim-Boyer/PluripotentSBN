@@ -5,7 +5,7 @@ import com.gitlab.jpp.parameters.IntegerParameter;
 import com.gitlab.jpp.parameters.StringParameter;
 
 import PSBN.util.ClingconUtil;
-import PSBN.util.Decomp_vector;
+import PSBN.util.DecompVector;
 import PSBN.util.EnumerationResult;
 import PSBN.util.SBNP;
 
@@ -23,14 +23,14 @@ import java.util.Map;
  * renvoie directement toutes les SBNP. Sinon, on signale un debordement : le
  * vecteur sera subdivise par masque en aval.
  */
-public class Enumerator_PSBN_full implements Processor<Decomp_vector, EnumerationResult> {
+public class EnumeratorPSBNFull implements Processor<DecompVector, EnumerationResult> {
 
     private final StringParameter lpFile;
     private final StringParameter setupDir;
     private final IntegerParameter nSolutions;
     private final int threshold;
 
-    public Enumerator_PSBN_full(StringParameter lpFile, StringParameter setupDir,
+    public EnumeratorPSBNFull(StringParameter lpFile, StringParameter setupDir,
                                 IntegerParameter nSolutions, int threshold) {
         this.lpFile = lpFile;
         this.setupDir = setupDir;
@@ -43,7 +43,7 @@ public class Enumerator_PSBN_full implements Processor<Decomp_vector, Enumeratio
     }
 
     @Override
-    public EnumerationResult process(Decomp_vector dv) {
+    public EnumerationResult process(DecompVector dv) {
         int n = dv.getDimension();
 
         Map<String, Integer> constants = new HashMap<>();

@@ -6,7 +6,7 @@ import com.gitlab.jpp.parameters.Pair;
 import com.gitlab.jpp.parameters.StringParameter;
 
 import PSBN.util.ClingconUtil;
-import PSBN.util.Decomp_vector;
+import PSBN.util.DecompVector;
 import PSBN.util.SBNP;
 
 import java.util.Arrays;
@@ -22,14 +22,14 @@ import java.util.function.Consumer;
  * streame une par une vers {@code sink} (typiquement la soumission d'une tache
  * de minimisation) sans jamais les accumuler.
  */
-public class Enumerator_PSBN implements Processor<Pair<Decomp_vector, Integer>, Void> {
+public class EnumeratorPSBN implements Processor<Pair<DecompVector, Integer>, Void> {
 
     private final StringParameter lpFile;
     private final StringParameter setupDir;
     private final IntegerParameter nSolutions;
     private Consumer<SBNP> sink;
 
-    public Enumerator_PSBN(StringParameter lpFile, StringParameter setupDir, IntegerParameter nSolutions) {
+    public EnumeratorPSBN(StringParameter lpFile, StringParameter setupDir, IntegerParameter nSolutions) {
         this.lpFile = lpFile;
         this.setupDir = setupDir;
         this.nSolutions = nSolutions;
@@ -45,8 +45,8 @@ public class Enumerator_PSBN implements Processor<Pair<Decomp_vector, Integer>, 
     }
 
     @Override
-    public Void process(Pair<Decomp_vector, Integer> input) {
-        Decomp_vector dv = input.first;
+    public Void process(Pair<DecompVector, Integer> input) {
+        DecompVector dv = input.first;
         int fixedTransitionFunction = input.second;
         int n = dv.getDimension();
 
