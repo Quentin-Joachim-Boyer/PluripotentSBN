@@ -47,8 +47,14 @@ state(0..2**D-1) :- d(D).
 % Declaration de l'activation du noeud N dans l'état S.
 activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 
+% Declaration de la borne des poids Wb pour la dimension D. Données via un calcul indépendant (Cf freq_counting).
+% Pour D > 5, D n'est pas nécéssairement suffisant pour obtenir toutes les SBF 
+% (et donc tous les SBN), mais il est difficile d'assurer une borne pour ces dimensions.
+w_bound(1,1). w_bound(1,2). w_bound(2,3). w_bound(3,4). w_bound(5,5).
+w_bound(D,D) :- btree(_,_,D,_), D > 5.
+
 % Declaration du domaine des poids des noeuds du réseau principal.
-&dom{(-D)..D} = w(I,J) :- node(I), node(J), d(D).
+&dom{(-Wb)..Wb} = w(I,J) :- node(I), node(J), d(D), w_bound(Wb,D).
 
 
 % Déballage de l'arbre de décomposition. 
@@ -70,13 +76,13 @@ offset_node(N,C,O) :- offset_node(_,c(N,C),O).
 % Contrainte de non activation externe.
 &sum{w(ON,CN) : offset_node(ON,_,O) ; pos_w(I,CN) : node(I), I < CN} <= 0 :- control_node(CN,O), d(D).
 % Variables auxiliaires : pos_w(I,J) >= max(0,w(I,J)).
-&dom{0..D} = pos_w(I,J) :- node(I),control_node(J,_), d(D),I < J.
-&sum{pos_w(I,J) ; -1*w(I,J)} >= 0 :- node(I),control_node(J,_), d(D),I < J.
+&dom{0..Wb} = pos_w(I,J) :- node(I),control_node(J,_), w_bound(Wb, D), d(D), I < J.
+&sum{pos_w(I,J) ; -1*w(I,J)} >= 0 :- node(I),control_node(J,_),I < J.
 % Contrainte de non désactivation externe.
 &sum{w(ON,CN) : offset_node(ON,_,O) ; neg_w(I,CN) : node(I), I < CN ; w(CN,CN)} > 0 :- control_node(CN,O), d(D).
 % Variables auxiliaires : neg_w(I,J) <= min(0,w(I,J)).
-&dom{-(D)..0} = neg_w(I,J) :- node(I),control_node(J,_), d(D), I < J.
-&sum{neg_w(I,J) ; -1*w(I,J)} <= 0 :- node(I),control_node(J,_), d(D),I < J.
+&dom{-(Wb)..0} = neg_w(I,J) :- node(I),control_node(J,_), w_bound(Wb, D), d(D), I < J.
+&sum{neg_w(I,J) ; -1*w(I,J)} <= 0 :- node(I),control_node(J,_),I < J.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% OUTPUT %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

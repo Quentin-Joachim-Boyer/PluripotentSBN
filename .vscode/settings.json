@@ -8,5 +8,6 @@
     "java.project.sourcePaths": [
         "JPPipeline/src/java_src"
     ],
-    "java.project.outputPath": "JPPipeline/bin"
+    "java.project.outputPath": "JPPipeline/bin",
+    "java.debug.settings.enableRunDebugCodeLens": false
 }

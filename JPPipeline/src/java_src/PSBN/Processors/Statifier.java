@@ -12,6 +12,8 @@ public class Statifier implements Processor<SBNP, String> {
 
     @Override
     public String process(SBNP input) {
+
+        
         return input.toString();
     }
 }

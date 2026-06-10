@@ -8,12 +8,12 @@
 #include "PTBN_undercontrol.lp".
 
 % Declaration du domaine des poids des sous réseaux engendrés par les contextes.
-&dom{(-D)..D} = w(I,J,context(D,O)) :- node(I), node(J), context(D,O), I <= D, J <= D. % Borne potentiellement à changer.
+&dom{(-Wb)..Wb} = w(I,J,context(D,O)) :- node(I), node(J), w_bound(Wb,D), context(D,O), I <= D, J <= D. % Borne potentiellement à changer.
 
 
 % Déclaration de l'offset d'un noeud N sous contexte context(D,O) 
 %(somme des poids des arcs entrants provenant des noeuds de contrôles activés dans le contexte).
-&dom{-(Dd**2)..(Dd**2)} = offset(N, context(D,O)) :- node(N),context(D,O), N <= D, d(Dd).
+&dom{-(Wb*Dd)..(Wb*Dd)} = offset(N, context(D,O)) :- node(N), w_bound(Wb,D), context(D,O), N <= D, d(Dd).
 &sum{offset(N,context(D,O)); -1*w(NI,N) : offset_node(NI,_,O)} = 0 :- node(N),context(D,O), N<=D.
 
 % Contraintes assurant que la dynamique du sous réseau sous contexte 

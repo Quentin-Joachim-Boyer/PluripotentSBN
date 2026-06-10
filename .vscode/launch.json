@@ -5,18 +5,10 @@
             "type": "java",
             "name": "Main",
             "request": "launch",
-            "mainClass": "java.hello_world.Main",
-            "projectName": "SBN_e508df1f"
-        },
-        {
-            "type": "java",
-            "name": "Main",
-            "request": "launch",
             "mainClass": "PSBN.Main",
-            "projectName": "SBN_e508df1f",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "3",
+                "4",
                 "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
                 "0",
