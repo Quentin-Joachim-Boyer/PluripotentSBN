@@ -17,11 +17,12 @@ import com.gitlab.jpp.TaskHolder;
  */
 public class Pipe extends Pipeline<Integer,Void> {
 
-    private final Job hello_worldJob;
-    
+    private final Job<Integer,Void> hello_worldJob;
+
+    @SuppressWarnings("unchecked")
     public Pipe() {
         super(Runtime.getRuntime().availableProcessors());
-        this.hello_worldJob = new Job.JobBuilder<>(this, new Hello_world())
+        this.hello_worldJob = new Job.JobBuilder<Integer,Void>(this, new Hello_world())
                 .setTaskSubmitter(new TaskHolder(this.startSignal))
                 .build();
     }

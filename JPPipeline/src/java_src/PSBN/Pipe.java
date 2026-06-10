@@ -156,7 +156,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                 csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
                 if (i < n || j < n) csv_header.append(",");
             }
-        csv_header.append(",AtrSize,SumWeights");
+        csv_header.append(",AtrSize,SumWeights,R_P_mean,R_P_std,E_P");
         this.dataCollector.process(csv_header.toString());
     }
 

@@ -39,7 +39,7 @@ public final class ClingconUtil {
         cmd.add("--project");
         cmd.add("--parallel");
         cmd.add("1");
-        cmd.add("--seed=" + new java.util.Random().nextInt(Integer.MAX_VALUE));
+        // cmd.add("--seed=" + new java.util.Random().nextInt(Integer.MAX_VALUE));
         for (Map.Entry<String, Integer> entry : constants.entrySet()) {
             cmd.add("-c");
             cmd.add(entry.getKey() + "=" + entry.getValue());

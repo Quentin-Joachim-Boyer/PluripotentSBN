@@ -33,6 +33,25 @@ public class SBN {
     }
 
     /**
+     * Encode chaque fonction de transition f_i comme un entier (bit s = TT[i][s]).
+     */
+    public static int[] transitionFunctionCodes(boolean[][] TT, int n) {
+        int[] f = new int[n];
+        for (int i = 0; i < n; i++) {
+            int code = 0;
+            for (int s = 0; s < (1 << n); s++) {
+                if (TT[i][s]) code += (1 << s);
+            }
+            f[i] = code;
+        }
+        return f;
+    }
+
+    public int[] transitionFunctionCodes() {
+        return transitionFunctionCodes(TT, n);
+    }
+
+    /**
      * Calcule l'etat suivant d'un etat donne:
      * le bit i de l'etat suivant vaut TT[i][state].
      */
