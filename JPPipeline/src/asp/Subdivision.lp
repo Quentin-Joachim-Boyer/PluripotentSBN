@@ -2,9 +2,9 @@
 % pour que la parallélisation de JPP empêche le processus d'atteindre la limite mémoire, 
 % et puisse potentiellement accélérer le processus. 
 
-#const fixed_transition_function = 0.
+#const fixed_sbf = 0.
 #const fixed_node = 1.
-#sum{2**S : fixed_state(fixed_node,S) : state(S)} = fixed_transition_function.
+#sum{2**S : fixed_state(fixed_node,S) : state(S)} = fixed_sbf.
 
 
 :- not transition_function_bit(1,S), fixed_state(fixed_node, S).

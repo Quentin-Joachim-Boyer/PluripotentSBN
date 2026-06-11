@@ -121,4 +121,4 @@ btree(btree(nil,nil,3,nil),btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil
 btree(btree(nil,nil,3,nil),btree(nil,nil,3,nil),4,nil) :- v0 = 0, v1 = 0, v2 = 0, v3 = 2, v4 = 0.
 
 % vec = <1,0,0,0,0>
-% btree(nil,nil,4,nil) :- v0 = 0, v1 = 0, v2 = 0, v3 = 0, v4 = 1.
+btree(nil,nil,4,nil) :- v0 = 0, v1 = 0, v2 = 0, v3 = 0, v4 = 1.

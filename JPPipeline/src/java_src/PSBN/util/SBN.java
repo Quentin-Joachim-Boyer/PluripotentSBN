@@ -133,8 +133,7 @@ public class SBN {
                 sb.append(",");
             }
         }
-        sb.append(meanSquaredAttractorSize()).append(",");
-        sb.append(sumOfWeights());
+        sb.append(meanSquaredAttractorSize());
         return sb.toString();
     }
 

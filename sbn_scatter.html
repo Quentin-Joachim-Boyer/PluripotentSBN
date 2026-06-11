@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>SBN Scatter Plot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0f1117; --panel: #161b27; --border: #252d3d;
+    --accent: #4f8ef7; --accent2: #a78bfa;
+    --text: #e2e8f0; --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; font-weight: 500; }
+
+  .upload-btn {
+    background: var(--accent); color: #fff; border: none;
+    padding: 5px 12px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+  }
+  .upload-btn:hover { opacity: 0.85; }
+
+  select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); padding: 4px 10px;
+    border-radius: 6px; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace; cursor: pointer;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+
+  .controls {
+    display: flex; align-items: center; gap: 10px; margin-left: auto;
+    font-size: 12px; color: var(--muted);
+  }
+
+  .scatter-controls {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+  }
+  .scatter-controls label { font-size: 12px; color: var(--muted); }
+
+  .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; }
+
+  .scatter-legend {
+    padding: 5px 16px; background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 5px 16px;
+    flex-shrink: 0; font-size: 11px; max-height: 80px; overflow-y: auto;
+  }
+  .scatter-legend-item { display: flex; align-items: center; gap: 5px; }
+  .scatter-legend-item:hover { opacity: 0.75 !important; }
+  .scatter-legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0; display: inline-block;
+  }
+
+  .empty-state {
+    position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: var(--muted); font-size: 14px;
+  }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 24px 32px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .drop-zone:hover { border-color: var(--accent); color: var(--text); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SBN Scatter Plot</h1>
+  <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
+  <input type="file" id="file-input" accept=".csv" multiple style="display:none">
+  <div class="controls">
+    <select id="file-select"></select>
+    <span id="row-count" style="font-family:monospace"></span>
+  </div>
+</header>
+
+<div class="scatter-controls">
+  <label>X axis:</label>
+  <select id="scatter-x" onchange="scatterCache=null;drawScatter()"></select>
+  <label style="margin-left:8px">Y axis:</label>
+  <select id="scatter-y" onchange="scatterCache=null;drawScatter()"></select>
+  <span style="margin-left:auto;font-size:11px;color:var(--muted)">
+    point size ∝ count · color = decomp vector
+  </span>
+</div>
+
+<div class="canvas-wrap" id="canvas-wrap">
+  <div class="empty-state" id="empty-state">
+    <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div style="font-size:28px;margin-bottom:8px">📂</div>
+      <div>Load a CSV file to begin</div>
+      <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv format</div>
+    </div>
+  </div>
+  <canvas id="scatter-canvas"></canvas>
+</div>
+
+<div style="display:flex;align-items:stretch;border-top:1px solid var(--border)">
+  <div class="scatter-legend" id="scatter-legend" style="border-top:none;flex:1"></div>
+  <div style="flex-shrink:0;padding:5px 14px;background:var(--panel);
+              border-left:1px solid var(--border);display:flex;align-items:center;gap:10px">
+    <span style="font-size:11px;color:var(--muted)">count:</span>
+    <canvas id="size-legend-canvas" height="22" style="display:block"></canvas>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let files = [];
+let curFile = 0;
+let selectedVecs = new Set(); // empty = all visible
+let scatterCache = null;
+
+// ─── CSV Parsing ─────────────────────────────────────────────────────────────
+function parseCSVLine(line) {
+  const fields = []; let cur = '', inQ = false;
+  for (const c of line) {
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+    else { cur += c; }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const header = parseCSVLine(lines[0]);
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = parseCSVLine(line);
+    const obj = {};
+    header.forEach((h, i) => obj[h] = vals[i] ?? '');
+    return obj;
+  });
+}
+
+// ─── Vec helpers ─────────────────────────────────────────────────────────────
+function parseName(name) {
+  const mDim = name.match(/^(\d+)d/);
+  if (!mDim) return { dim: null, vec: [] };
+  const dim = parseInt(mDim[1]);
+  const mAngle = name.match(/<([0-9,]+)>/);
+  if (mAngle) return { dim, vec: mAngle[1].split(',').map(Number) };
+  const rest = name.slice(mDim[0].length).replace(/^_+/, '');
+  const mVec = rest.match(/^([0-9][0-9_]*)/);
+  if (!mVec) return { dim, vec: [] };
+  return { dim, vec: mVec[1].split('_').filter(s => s).map(Number) };
+}
+
+function getRowVec(row, fileVec) {
+  const vKeys = Object.keys(row).filter(k => /^v_[0-9]+$/.test(k));
+  if (!vKeys.length) return fileVec;
+  vKeys.sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
+  return vKeys.map(k => parseInt(row[k]));
+}
+
+function getStatKeys(row) {
+  return Object.keys(row).filter(k =>
+    !/^v_[0-9]+$/.test(k) && !/^f_[0-9]+$/.test(k) && !/^w_[0-9]+,[0-9]+$/.test(k)
+  );
+}
+
+// ─── Color ───────────────────────────────────────────────────────────────────
+const vecColorCache = new Map();
+
+function vecStrToSum(vecStr) {
+  const m = vecStr.match(/[0-9]+/g);
+  if (!m) return 1;
+  return m.reduce((a, v) => a + parseInt(v), 0);
+}
+
+// Small deterministic hash of a string -> integer
+function strHash(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// Color based on decomposition degree (sum of vec components):
+//   - Base hue: blue (220°) for sum=1 -> red (0°) for sum=2^n
+//   - Log2 scale so intermediate cases are well spread
+//   - Each vec gets a unique color via two independent hashes:
+//     hue offset ±20° and lightness 45-65%
+function vecColor(vecStr) {
+  if (!vecColorCache.has(vecStr)) {
+    const sum = vecStrToSum(vecStr);
+    if (!vecColor._sums) vecColor._sums = new Set();
+    vecColor._sums.add(sum);
+    const maxSum = Math.max(...vecColor._sums);
+    const minSum = Math.min(...vecColor._sums);
+
+    // Log2 scale: spreads intermediate decompositions better than linear
+    const logSum    = sum    > 0 ? Math.log2(sum)    : 0;
+    const logMaxSum = maxSum > 0 ? Math.log2(maxSum) : 1;
+    const logMinSum = minSum > 0 ? Math.log2(minSum) : 0;
+    const logRange  = logMaxSum - logMinSum || 1;
+    const baseHue   = 220 - ((logSum - logMinSum) / logRange) * 220;
+
+    // Two independent hashes for unique hue offset and lightness per vec
+    const h1 = strHash(vecStr);
+    const h2 = strHash(vecStr.split('').reverse().join('') + 'x');
+    const hue   = ((baseHue + (h1 % 41) - 20) % 360 + 360) % 360;
+    const light = 45 + (h2 % 5) * 5;  // 45, 50, 55, 60, 65
+
+    const h=hue, s=0.72, l=light/100;
+    const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+    let r,g,b;
+    if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
+    else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+    vecColorCache.set(vecStr, '#'+[r+m,g+m,b+m].map(v=>
+      Math.round(v*255).toString(16).padStart(2,'0')).join(''));
+  }
+  return vecColorCache.get(vecStr);
+}
+
+// ─── File loading ─────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  const fileList = Array.from(e.target.files);
+  let loaded = 0;
+  fileList.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const rows = parseCSV(ev.target.result);
+      if (!rows.length) return;
+      const { dim, vec } = parseName(file.name.replace('.csv',''));
+      files.push({ name: file.name, rows, decomp_vec: vec });
+      files.sort((a,b) => a.name.localeCompare(b.name));
+      loaded++;
+      if (loaded === fileList.length) {
+        curFile = files.length - loaded;
+        populateFileSelect();
+        document.getElementById('empty-state').style.display = 'none';
+        populateAxes();
+        drawScatter();
+      }
+    };
+    reader.readAsText(file);
+  });
+});
+
+function populateFileSelect() {
+  const sel = document.getElementById('file-select');
+  sel.innerHTML = '';
+  files.forEach((f, i) => {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = f.name;
+    sel.appendChild(opt);
+  });
+  sel.value = curFile;
+  document.getElementById('row-count').textContent =
+    files[curFile].rows.length.toLocaleString() + ' rows';
+}
+
+document.getElementById('file-select').addEventListener('change', e => {
+  curFile = parseInt(e.target.value);
+  vecColorCache.clear();
+  selectedVecs.clear();
+  scatterCache = null;
+  populateAxes();
+  drawScatter();
+  document.getElementById('row-count').textContent =
+    files[curFile].rows.length.toLocaleString() + ' rows';
+});
+
+function populateAxes() {
+  if (!files.length) return;
+  const row = files[curFile].rows[0];
+  const stats = getStatKeys(row);
+  ['scatter-x','scatter-y'].forEach((id, i) => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = stats.map(k =>
+      `<option value="${k}"${k===cur?' selected':''}>${k}</option>`).join('');
+    if (!cur && stats.length > i) sel.value = stats[i];
+  });
+}
+
+// ─── Scatter drawing ──────────────────────────────────────────────────────────
+function drawSizeLegend(minR, maxR, maxCount) {
+  const canvas = document.getElementById('size-legend-canvas');
+  if (!canvas) return;
+  const DPR = window.devicePixelRatio || 1;
+  const steps = maxCount === 1 ? [1] : [1, Math.round(maxCount / 2), maxCount];
+  const padding = 6;
+  let totalW = padding;
+  for (const cnt of steps) {
+    const r = minR + (cnt / maxCount) * (maxR - minR);
+    totalW += r * 2 + 30 + padding;
+  }
+  canvas.width  = totalW * DPR;
+  canvas.height = 22 * DPR;
+  canvas.style.width  = totalW + 'px';
+  canvas.style.height = '22px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  ctx.clearRect(0, 0, totalW, 22);
+  let x = padding;
+  for (const cnt of steps) {
+    const r = minR + (cnt / maxCount) * (maxR - minR);
+    const cy = 11;
+    ctx.beginPath();
+    ctx.arc(x + r, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle   = 'rgba(148,163,184,0.5)';
+    ctx.strokeStyle = 'rgba(148,163,184,0.9)';
+    ctx.lineWidth   = 0.8;
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle    = '#94a3b8';
+    ctx.font         = '9px JetBrains Mono,monospace';
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    const label = cnt >= 1000 ? (cnt/1000).toFixed(1)+'k' : String(cnt);
+    ctx.fillText(label, x + r * 2 + 3, cy);
+    x += r * 2 + 30 + padding;
+  }
+}
+
+function buildScatterCache() {
+  if (!files.length) return false;
+  const xKey = document.getElementById('scatter-x')?.value;
+  const yKey = document.getElementById('scatter-y')?.value;
+  if (!xKey || !yKey) return false;
+
+  const rows = files[curFile].rows;
+  const points = [];
+  for (const row of rows) {
+    const x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
+    if (isNaN(x) || isNaN(y)) continue;
+    const vec = getRowVec(row, files[curFile].decomp_vec);
+    points.push({ x, y, vecStr: vec ? '<'+vec.join(',')+'>' : '?' });
+  }
+  if (!points.length) return false;
+
+  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
+  for (const p of points) {
+    if (p.x < xMin) xMin=p.x; if (p.x > xMax) xMax=p.x;
+    if (p.y < yMin) yMin=p.y; if (p.y > yMax) yMax=p.y;
+  }
+
+  const pointMap = new Map();
+  vecColorCache.clear();
+  for (const p of points) {
+    const key = `${p.x}|${p.y}|${p.vecStr}`;
+    if (!pointMap.has(key)) pointMap.set(key, { x:p.x, y:p.y, vecStr:p.vecStr, count:0 });
+    pointMap.get(key).count++;
+  }
+
+  const allPts = Array.from(pointMap.values());
+  allPts.sort((a,b) => b.count - a.count);
+  const maxCount = allPts.reduce((m,p) => p.count>m ? p.count : m, 1);
+
+  const nRows = rows.length;
+  const minR = nRows > 500000 ? 1.5 : nRows > 100000 ? 2 : nRows > 10000 ? 2.5 : 3;
+  const maxR = nRows > 500000 ? 6   : nRows > 100000 ? 8 : nRows > 10000 ? 10  : 14;
+
+  // Pre-compute colors and radii
+  for (const p of allPts) {
+    const col = vecColor(p.vecStr);
+    const rgb = parseInt(col.slice(1), 16);
+    p.r = (rgb>>16)&255; p.g = (rgb>>8)&255; p.b = rgb&255;
+    p.radius = minR + (p.count/maxCount)*(maxR-minR);
+  }
+
+  const byVec = new Map();
+  for (const p of allPts) {
+    if (!byVec.has(p.vecStr)) byVec.set(p.vecStr, []);
+    byVec.get(p.vecStr).push(p);
+  }
+
+  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey };
+
+  // Build legend (only when cache is rebuilt)
+  drawSizeLegend(minR, maxR, maxCount);
+  const legend = document.getElementById('scatter-legend');
+  if (legend) {
+    const allVecs = Array.from(byVec.keys()).sort((a,b) => vecStrToSum(a)-vecStrToSum(b));
+    legend.innerHTML = allVecs.map(vs => {
+      const col = vecColor(vs);
+      const active = selectedVecs.size === 0 || selectedVecs.has(vs);
+      return `<span class="scatter-legend-item" onclick="toggleVec('${vs}')"
+               style="cursor:pointer;opacity:${active?1:0.3};transition:opacity 0.15s"
+               data-vec="${vs}">
+        <span class="scatter-legend-dot" style="background:${col}"></span>
+        <span style="color:var(--text)">${vs}</span>
+      </span>`;
+    }).join('');
+  }
+  return true;
+}
+
+function drawScatter() {
+  if (!files.length) return;
+  if (!scatterCache && !buildScatterCache()) return;
+
+  const canvas = document.getElementById('scatter-canvas');
+  if (!canvas) return;
+  const { allPts, xMin, xMax, yMin, yMax, xKey, yKey } = scatterCache;
+
+  const DPR = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width  = rect.width  * DPR;
+  canvas.height = rect.height * DPR;
+  canvas.style.width  = rect.width  + 'px';
+  canvas.style.height = rect.height + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const pad=52, xRange=xMax-xMin||1, yRange=yMax-yMin||1;
+  const toX = v => pad + (v-xMin)/xRange*(W-2*pad);
+  const toY = v => H-pad - (v-yMin)/yRange*(H-2*pad);
+
+  // Grid
+  ctx.save();
+  const nTicks = 5;
+  for (let i=0; i<=nTicks; i++) {
+    const vx=xMin+i/nTicks*xRange, vy=yMin+i/nTicks*yRange;
+    ctx.strokeStyle='#252d3d'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(toX(vx),pad); ctx.lineTo(toX(vx),H-pad); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad,toY(vy)); ctx.lineTo(W-pad,toY(vy)); ctx.stroke();
+    ctx.fillStyle='#64748b'; ctx.font='10px JetBrains Mono,monospace';
+    ctx.textAlign='center'; ctx.fillText(vx.toFixed(2),toX(vx),H-pad+14);
+    ctx.textAlign='right';  ctx.fillText(vy.toFixed(2),pad-6,toY(vy)+4);
+  }
+  ctx.fillStyle='#94a3b8'; ctx.font='12px DM Sans,sans-serif';
+  ctx.textAlign='center'; ctx.fillText(xKey,W/2,H-4);
+  ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText(yKey,0,0); ctx.restore();
+  ctx.restore();
+
+  // Draw points
+  const visiblePts = selectedVecs.size > 0
+    ? allPts.filter(p => selectedVecs.has(p.vecStr))
+    : allPts;
+  for (const p of visiblePts) {
+    ctx.beginPath();
+    ctx.arc(toX(p.x), toY(p.y), p.radius, 0, Math.PI*2);
+    ctx.fillStyle   = `rgba(${p.r},${p.g},${p.b},0.8)`;
+    ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},1)`;
+    ctx.lineWidth   = 0.8;
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function toggleVec(vecStr) {
+  if (selectedVecs.has(vecStr)) {
+    selectedVecs.delete(vecStr);
+  } else {
+    selectedVecs.add(vecStr);
+  }
+  // Update legend opacity without rebuilding cache
+  document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el => {
+    const v = el.getAttribute('data-vec');
+    el.style.opacity = (selectedVecs.size === 0 || selectedVecs.has(v)) ? '1' : '0.3';
+  });
+  drawScatter();
+}
+window.addEventListener('resize', drawScatter);
+</script>
+</body>
+</html>

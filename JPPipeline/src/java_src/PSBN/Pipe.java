@@ -8,7 +8,7 @@ import PSBN.Processors.Minimizer;
 import PSBN.Processors.Statifier;
 import PSBN.util.DecompVector;
 import PSBN.util.EnumerationResult;
-import PSBN.util.RealizableMasks;
+import PSBN.util.RealizableSBFs;
 import PSBN.util.SBNP;
 import java.util.ArrayList;
 
@@ -29,7 +29,7 @@ import com.gitlab.jpp.parameters.StringParameter;
 public class Pipe extends Pipeline<PipeInput,Void> {
 
     // Au dela de ce nombre de solutions pour un vecteur, l'enumeration
-    // monolithique fait sauter le garde-fou et le vecteur est subdivise par masque.
+    // monolithique fait sauter le garde-fou et le vecteur est subdivise par SBF.
     private static final int SUBDIVISION_THRESHOLD = 10000;
 
     private final IntegerParameter dim;
@@ -77,7 +77,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                 .build();
         // Enumeration monolithique avec garde-fou. Selon le resultat, l'output
         // handler route soit directement vers la minimisation (cas majoritaire),
-        // soit vers l'enumeration subdivisee par masque (vecteurs lourds).
+        // soit vers l'enumeration subdivisee par SBF (vecteurs lourds).
         this.EnumerationJob = new Job.JobBuilder<DecompVector, EnumerationResult>(this, new EnumeratorPSBNFull(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions,SUBDIVISION_THRESHOLD), this.DecompositionJob)
                 .setOutputHandler(new OutputHandler<EnumerationResult>() {
                     @Override
@@ -87,12 +87,12 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                                 MinimizationJob.buildNewTask(sbn);
                             }
                         } else {
-                            // Vecteur trop gros : on subdivise par masque du noeud 1,
-                            // en ne retenant que les masques realisables par un vecteur
+                            // Vecteur trop gros : on subdivise par SBF du noeud 1,
+                            // en ne retenant que les SBF realisables par un vecteur
                             // de poids entier (les autres seraient de toute facon UNSAT).
                             int n = result.dv.getDimension();
-                            for (int mask : RealizableMasks.forDimension(n)) {
-                                SubdividedEnumerationJob.buildNewTask(new Pair<>(result.dv, mask));
+                            for (int sbf : RealizableSBFs.forDimension(n)) {
+                                SubdividedEnumerationJob.buildNewTask(new Pair<>(result.dv, sbf));
                             }
                         }
                     }
@@ -114,7 +114,8 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                     public void handle(SBNP processorOutput) {
                         StatificationJob.buildNewTask(processorOutput);
                     }
-                })                .build();
+                })                
+                .build();
         // Le sink de streaming pousse chaque SBNP comme une tache de minimisation.
         // Sur (cf. analyse JPP) : appele depuis process() d'une tache subdivisee
         // encore en cours, donc MinimizationJob n'est jamais prematurement termine.
@@ -156,7 +157,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                 csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
                 if (i < n || j < n) csv_header.append(",");
             }
-        csv_header.append(",AtrSize,SumWeights,R_P_mean,R_P_std,E_P");
+        csv_header.append(",AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
         this.dataCollector.process(csv_header.toString());
     }
 

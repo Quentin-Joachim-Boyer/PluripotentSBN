@@ -11,7 +11,7 @@
                 "4",
                 "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
-                "0",
+                "3000000",
                 "${workspaceFolder}/JPPipeline/out"
             ]
         },

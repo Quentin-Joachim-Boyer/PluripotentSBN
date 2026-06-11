@@ -8,49 +8,61 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Tables precalculees pour la decomposition par colonne des statistiques de
- * robustesse/evolvabilite a la Wagner (2008).
+ * Table precalculee, indexee par signed Boolean function (SBF) f, de
+ * statistiques sur ColumnSet(f) = { v in [-w_bound,w_bound]^n : threshold(v) = f },
+ * ou threshold(v) encode en binaire, pour chaque etat s, le bit
+ * "(somme des v[i] pour i actif dans s) > 0".
  *
- * Une fonction de transition f_j ne depend que de la colonne j de la matrice
- * de poids : f_j = threshold(colonne_j), ou threshold(v) encode en binaire,
- * pour chaque etat s, le bit "(somme des v[i] pour i actif dans s) > 0".
+ * Sert notamment a la decomposition par colonne des statistiques de
+ * robustesse/evolvabilite a la Wagner (2008) : une fonction de transition f_j
+ * d'un SBN ne depend que de la colonne j de sa matrice de poids
+ * (f_j = threshold(colonne_j)), et l'ensemble des genotypes realisant un
+ * phenotype (f_1,...,f_n) est le produit cartesien
+ * ColumnSet(f_1) x ... x ColumnSet(f_n). Sous distribution uniforme sur ce
+ * produit (colonnes independantes) :
  *
- * L'ensemble des genotypes realisant un phenotype (f_1,...,f_n) est le
- * produit cartesien ColumnSet(f_1) x ... x ColumnSet(f_n), ou
- * ColumnSet(f) = { v in [-w_bound,w_bound]^n : threshold(v) = f }.
- * Sous distribution uniforme sur ce produit (colonnes independantes), les
- * statistiques de Wagner se decomposent :
+ * - R_P_mean(f_1,...,f_n) = somme_j neutralCountMean(f_j)
+ * - R_P_std(f_1,...,f_n)  = sqrt(somme_j neutralCountVar(f_j))
+ * - E_P(f_1,...,f_n)      = somme_j nbDistinctNeighborPhenotypes(f_j)
  *
- * - R_P_mean(f_1,...,f_n) = somme_j g(f_j)
- * - R_P_std(f_1,...,f_n)  = sqrt(somme_j var(f_j))
- * - E_P(f_1,...,f_n)      = somme_j nf(f_j)
+ * et le nombre de matrices de poids realisant (f_1,...,f_n) est
+ * produit_j columnSetSize(f_j).
  *
- * ou pour chaque code de fonction f atteignable :
- * - g(f)   = moyenne, sur v in ColumnSet(f), du nombre de voisins (i,+-1)
- *            de v dont threshold reste egal a f ;
- * - var(f) = variance de cette meme quantite ;
- * - nf(f)  = nombre de codes de fonctions distincts atteints par les voisins
- *            non neutres, sur l'ensemble de ColumnSet(f).
+ * Pour chaque code de fonction f atteignable :
+ * - columnSetSize(f) = |ColumnSet(f)|, le nombre de vecteurs de poids menant a f ;
+ * - neutralCountMean(f) = moyenne, sur v in ColumnSet(f), du nombre de
+ *                         voisins (i,+-1) de v dont threshold reste egal a f
+ *                         (un compte, pas le ratio r de Wagner (2008), qui
+ *                         s'obtient en divisant par 2*n) ;
+ * - neutralCountVar(f)  = variance de cette meme quantite ;
+ * - nbDistinctNeighborPhenotypes(f) = nombre de codes de fonctions distincts
+ *                         atteints par les voisins non neutres, sur l'ensemble
+ *                         de ColumnSet(f).
  */
-public final class RobustnessTables {
+public final class SBFStatTable {
 
-    private final Map<Integer, Double> g = new HashMap<>();
-    private final Map<Integer, Double> var = new HashMap<>();
-    private final Map<Integer, Integer> nf = new HashMap<>();
+    private final Map<Integer, Integer> columnSetSize = new HashMap<>();
+    private final Map<Integer, Double> neutralCountMean = new HashMap<>();
+    private final Map<Integer, Double> neutralCountVar = new HashMap<>();
+    private final Map<Integer, Integer> nbDistinctNeighborPhenotypes = new HashMap<>();
 
-    private RobustnessTables() {
+    private SBFStatTable() {
     }
 
-    public double g(int f) {
-        return g.getOrDefault(f, 0.0);
+    public int columnSetSize(int f) {
+        return columnSetSize.getOrDefault(f, 0);
     }
 
-    public double var(int f) {
-        return var.getOrDefault(f, 0.0);
+    public double neutralCountMean(int f) {
+        return neutralCountMean.getOrDefault(f, 0.0);
     }
 
-    public int nf(int f) {
-        return nf.getOrDefault(f, 0);
+    public double neutralCountVar(int f) {
+        return neutralCountVar.getOrDefault(f, 0.0);
+    }
+
+    public int nbDistinctNeighborPhenotypes(int f) {
+        return nbDistinctNeighborPhenotypes.getOrDefault(f, 0);
     }
 
     /**
@@ -74,8 +86,8 @@ public final class RobustnessTables {
         }
     }
 
-    public static RobustnessTables compute(int n) {
-        RobustnessTables tables = new RobustnessTables();
+    public static SBFStatTable compute(int n) {
+        SBFStatTable tables = new SBFStatTable();
         int wb = wBound(n);
         int domainSize = 2 * wb + 1;
 
@@ -127,9 +139,10 @@ public final class RobustnessTables {
                 sumSq += d * d;
             }
 
-            tables.g.put(f, mean);
-            tables.var.put(f, sumSq / counts.size());
-            tables.nf.put(f, diffsByF.get(f).size());
+            tables.columnSetSize.put(f, counts.size());
+            tables.neutralCountMean.put(f, mean);
+            tables.neutralCountVar.put(f, sumSq / counts.size());
+            tables.nbDistinctNeighborPhenotypes.put(f, diffsByF.get(f).size());
         }
 
         return tables;

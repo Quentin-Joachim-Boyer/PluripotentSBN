@@ -73,10 +73,11 @@ public final class ClingconUtil {
                     String atomsLine  = out.readLine(); // Answer+1 : atomes
                     out.readLine();                     // Answer+2 : ignoree
                     String assignLine = out.readLine(); // Answer+3 : assignation des poids
-                    sink.accept(buildSBNP(
+                    SBNP sbnp = buildSBNP(
                             atomsLine  == null ? "" : atomsLine.trim(),
                             assignLine == null ? "" : assignLine.trim(),
-                            n, dv));
+                            n, dv);
+                    if (sbnp != null) sink.accept(sbnp);
                 }
             }
 
@@ -100,7 +101,17 @@ public final class ClingconUtil {
         }
     }
 
+    /**
+     * Construit la SBNP a partir des lignes "Answer:" de clingcon, ou
+     * {@code null} si la reponse est vide (aucune variable de poids declaree :
+     * cas degenere ou {@code d(D)} n'est pas defini, ex. vecteur de
+     * decomposition sans fait {@code btree(...)} associe).
+     */
     private static SBNP buildSBNP(String atomsLine, String assignLine, int n, DecompVector dv) {
+        if (assignLine.isEmpty()) {
+            return null;
+        }
+
         Map<Integer, Set<Integer>> bits = new HashMap<>();
         Matcher bm = BIT_PATTERN.matcher(atomsLine);
         while (bm.find()) {
