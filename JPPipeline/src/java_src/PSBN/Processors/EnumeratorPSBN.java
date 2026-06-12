@@ -7,10 +7,11 @@ import com.gitlab.jpp.parameters.StringParameter;
 
 import PSBN.util.ClingconUtil;
 import PSBN.util.DecompVector;
-import PSBN.util.RealizableSBFs;
+import PSBN.util.RealizableSbfPrefixes;
 import PSBN.util.SBNP;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -23,7 +24,7 @@ import java.util.function.Consumer;
  * streame une par une vers {@code sink} (typiquement la soumission d'une tache
  * de minimisation) sans jamais les accumuler.
  */
-public class EnumeratorPSBN implements Processor<Pair<DecompVector, Integer>, Void> {
+public class EnumeratorPSBN implements Processor<Pair<DecompVector, BitSet>, Void> {
 
     private final StringParameter lpFile;
     private final StringParameter setupDir;
@@ -46,9 +47,9 @@ public class EnumeratorPSBN implements Processor<Pair<DecompVector, Integer>, Vo
     }
 
     @Override
-    public Void process(Pair<DecompVector, Integer> input) {
+    public Void process(Pair<DecompVector, BitSet> input) {
         DecompVector dv = input.first;
-        int fixedSbf = input.second;
+        BitSet fixedPrefix = input.second;
         int n = dv.getDimension();
 
         Map<String, Integer> constants = new HashMap<>();
@@ -56,15 +57,20 @@ public class EnumeratorPSBN implements Processor<Pair<DecompVector, Integer>, Vo
         for (int i = 0; i <= n; i++) {
             constants.put("v" + (n - i), dv.get(i));
         }
-        // Fixe la fonction de transition du noeud 1 : chaque SBF explore une
-        // tranche disjointe de l'espace de recherche.
-        constants.put("fixed_sbf", fixedSbf);
+        // Fixe les n premiers bits (S=0..n-1) de la fonction de transition du
+        // noeud 1, via les constantes fixed_sbf_bit_<s> declarees dans
+        // Subdivision.lp : chaque tranche explore une partie disjointe de
+        // l'espace de recherche.
+        constants.put("fixed_bits", n);
+        for (int s = 0; s < n; s++) {
+            constants.put("fixed_sbf_bit_" + s, fixedPrefix.get(s) ? 1 : 0);
+        }
 
         // Repartit le quota de solutions entre les tranches : sans ca, demander
-        // nSolutions par SBF multiplierait le total par le nombre de SBF
-        // realisables pour ce vecteur. 0 = pas de cap, conserve tel quel.
+        // nSolutions par tranche multiplierait le total par le nombre de
+        // tranches (prefixes realisables). 0 = pas de cap, conserve tel quel.
         int userN = nSolutions.getValue();
-        int cap = userN <= 0 ? 0 : Math.max(1, userN / RealizableSBFs.forDimension(n).length);
+        int cap = userN <= 0 ? 0 : Math.max(1, userN / RealizableSbfPrefixes.forDimension(n).size());
 
         String setupFile = setupDir.getText() + "/setup_btree_" + n + "d.lp";
         String subdivisionFile = setupDir.getText() + "/Subdivision.lp";

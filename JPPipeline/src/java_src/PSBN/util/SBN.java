@@ -1,6 +1,7 @@
 package PSBN.util;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -33,22 +34,23 @@ public class SBN {
     }
 
     /**
-     * Encode chaque fonction de transition f_i comme un entier (bit s = TT[i][s]).
+     * Encode chaque fonction de transition f_i comme un SBF (bit s = TT[i][s]),
+     * sous forme de {@link BitSet} de taille 2^n.
      */
-    public static int[] transitionFunctionCodes(boolean[][] TT, int n) {
-        int[] f = new int[n];
+    public static BitSet[] sbfCodes(boolean[][] TT, int n) {
+        BitSet[] f = new BitSet[n];
         for (int i = 0; i < n; i++) {
-            int code = 0;
+            BitSet code = new BitSet(1 << n);
             for (int s = 0; s < (1 << n); s++) {
-                if (TT[i][s]) code += (1 << s);
+                if (TT[i][s]) code.set(s);
             }
             f[i] = code;
         }
         return f;
     }
 
-    public int[] transitionFunctionCodes() {
-        return transitionFunctionCodes(TT, n);
+    public BitSet[] sbfCodes() {
+        return sbfCodes(TT, n);
     }
 
     /**
@@ -119,18 +121,27 @@ public class SBN {
 
     @Override
     public String toString() {
+        return toCsvRow(true);
+    }
+
+    /**
+     * Construit la ligne CSV : f_j (bitstrings) et w_i,j sont omis si
+     * {@code includeWeightsAndTransitions} est false.
+     */
+    public String toCsvRow(boolean includeWeightsAndTransitions) {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < n; i++) {
-            int f = 0;
-            for (int s = 0; s < (1 << n); s++) {
-                if (TT[i][s]) f += (1 << s);
-            }
-            sb.append(f).append(",");
-        }
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < n; j++) {
-                sb.append(weights[i][j]);
+        if (includeWeightsAndTransitions) {
+            for (int i = 0; i < n; i++) {
+                for (int s = 0; s < (1 << n); s++) {
+                    sb.append(TT[i][s] ? '1' : '0');
+                }
                 sb.append(",");
+            }
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < n; j++) {
+                    sb.append(weights[i][j]);
+                    sb.append(",");
+                }
             }
         }
         sb.append(meanSquaredAttractorSize());

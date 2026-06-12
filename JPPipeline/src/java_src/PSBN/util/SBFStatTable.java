@@ -1,6 +1,7 @@
 package PSBN.util;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -8,9 +9,10 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Table precalculee, indexee par signed Boolean function (SBF) f, de
- * statistiques sur ColumnSet(f) = { v in [-w_bound,w_bound]^n : threshold(v) = f },
- * ou threshold(v) encode en binaire, pour chaque etat s, le bit
+ * Table precalculee, indexee par signed Boolean function (SBF) f (un
+ * {@link BitSet} de taille 2^n), de statistiques sur
+ * ColumnSet(f) = { v in [-w_bound,w_bound]^n : threshold(v) = f },
+ * ou threshold(v) encode, pour chaque etat s, le bit
  * "(somme des v[i] pour i actif dans s) > 0".
  *
  * Sert notamment a la decomposition par colonne des statistiques de
@@ -28,40 +30,40 @@ import java.util.Set;
  * et le nombre de matrices de poids realisant (f_1,...,f_n) est
  * produit_j columnSetSize(f_j).
  *
- * Pour chaque code de fonction f atteignable :
+ * Pour chaque SBF f atteignable :
  * - columnSetSize(f) = |ColumnSet(f)|, le nombre de vecteurs de poids menant a f ;
  * - neutralCountMean(f) = moyenne, sur v in ColumnSet(f), du nombre de
  *                         voisins (i,+-1) de v dont threshold reste egal a f
  *                         (un compte, pas le ratio r de Wagner (2008), qui
  *                         s'obtient en divisant par 2*n) ;
  * - neutralCountVar(f)  = variance de cette meme quantite ;
- * - nbDistinctNeighborPhenotypes(f) = nombre de codes de fonctions distincts
- *                         atteints par les voisins non neutres, sur l'ensemble
- *                         de ColumnSet(f).
+ * - nbDistinctNeighborPhenotypes(f) = nombre de SBF distincts atteints par
+ *                         les voisins non neutres, sur l'ensemble de
+ *                         ColumnSet(f).
  */
 public final class SBFStatTable {
 
-    private final Map<Integer, Integer> columnSetSize = new HashMap<>();
-    private final Map<Integer, Double> neutralCountMean = new HashMap<>();
-    private final Map<Integer, Double> neutralCountVar = new HashMap<>();
-    private final Map<Integer, Integer> nbDistinctNeighborPhenotypes = new HashMap<>();
+    private final Map<BitSet, Integer> columnSetSize = new HashMap<>();
+    private final Map<BitSet, Double> neutralCountMean = new HashMap<>();
+    private final Map<BitSet, Double> neutralCountVar = new HashMap<>();
+    private final Map<BitSet, Integer> nbDistinctNeighborPhenotypes = new HashMap<>();
 
     private SBFStatTable() {
     }
 
-    public int columnSetSize(int f) {
+    public int columnSetSize(BitSet f) {
         return columnSetSize.getOrDefault(f, 0);
     }
 
-    public double neutralCountMean(int f) {
+    public double neutralCountMean(BitSet f) {
         return neutralCountMean.getOrDefault(f, 0.0);
     }
 
-    public double neutralCountVar(int f) {
+    public double neutralCountVar(BitSet f) {
         return neutralCountVar.getOrDefault(f, 0.0);
     }
 
-    public int nbDistinctNeighborPhenotypes(int f) {
+    public int nbDistinctNeighborPhenotypes(BitSet f) {
         return nbDistinctNeighborPhenotypes.getOrDefault(f, 0);
     }
 
@@ -94,8 +96,8 @@ public final class SBFStatTable {
         int nbCols = 1;
         for (int i = 0; i < n; i++) nbCols *= domainSize;
 
-        Map<Integer, List<Integer>> neutralCountsByF = new HashMap<>();
-        Map<Integer, Set<Integer>> diffsByF = new HashMap<>();
+        Map<BitSet, List<Integer>> neutralCountsByF = new HashMap<>();
+        Map<BitSet, Set<BitSet>> diffsByF = new HashMap<>();
 
         int[] v = new int[n];
         for (int idx = 0; idx < nbCols; idx++) {
@@ -105,17 +107,17 @@ public final class SBFStatTable {
                 rest /= domainSize;
             }
 
-            int f = threshold(v, n);
-            Set<Integer> diffs = diffsByF.computeIfAbsent(f, k -> new HashSet<>());
+            BitSet f = threshold(v, n);
+            Set<BitSet> diffs = diffsByF.computeIfAbsent(f, k -> new HashSet<>());
 
             int neutral = 0;
             for (int i = 0; i < n; i++) {
                 for (int delta : new int[]{-1, 1}) {
                     int old = v[i];
                     v[i] += delta;
-                    int f2 = threshold(v, n);
+                    BitSet f2 = threshold(v, n);
                     v[i] = old;
-                    if (f2 == f) {
+                    if (f2.equals(f)) {
                         neutral++;
                     } else {
                         diffs.add(f2);
@@ -125,8 +127,8 @@ public final class SBFStatTable {
             neutralCountsByF.computeIfAbsent(f, k -> new ArrayList<>()).add(neutral);
         }
 
-        for (Map.Entry<Integer, List<Integer>> entry : neutralCountsByF.entrySet()) {
-            int f = entry.getKey();
+        for (Map.Entry<BitSet, List<Integer>> entry : neutralCountsByF.entrySet()) {
+            BitSet f = entry.getKey();
             List<Integer> counts = entry.getValue();
 
             double mean = 0;
@@ -151,15 +153,15 @@ public final class SBFStatTable {
     /**
      * threshold(v)[s] = 1 ssi la somme des v[i] pour i actif dans s est > 0.
      */
-    private static int threshold(int[] v, int n) {
+    private static BitSet threshold(int[] v, int n) {
         int nbStates = 1 << n;
-        int code = 0;
+        BitSet code = new BitSet(nbStates);
         for (int s = 0; s < nbStates; s++) {
             int sum = 0;
             for (int i = 0; i < n; i++) {
                 if ((s & (1 << i)) != 0) sum += v[i];
             }
-            if (sum > 0) code |= (1 << s);
+            if (sum > 0) code.set(s);
         }
         return code;
     }

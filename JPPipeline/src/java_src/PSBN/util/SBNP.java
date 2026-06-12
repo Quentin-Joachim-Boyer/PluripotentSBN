@@ -16,11 +16,16 @@ public class SBNP extends SBN {
 
     @Override
     public String toString() {
+        return toCsvRow(true);
+    }
+
+    @Override
+    public String toCsvRow(boolean includeWeightsAndTransitions) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i <= decomp.getDimension(); i++) {
             sb.append(decomp.get(i)).append(",");
         }
-        sb.append(super.toString());
+        sb.append(super.toCsvRow(includeWeightsAndTransitions));
         return sb.toString();
     }
 }

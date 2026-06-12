@@ -8,11 +8,12 @@
             "mainClass": "PSBN.Main",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "4",
-                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
+                "6",
+                "${workspaceFolder}/JPPipeline/src/asp/PSBNI_undecomposablePBN_beyond.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
-                "3000000",
-                "${workspaceFolder}/JPPipeline/out"
+                "1000",
+                "${workspaceFolder}/JPPipeline/out",
+                "0"
             ]
         },
         {

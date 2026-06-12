@@ -8,9 +8,10 @@ import PSBN.Processors.Minimizer;
 import PSBN.Processors.Statifier;
 import PSBN.util.DecompVector;
 import PSBN.util.EnumerationResult;
-import PSBN.util.RealizableSBFs;
+import PSBN.util.RealizableSbfPrefixes;
 import PSBN.util.SBNP;
 import java.util.ArrayList;
+import java.util.BitSet;
 
 import com.gitlab.jpp.Job;
 import com.gitlab.jpp.OneTimeAction;
@@ -30,7 +31,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
 
     // Au dela de ce nombre de solutions pour un vecteur, l'enumeration
     // monolithique fait sauter le garde-fou et le vecteur est subdivise par SBF.
-    private static final int SUBDIVISION_THRESHOLD = 10000;
+    private static final int SUBDIVISION_THRESHOLD = 100000;
 
     private final IntegerParameter dim;
     private final StringParameter lp_enumeratorFile;
@@ -38,11 +39,12 @@ public class Pipe extends Pipeline<PipeInput,Void> {
     private final IntegerParameter nSolutions;
     private final StringParameter outputFileName;
     private final StringParameter outputFilePath;
+    private final IntegerParameter includeWeightsAndTransitions;
 
 
     private final Job<Integer, ArrayList<DecompVector>> DecompositionJob;
     private final Job<DecompVector, EnumerationResult> EnumerationJob;
-    private final Job<Pair<DecompVector, Integer>, Void> SubdividedEnumerationJob;
+    private final Job<Pair<DecompVector, BitSet>, Void> SubdividedEnumerationJob;
     private final Job<SBNP, SBNP> MinimizationJob;
     private final Job<SBNP,String> StatificationJob;
 
@@ -61,6 +63,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         this.nSolutions = new IntegerParameter(0);
         this.outputFileName = new StringParameter("");
         this.outputFilePath = new StringParameter("");;
+        this.includeWeightsAndTransitions = new IntegerParameter(1);
 
         
         this.DecompositionJob = new Job.JobBuilder<Integer, ArrayList<DecompVector>>(this, new Decomposer())
@@ -87,24 +90,27 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                                 MinimizationJob.buildNewTask(sbn);
                             }
                         } else {
-                            // Vecteur trop gros : on subdivise par SBF du noeud 1,
-                            // en ne retenant que les SBF realisables par un vecteur
-                            // de poids entier (les autres seraient de toute facon UNSAT).
+                            // Vecteur trop gros : on subdivise en fixant les n
+                            // premiers bits (S=0..n-1) de la SBF du noeud 1, en
+                            // ne retenant que les prefixes realisables par un
+                            // vecteur de poids entier (cf. Subdivision.lp,
+                            // fixed_bits) - les autres seraient de toute facon
+                            // UNSAT.
                             int n = result.dv.getDimension();
-                            for (int sbf : RealizableSBFs.forDimension(n)) {
-                                SubdividedEnumerationJob.buildNewTask(new Pair<>(result.dv, sbf));
+                            for (BitSet prefix : RealizableSbfPrefixes.forDimension(n)) {
+                                SubdividedEnumerationJob.buildNewTask(new Pair<DecompVector, BitSet>(result.dv, prefix));
                             }
                         }
                     }
                 })
-                .setMaximumParallelTasks(10)
+                // .setMaximumParallelTasks(10)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Enumeration Job terminated"))
                 .build();
         // L'enumeration subdivisee streame chaque solution directement vers la
         // minimisation (via le sink injecte plus bas), sans accumuler : son output
         // est Void et elle n'a pas d'output handler.
         this.subdividedEnumerator = new EnumeratorPSBN(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions);
-        this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<DecompVector, Integer>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
+        this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<DecompVector, BitSet>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Subdivided Enumeration Job terminated"))
                 .setMaximumParallelTasks(10)
                 .build();
@@ -120,7 +126,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         // Sur (cf. analyse JPP) : appele depuis process() d'une tache subdivisee
         // encore en cours, donc MinimizationJob n'est jamais prematurement termine.
         this.subdividedEnumerator.setSink(sbn -> MinimizationJob.buildNewTask(sbn));
-        this.StatificationJob = new Job.JobBuilder<SBNP,String>(this, new Statifier(), this.MinimizationJob)
+        this.StatificationJob = new Job.JobBuilder<SBNP,String>(this, new Statifier(this.includeWeightsAndTransitions), this.MinimizationJob)
                 .setOutputHandler(new OutputHandler<String>() {
                     @Override
                     public void handle(String processorOutput) {
@@ -142,6 +148,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         this.lp_enumeratorFile.setText(this.input.lp_enumeratorFile);
         this.setup_btreeFolder.setText(this.input.setup_btreeFolder);
         this.nSolutions.setValue(this.input.nSolutions);
+        this.includeWeightsAndTransitions.setValue(this.input.includeWeightsAndTransitions ? 1 : 0);
         String SBN_type = java.nio.file.Paths.get(lp_enumeratorFile.getText()).getFileName().toString().replaceAll("\\.lp$", "");
         this.outputFileName.setText(Integer.toString(this.dim.getValue()) + "d_" + SBN_type + "_output.csv");
         this.outputFilePath.setText(this.input.output_path);
@@ -150,14 +157,18 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         StringBuilder csv_header = new StringBuilder();
         for (int i = 0; i <= n; i++)
             csv_header.append("v_").append(n - i).append(",");
-        for (int j = 1; j <= n; j++)
-            csv_header.append("f_").append(j).append(",");
-        for (int i = 1; i <= n; i++)
-            for (int j = 1; j <= n; j++) {
-                csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
-                if (i < n || j < n) csv_header.append(",");
-            }
-        csv_header.append(",AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
+        if (this.input.includeWeightsAndTransitions) {
+            for (int j = 1; j <= n; j++)
+                csv_header.append("f_").append(j).append(",");
+            for (int i = 1; i <= n; i++)
+                for (int j = 1; j <= n; j++) {
+                    csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
+                    if (i < n || j < n) csv_header.append(",");
+                }
+            csv_header.append(",AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
+        } else {
+            csv_header.append("AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
+        }
         this.dataCollector.process(csv_header.toString());
     }
 

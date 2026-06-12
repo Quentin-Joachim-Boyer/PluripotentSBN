@@ -80,6 +80,8 @@
     transition: border-color 0.2s;
   }
   .drop-zone:hover { border-color: var(--accent); color: var(--text); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinning { display: inline-block; animation: spin 1s linear infinite; }
 </style>
 </head>
 <body>
@@ -87,7 +89,7 @@
 <header>
   <h1>SBN Scatter Plot</h1>
   <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
-  <input type="file" id="file-input" accept=".csv" multiple style="display:none">
+  <input type="file" id="file-input" accept=".csv,.gz" multiple style="display:none">
   <div class="controls">
     <select id="file-select"></select>
     <span id="row-count" style="font-family:monospace"></span>
@@ -96,12 +98,10 @@
 
 <div class="scatter-controls">
   <label>X axis:</label>
-  <select id="scatter-x" onchange="scatterCache=null;drawScatter()"></select>
+  <select id="scatter-x" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
   <label style="margin-left:8px">Y axis:</label>
-  <select id="scatter-y" onchange="scatterCache=null;drawScatter()"></select>
-  <span style="margin-left:auto;font-size:11px;color:var(--muted)">
-    point size ∝ count · color = decomp vector
-  </span>
+  <select id="scatter-y" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
+  <span id="loading-indicator" style="margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
 </div>
 
 <div class="canvas-wrap" id="canvas-wrap">
@@ -204,10 +204,12 @@ function strHash(s) {
 function vecColor(vecStr) {
   if (!vecColorCache.has(vecStr)) {
     const sum = vecStrToSum(vecStr);
-    if (!vecColor._sums) vecColor._sums = new Set();
-    vecColor._sums.add(sum);
-    const maxSum = Math.max(...vecColor._sums);
-    const minSum = Math.min(...vecColor._sums);
+    // Infer n from vecStr: count the comma-separated components
+    const nComponents = (vecStr.match(/,/g) || []).length + 1;
+    const n = nComponents - 1; // vec has n+1 components for dim n
+    // Anchor to theoretical range [1, 2^n] for stable colors regardless of which vecs are present
+    const minSum = 1;
+    const maxSum = Math.pow(2, n);
 
     // Log2 scale: spreads intermediate decompositions better than linear
     const logSum    = sum    > 0 ? Math.log2(sum)    : 0;
@@ -234,28 +236,84 @@ function vecColor(vecStr) {
 }
 
 // ─── File loading ─────────────────────────────────────────────────────────────
-document.getElementById('file-input').addEventListener('change', e => {
+async function parseCSVStream(file) {
+  const isGzip = file.name.endsWith('.gz');
+  let stream = file.stream();
+  if (isGzip) stream = stream.pipeThrough(new DecompressionStream('gzip'));
+
+  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+  let header = null;
+  const rows = [];
+  let leftover = '';
+
+  // Only keep useful columns: v_*, stat columns (not f_* or w_*)
+  // We determine kept indices after reading the header
+  let keptIndices = null;
+
+  function parseLine(fields) {
+    const obj = {};
+    for (const i of keptIndices) obj[header[i]] = fields[i] ?? '';
+    return obj;
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = leftover + value;
+    const lines = chunk.split(/\r?\n/);
+    leftover = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const fields = parseCSVLine(line);
+      if (!header) {
+        header = fields;
+        // Determine which columns to keep
+        keptIndices = header.map((h, i) => i).filter(i => {
+          const h = header[i];
+          return !/^f_\d+$/.test(h) && !/^w_\d+,\d+$/.test(h);
+        });
+        continue;
+      }
+      if (fields.length < header.length) continue;
+      rows.push(parseLine(fields));
+    }
+  }
+  if (leftover.trim() && header) {
+    const fields = parseCSVLine(leftover);
+    if (fields.length >= header.length) rows.push(parseLine(fields));
+  }
+  return rows;
+}
+
+document.getElementById('file-input').addEventListener('change', async e => {
   const fileList = Array.from(e.target.files);
   let loaded = 0;
-  fileList.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const rows = parseCSV(ev.target.result);
-      if (!rows.length) return;
-      const { dim, vec } = parseName(file.name.replace('.csv',''));
+  for (const file of fileList) {
+    // Show loading indicator
+    document.getElementById('row-count').textContent = `Loading ${file.name}…`;
+    document.getElementById('loading-indicator').innerHTML = '<span class="spinning">⟳</span> loading…';
+    try {
+      const rows = await parseCSVStream(file);
+      if (!rows.length) { loaded++; continue; }
+      const { dim, vec } = parseName(file.name.replace('.csv.gz','').replace('.csv',''));
       files.push({ name: file.name, rows, decomp_vec: vec });
       files.sort((a,b) => a.name.localeCompare(b.name));
-      loaded++;
-      if (loaded === fileList.length) {
-        curFile = files.length - loaded;
-        populateFileSelect();
-        document.getElementById('empty-state').style.display = 'none';
-        populateAxes();
-        drawScatter();
-      }
-    };
-    reader.readAsText(file);
-  });
+    } catch(err) {
+      console.error('Error loading', file.name, err);
+    }
+    loaded++;
+  }
+  if (files.length) {
+    curFile = files.length - loaded;
+    populateFileSelect();
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('loading-indicator').textContent = '';
+    scatterCache = null;
+    selectedVecs.clear();
+    vecColorCache.clear();
+    populateAxes();
+    drawScatter();
+  }
 });
 
 function populateFileSelect() {
@@ -291,8 +349,12 @@ function populateAxes() {
     const cur = sel.value;
     sel.innerHTML = stats.map(k =>
       `<option value="${k}"${k===cur?' selected':''}>${k}</option>`).join('');
-    if (!cur && stats.length > i) sel.value = stats[i];
+    // Default: last two stat columns (x = second-to-last, y = last)
+    if (!cur && stats.length > 0) {
+      sel.value = stats[stats.length - 2 + i] ?? stats[stats.length - 1];
+    }
   });
+
 }
 
 // ─── Scatter drawing ──────────────────────────────────────────────────────────
@@ -300,12 +362,17 @@ function drawSizeLegend(minR, maxR, maxCount) {
   const canvas = document.getElementById('size-legend-canvas');
   if (!canvas) return;
   const DPR = window.devicePixelRatio || 1;
-  const steps = maxCount === 1 ? [1] : [1, Math.round(maxCount / 2), maxCount];
+  const steps = maxCount === 1 ? [1] : [
+    1,
+    Math.round(maxCount / 4),
+    Math.round(maxCount / 2),
+    maxCount
+  ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
   const padding = 6;
   let totalW = padding;
   for (const cnt of steps) {
     const r = minR + (cnt / maxCount) * (maxR - minR);
-    totalW += r * 2 + 30 + padding;
+    totalW += r * 2 + 40 + padding;
   }
   canvas.width  = totalW * DPR;
   canvas.height = 22 * DPR;
@@ -328,9 +395,11 @@ function drawSizeLegend(minR, maxR, maxCount) {
     ctx.font         = '9px JetBrains Mono,monospace';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'middle';
-    const label = cnt >= 1000 ? (cnt/1000).toFixed(1)+'k' : String(cnt);
+    const label = cnt >= 1e6 ? (cnt/1e6).toFixed(1)+'M'
+                : cnt >= 1e3 ? (cnt/1e3).toFixed(1)+'k'
+                : String(Math.round(cnt));
     ctx.fillText(label, x + r * 2 + 3, cy);
-    x += r * 2 + 30 + padding;
+    x += r * 2 + 40 + padding;
   }
 }
 
@@ -341,44 +410,65 @@ function buildScatterCache() {
   if (!xKey || !yKey) return false;
 
   const rows = files[curFile].rows;
-  const points = [];
+  const sizeKey = 'GenotypeCount';
+
+  // Single pass: compute bounds + collect vecStrs + build pointMap simultaneously
+  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
+  const allVecStrs = new Set();
+  const rawPts = []; // lightweight [x, y, vecStr, weight] tuples
+
   for (const row of rows) {
     const x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
     if (isNaN(x) || isNaN(y)) continue;
     const vec = getRowVec(row, files[curFile].decomp_vec);
-    points.push({ x, y, vecStr: vec ? '<'+vec.join(',')+'>' : '?' });
+    const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+    const weight = parseFloat(row[sizeKey]) || 1;
+    if (x < xMin) xMin=x; if (x > xMax) xMax=x;
+    if (y < yMin) yMin=y; if (y > yMax) yMax=y;
+    allVecStrs.add(vecStr);
+    rawPts.push(x, y, vecStr, weight); // flat array = less GC pressure
   }
-  if (!points.length) return false;
+  if (!rawPts.length) return false;
 
-  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
-  for (const p of points) {
-    if (p.x < xMin) xMin=p.x; if (p.x > xMax) xMax=p.x;
-    if (p.y < yMin) yMin=p.y; if (p.y > yMax) yMax=p.y;
-  }
-
-  const pointMap = new Map();
+  // Assign colors in deterministic order
   vecColorCache.clear();
-  for (const p of points) {
-    const key = `${p.x}|${p.y}|${p.vecStr}`;
-    if (!pointMap.has(key)) pointMap.set(key, { x:p.x, y:p.y, vecStr:p.vecStr, count:0 });
-    pointMap.get(key).count++;
+  Array.from(allVecStrs)
+    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b) || a.localeCompare(b))
+    .forEach(vs => vecColor(vs));
+
+  // Aggregate into pointMap using rounded coordinates
+  const xRange0 = xMax - xMin || 1, yRange0 = yMax - yMin || 1;
+  const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - 2);
+  const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - 2);
+  const pointMap = new Map();
+  for (let i = 0; i < rawPts.length; i += 4) {
+    const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
+    const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
+    const vecStr = rawPts[i+2];
+    const weight = rawPts[i+3];
+    const key = `${rx}|${ry}|${vecStr}`;
+    if (!pointMap.has(key)) pointMap.set(key, { x: rx, y: ry, vecStr, count: 0 });
+    const entry = pointMap.get(key);
+    if (weight > entry.count) entry.count = weight;
   }
 
   const allPts = Array.from(pointMap.values());
-  allPts.sort((a,b) => b.count - a.count);
   const maxCount = allPts.reduce((m,p) => p.count>m ? p.count : m, 1);
 
   const nRows = rows.length;
-  const minR = nRows > 500000 ? 1.5 : nRows > 100000 ? 2 : nRows > 10000 ? 2.5 : 3;
-  const maxR = nRows > 500000 ? 6   : nRows > 100000 ? 8 : nRows > 10000 ? 10  : 14;
+  const minR = 2;
+  const maxR = nRows > 500000 ? 10  : nRows > 100000 ? 12 : nRows > 10000 ? 14  : 16;
 
   // Pre-compute colors and radii
   for (const p of allPts) {
     const col = vecColor(p.vecStr);
     const rgb = parseInt(col.slice(1), 16);
     p.r = (rgb>>16)&255; p.g = (rgb>>8)&255; p.b = rgb&255;
-    p.radius = minR + (p.count/maxCount)*(maxR-minR);
+    p.radius = minR + (p.count / maxCount) * (maxR - minR);
   }
+
+  // Sort: largest radius first (drawn behind), then more decomposed on top at equal size
+  allPts.sort((a, b) => b.radius - a.radius || vecStrToSum(a.vecStr) - vecStrToSum(b.vecStr));
 
   const byVec = new Map();
   for (const p of allPts) {
@@ -407,10 +497,29 @@ function buildScatterCache() {
   return true;
 }
 
+function showLoading() {
+  document.getElementById('loading-indicator').innerHTML =
+    '<span class="spinning">⟳</span> computing…';
+}
+
 function drawScatter() {
   if (!files.length) return;
-  if (!scatterCache && !buildScatterCache()) return;
+  if (!scatterCache) {
+    showLoading();
+    setTimeout(() => {
+      if (!buildScatterCache()) {
+        document.getElementById('loading-indicator').textContent = '';
+        return;
+      }
+      document.getElementById('loading-indicator').textContent = '';
+      _renderScatter();
+    }, 0);
+    return;
+  }
+  _renderScatter();
+}
 
+function _renderScatter() {
   const canvas = document.getElementById('scatter-canvas');
   if (!canvas) return;
   const { allPts, xMin, xMax, yMin, yMax, xKey, yKey } = scatterCache;
@@ -448,18 +557,28 @@ function drawScatter() {
   ctx.fillText(yKey,0,0); ctx.restore();
   ctx.restore();
 
-  // Draw points
+  // Draw by vec group: least decomposed first (behind), most decomposed last (on top)
   const visiblePts = selectedVecs.size > 0
     ? allPts.filter(p => selectedVecs.has(p.vecStr))
     : allPts;
+  // Group by vecStr, sorted by sum ascending (less decomposed drawn first = behind)
+  const byVecOrdered = new Map();
   for (const p of visiblePts) {
-    ctx.beginPath();
-    ctx.arc(toX(p.x), toY(p.y), p.radius, 0, Math.PI*2);
-    ctx.fillStyle   = `rgba(${p.r},${p.g},${p.b},0.8)`;
-    ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},1)`;
-    ctx.lineWidth   = 0.8;
-    ctx.fill();
-    ctx.stroke();
+    if (!byVecOrdered.has(p.vecStr)) byVecOrdered.set(p.vecStr, []);
+    byVecOrdered.get(p.vecStr).push(p);
+  }
+  const sortedVecs = Array.from(byVecOrdered.keys())
+    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b));
+  for (const vs of sortedVecs) {
+    for (const p of byVecOrdered.get(vs)) {
+      ctx.beginPath();
+      ctx.arc(toX(p.x), toY(p.y), p.radius, 0, Math.PI*2);
+      ctx.fillStyle   = `rgba(${p.r},${p.g},${p.b},0.8)`;
+      ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},1)`;
+      ctx.lineWidth   = 0.8;
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 }
 

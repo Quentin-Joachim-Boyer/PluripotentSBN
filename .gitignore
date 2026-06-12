@@ -3,6 +3,12 @@ JPPipeline/bin/**/*.class
 
 # ASP output
 **/*output.csv
+**/*output.csv.gz
+
+# Archive
+JPPipeline/archive/*output.csv.gz
+JPPipeline/archive/*output.csv
+
 
 # Latex compilation
 Redaction/rapport_stage.*
