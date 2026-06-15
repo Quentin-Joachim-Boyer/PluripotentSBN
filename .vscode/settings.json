@@ -9,5 +9,14 @@
         "JPPipeline/src/java_src"
     ],
     "java.project.outputPath": "JPPipeline/bin",
-    "java.debug.settings.enableRunDebugCodeLens": false
+    "java.debug.settings.enableRunDebugCodeLens": false,
+    "ltex.language": "fr",
+    "cSpell.language": "fr,en",
+    "cSpell.enabledFileTypes": {
+        "latex": true,
+        "tex": true
+    },
+    "[latex]": {
+        "editor.wordWrap": "on"
+    }
 }

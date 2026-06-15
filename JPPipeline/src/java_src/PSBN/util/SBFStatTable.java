@@ -33,9 +33,11 @@ import java.util.Set;
  * Pour chaque SBF f atteignable :
  * - columnSetSize(f) = |ColumnSet(f)|, le nombre de vecteurs de poids menant a f ;
  * - neutralCountMean(f) = moyenne, sur v in ColumnSet(f), du nombre de
- *                         voisins (i,+-1) de v dont threshold reste egal a f
+ *                         voisins de v (un voisin = v ou un seul poids v[i]
+ *                         a ete change vers une autre valeur de
+ *                         [-w_bound,w_bound]) dont threshold reste egal a f
  *                         (un compte, pas le ratio r de Wagner (2008), qui
- *                         s'obtient en divisant par 2*n) ;
+ *                         s'obtient en divisant par neighborCount()) ;
  * - neutralCountVar(f)  = variance de cette meme quantite ;
  * - nbDistinctNeighborPhenotypes(f) = nombre de SBF distincts atteints par
  *                         les voisins non neutres, sur l'ensemble de
@@ -48,7 +50,19 @@ public final class SBFStatTable {
     private final Map<BitSet, Double> neutralCountVar = new HashMap<>();
     private final Map<BitSet, Integer> nbDistinctNeighborPhenotypes = new HashMap<>();
 
+    /**
+     * Nombre total de voisins d'un genotype v (toutes positions confondues),
+     * tel qu'utilise pour enumerer neutralCountMean/Var ci-dessus. Sert de
+     * normalisation K = n * neighborsPerWeight a la Wagner (2008) :
+     * r(g) = N_neutral(g) / K.
+     */
+    private int neighborCount;
+
     private SBFStatTable() {
+    }
+
+    public int neighborCount() {
+        return neighborCount;
     }
 
     public int columnSetSize(BitSet f) {
@@ -112,20 +126,23 @@ public final class SBFStatTable {
 
             int neutral = 0;
             for (int i = 0; i < n; i++) {
-                for (int delta : new int[]{-1, 1}) {
-                    int old = v[i];
-                    v[i] += delta;
+                int old = v[i];
+                for (int candidate = -wb; candidate <= wb; candidate++) {
+                    if (candidate == old) continue;
+                    v[i] = candidate;
                     BitSet f2 = threshold(v, n);
-                    v[i] = old;
                     if (f2.equals(f)) {
                         neutral++;
                     } else {
                         diffs.add(f2);
                     }
                 }
+                v[i] = old;
             }
             neutralCountsByF.computeIfAbsent(f, k -> new ArrayList<>()).add(neutral);
         }
+
+        tables.neighborCount = n * (domainSize - 1);
 
         for (Map.Entry<BitSet, List<Integer>> entry : neutralCountsByF.entrySet()) {
             BitSet f = entry.getKey();

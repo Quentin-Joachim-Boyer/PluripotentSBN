@@ -41,7 +41,7 @@ public final class ClingconUtil {
         cmd.add("1");
         cmd.add("--rand-freq");
         cmd.add("1");
-        cmd.add("--seed=42");
+        cmd.add("--seed=43");
         // cmd.add("--seed=" + new java.util.Random().nextInt(Integer.MAX_VALUE));
         for (Map.Entry<String, Integer> entry : constants.entrySet()) {
             cmd.add("-c");

@@ -29,9 +29,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * "GenotypeCount" de l'output) est de meme produit_j columnSetSize(f_j).
  *
  * R_P_mean/R_P_std sont normalises au sens de Wagner (2008) : r(g) =
- * N_neutral(g)/K, avec K = 2*n^2 le nombre total de voisins (n^2 poids,
- * +-1 chacun). R_P_mean = moyenne_g[r(g)] et R_P_std son ecart-type, sur
- * les genotypes g realisant le phenotype (f_1,...,f_n).
+ * N_neutral(g)/K, avec K = n * SBFStatTable.neighborCount() le nombre total
+ * de voisins (n poids par colonne, chacun mutable vers toute autre valeur de
+ * [-w_bound,w_bound], somme sur les n colonnes). R_P_mean = moyenne_g[r(g)]
+ * et R_P_std son ecart-type, sur les genotypes g realisant le phenotype
+ * (f_1,...,f_n).
  *
  * Ce calcul est exact (pas un echantillonnage) et ne necessite aucun appel a
  * clingo.
@@ -68,8 +70,11 @@ public class Statifier implements Processor<SBNP, String> {
             eP += table.nbDistinctNeighborPhenotypes(code);
         }
 
-        // Normalisation a la Wagner (2008) : r(g) = N_neutral(g)/K, K = 2*n^2.
-        double k = 2.0 * n * n;
+        // Normalisation a la Wagner (2008) : r(g) = N_neutral(g)/K. rPMean est
+        // une somme sur les n colonnes de neutralCountMean(f_j), chacune
+        // comptant table.neighborCount() voisins ; K est donc le total sur
+        // les n colonnes.
+        double k = n * (double) table.neighborCount();
 
         return input.toCsvRow(includeWeightsAndTransitions.getValue() != 0)
                 + "," + gCount + "," + (Math.sqrt(rPVar) / k) + "," + (rPMean / k) + "," + eP;
