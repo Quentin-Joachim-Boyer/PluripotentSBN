@@ -2,6 +2,7 @@ package PSBN.util;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -49,6 +50,7 @@ public final class SBFStatTable {
     private final Map<BitSet, Double> neutralCountMean = new HashMap<>();
     private final Map<BitSet, Double> neutralCountVar = new HashMap<>();
     private final Map<BitSet, Integer> nbDistinctNeighborPhenotypes = new HashMap<>();
+    private final Map<BitSet, Set<BitSet>> neighborPhenotypesMap = new HashMap<>();
 
     /**
      * Nombre total de voisins d'un genotype v (toutes positions confondues),
@@ -79,6 +81,18 @@ public final class SBFStatTable {
 
     public int nbDistinctNeighborPhenotypes(BitSet f) {
         return nbDistinctNeighborPhenotypes.getOrDefault(f, 0);
+    }
+
+    /** SBFs atteignables depuis f par une mutation d'un seul poids. */
+    public Set<BitSet> neighborPhenotypes(BitSet f) {
+        return neighborPhenotypesMap.getOrDefault(f, Collections.emptySet());
+    }
+
+    /** Encode un SBF BitSet comme chaîne de digits (ex. "0010" pour n=2). */
+    public static String sbfToString(BitSet f, int n) {
+        StringBuilder sb = new StringBuilder(1 << n);
+        for (int s = 0; s < (1 << n); s++) sb.append(f.get(s) ? '1' : '0');
+        return sb.toString();
     }
 
     /**
@@ -162,6 +176,7 @@ public final class SBFStatTable {
             tables.neutralCountMean.put(f, mean);
             tables.neutralCountVar.put(f, sumSq / counts.size());
             tables.nbDistinctNeighborPhenotypes.put(f, diffsByF.get(f).size());
+            tables.neighborPhenotypesMap.put(f, Collections.unmodifiableSet(diffsByF.get(f)));
         }
 
         return tables;

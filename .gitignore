@@ -1,6 +1,9 @@
 # Java
 JPPipeline/bin/**/*.class
 
+# JPP output
+JPPipeline/out/**
+
 # ASP output
 **/*output.csv
 **/*output.csv.gz

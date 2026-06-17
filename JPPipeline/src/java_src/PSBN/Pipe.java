@@ -165,9 +165,9 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                     csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
                     if (i < n || j < n) csv_header.append(",");
                 }
-            csv_header.append(",AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
+            csv_header.append(",AtrSize,NumBasins,dynamics,GenotypeCount,R_P_std,R_P_mean,E_P");
         } else {
-            csv_header.append("AtrSize,GenotypeCount,R_P_std,R_P_mean,E_P");
+            csv_header.append("AtrSize,NumBasins,dynamics,GenotypeCount,R_P_std,R_P_mean,E_P");
         }
         this.dataCollector.process(csv_header.toString());
     }

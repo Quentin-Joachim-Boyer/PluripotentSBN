@@ -59,12 +59,15 @@ public class Statifier implements Processor<SBNP, String> {
 
         SBFStatTable table = tablesByDimension.computeIfAbsent(n, SBFStatTable::compute);
 
-        int gCount = 1;
+        // GenotypeCount = produit_j columnSetSize(f_j). Ce produit peut depasser
+        // largement int et meme long pour n eleve (borne ~ (13^n)^n), d'ou un
+        // BigInteger pour rester exact.
+        java.math.BigInteger gCount = java.math.BigInteger.ONE;
         double rPMean = 0;
         double rPVar = 0;
         int eP = 0;
         for (BitSet code : f) {
-            gCount *= table.columnSetSize(code);
+            gCount = gCount.multiply(java.math.BigInteger.valueOf(table.columnSetSize(code)));
             rPMean += table.neutralCountMean(code);
             rPVar += table.neutralCountVar(code);
             eP += table.nbDistinctNeighborPhenotypes(code);

@@ -48,7 +48,7 @@ state(0..2**D-1) :- d(D).
 activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 
 % Declaration de la borne des poids Wb pour la dimension D. Données via un calcul indépendant (Cf freq_counting).
-% Pour D > 5, D n'est pas nécéssairement suffisant pour obtenir toutes les SBF 
+% Pour D > 5, D n'est pas nécessairement suffisant pour obtenir toutes les SBF 
 % (et donc tous les SBN), mais il est difficile d'assurer une borne pour ces dimensions.
 w_bound(1,1). w_bound(1,2). w_bound(2,3). w_bound(3,4). w_bound(5,5).
 w_bound(D,D) :- btree(_,_,D,_), D > 5.

@@ -3,17 +3,24 @@
     "configurations": [
         {
             "type": "java",
+            "name": "PairwiseDA",
+            "request": "launch",
+            "mainClass": "PSBN.PairwiseDA",
+            "projectName": "PSBN_bc11e64f"
+        },
+        {
+            "type": "java",
             "name": "Main",
             "request": "launch",
             "mainClass": "PSBN.Main",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "2",
-                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
+                "3",
+                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undercontrol.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
                 "0",
                 "${workspaceFolder}/JPPipeline/out",
-                "0"
+                "1"
             ]
         },
         {

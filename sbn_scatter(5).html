@@ -53,7 +53,7 @@
   }
   .scatter-controls label { font-size: 12px; color: var(--muted); }
 
-  .canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+  .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: #ffffff; }
   canvas { width: 100%; height: 100%; display: block; }
 
   .scatter-legend {
@@ -121,6 +121,13 @@
               border-left:1px solid var(--border);display:flex;align-items:center;gap:10px">
     <span style="font-size:11px;color:var(--muted)">count:</span>
     <canvas id="size-legend-canvas" height="22" style="display:block"></canvas>
+    <span id="errbar-toggle" onclick="toggleErrorBars()"
+          style="cursor:pointer;font-size:11px;color:var(--text);
+                 border:1px solid var(--border);border-radius:4px;
+                 padding:2px 8px;white-space:nowrap;user-select:none">
+      <span style="display:inline-block;width:14px;height:1.5px;background:currentColor;
+                   vertical-align:middle;margin-right:4px"></span>±1 std
+    </span>
   </div>
 </div>
 
@@ -130,6 +137,7 @@ let files = [];
 let curFile = 0;
 let selectedVecs = new Set(); // empty = all visible
 let scatterCache = null;
+let showErrorBars = true;
 
 // ─── CSV Parsing ─────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
@@ -189,51 +197,37 @@ function vecStrToSum(vecStr) {
   return m.reduce((a, v) => a + parseInt(v), 0);
 }
 
-// Small deterministic hash of a string -> integer
-function strHash(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
+function hslToHex(hue, sat, light) {
+  const h=hue, s=sat, l=light;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
+  else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
 }
 
-// Color based on decomposition degree (sum of vec components):
-//   - Base hue: blue (220°) for sum=1 -> red (0°) for sum=2^n
-//   - Log2 scale so intermediate cases are well spread
-//   - Each vec gets a unique color via two independent hashes:
-//     hue offset ±20° and lightness 45-65%
+// Assign colors by rank in sorted vec list.
+// Sorted by sum asc then lex, hue spread 260°->-40° with sqrt distortion.
+function assignVecColors(vecStrs) {
+  vecColorCache.clear();
+  const sorted = Array.from(vecStrs)
+    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b) || a.localeCompare(b));
+  const total = sorted.length;
+  sorted.forEach((vs, i) => {
+    const t     = total > 1 ? Math.pow(i / (total - 1), 0.3) : 0;
+    const hue   = (220 + t * 300 + 360) % 360;
+    const light = 0.30 + (i % 5) * 0.04; // slight variation 0.30-0.46
+    vecColorCache.set(vs, hslToHex(hue, 0.75, light));
+  });
+}
+
 function vecColor(vecStr) {
-  if (!vecColorCache.has(vecStr)) {
-    const sum = vecStrToSum(vecStr);
-    // Infer n from vecStr: count the comma-separated components
-    const nComponents = (vecStr.match(/,/g) || []).length + 1;
-    const n = nComponents - 1; // vec has n+1 components for dim n
-    // Anchor to theoretical range [1, 2^n] for stable colors regardless of which vecs are present
-    const minSum = 1;
-    const maxSum = Math.pow(2, n);
-
-    // Log2 scale: spreads intermediate decompositions better than linear
-    const logSum    = sum    > 0 ? Math.log2(sum)    : 0;
-    const logMaxSum = maxSum > 0 ? Math.log2(maxSum) : 1;
-    const logMinSum = minSum > 0 ? Math.log2(minSum) : 0;
-    const logRange  = logMaxSum - logMinSum || 1;
-    const baseHue   = 220 - ((logSum - logMinSum) / logRange) * 220;
-
-    // Two independent hashes for unique hue offset and lightness per vec
-    const h1 = strHash(vecStr);
-    const h2 = strHash(vecStr.split('').reverse().join('') + 'x');
-    const hue   = ((baseHue + (h1 % 41) - 20) % 360 + 360) % 360;
-    const light = 45 + (h2 % 5) * 5;  // 45, 50, 55, 60, 65
-
-    const h=hue, s=0.72, l=light/100;
-    const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
-    let r,g,b;
-    if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
-    else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
-    vecColorCache.set(vecStr, '#'+[r+m,g+m,b+m].map(v=>
-      Math.round(v*255).toString(16).padStart(2,'0')).join(''));
-  }
-  return vecColorCache.get(vecStr);
+  return vecColorCache.get(vecStr) ?? '#888888';
 }
+
+
+
+
 
 // ─── File loading ─────────────────────────────────────────────────────────────
 async function parseCSVStream(file) {
@@ -417,39 +411,44 @@ function buildScatterCache() {
   const allVecStrs = new Set();
   const rawPts = []; // lightweight [x, y, vecStr, weight] tuples
 
+  // Detect which axis is R_P_mean and find matching std column
+  const meanAxis = xKey === 'R_P_mean' ? 'x' : yKey === 'R_P_mean' ? 'y' : null;
+  const stdKey   = meanAxis ? 'R_P_std' : null;
+
   for (const row of rows) {
     const x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
     if (isNaN(x) || isNaN(y)) continue;
     const vec = getRowVec(row, files[curFile].decomp_vec);
     const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
     const weight = parseFloat(row[sizeKey]) || 1;
+    const std    = stdKey ? (parseFloat(row[stdKey]) || 0) : 0;
     if (x < xMin) xMin=x; if (x > xMax) xMax=x;
     if (y < yMin) yMin=y; if (y > yMax) yMax=y;
     allVecStrs.add(vecStr);
-    rawPts.push(x, y, vecStr, weight); // flat array = less GC pressure
+    rawPts.push(x, y, vecStr, weight, std); // 5 values per point
   }
   if (!rawPts.length) return false;
 
   // Assign colors in deterministic order
-  vecColorCache.clear();
-  Array.from(allVecStrs)
-    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b) || a.localeCompare(b))
-    .forEach(vs => vecColor(vs));
+  assignVecColors(allVecStrs);
 
-  // Aggregate into pointMap using rounded coordinates
+  // Aggregate into pointMap: 4 sig digits for d<=3, 3 otherwise
   const xRange0 = xMax - xMin || 1, yRange0 = yMax - yMin || 1;
-  const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - 2);
-  const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - 2);
+  const sigDigits = files[curFile].rows[0] && Object.keys(files[curFile].rows[0]).filter(k => /^v_\d+$/.test(k)).length <= 4 ? 4 : 3;
+  const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - sigDigits);
+  const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - sigDigits);
   const pointMap = new Map();
-  for (let i = 0; i < rawPts.length; i += 4) {
+  for (let i = 0; i < rawPts.length; i += 5) {
     const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
     const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
     const vecStr = rawPts[i+2];
     const weight = rawPts[i+3];
+    const std    = rawPts[i+4];
     const key = `${rx}|${ry}|${vecStr}`;
-    if (!pointMap.has(key)) pointMap.set(key, { x: rx, y: ry, vecStr, count: 0 });
+    if (!pointMap.has(key)) pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0 });
     const entry = pointMap.get(key);
     if (weight > entry.count) entry.count = weight;
+    if (std    > entry.std)   entry.std   = std;   // keep max std
   }
 
   const allPts = Array.from(pointMap.values());
@@ -476,7 +475,7 @@ function buildScatterCache() {
     byVec.get(p.vecStr).push(p);
   }
 
-  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey };
+  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis };
 
   // Build legend (only when cache is rebuilt)
   drawSizeLegend(minR, maxR, maxCount);
@@ -495,6 +494,13 @@ function buildScatterCache() {
     }).join('');
   }
   return true;
+}
+
+function toggleErrorBars() {
+  showErrorBars = !showErrorBars;
+  const btn = document.getElementById('errbar-toggle');
+  if (btn) btn.style.opacity = showErrorBars ? '1' : '0.3';
+  if (scatterCache) _renderScatter();
 }
 
 function showLoading() {
@@ -522,7 +528,7 @@ function drawScatter() {
 function _renderScatter() {
   const canvas = document.getElementById('scatter-canvas');
   if (!canvas) return;
-  const { allPts, xMin, xMax, yMin, yMax, xKey, yKey } = scatterCache;
+  const { allPts, xMin, xMax, yMin, yMax, xKey, yKey, meanAxis } = scatterCache;
 
   const DPR = window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -544,14 +550,14 @@ function _renderScatter() {
   const nTicks = 5;
   for (let i=0; i<=nTicks; i++) {
     const vx=xMin+i/nTicks*xRange, vy=yMin+i/nTicks*yRange;
-    ctx.strokeStyle='#252d3d'; ctx.lineWidth=1;
+    ctx.strokeStyle='#e2e8f0'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(toX(vx),pad); ctx.lineTo(toX(vx),H-pad); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(pad,toY(vy)); ctx.lineTo(W-pad,toY(vy)); ctx.stroke();
-    ctx.fillStyle='#64748b'; ctx.font='10px JetBrains Mono,monospace';
+    ctx.fillStyle='#475569'; ctx.font='10px JetBrains Mono,monospace';
     ctx.textAlign='center'; ctx.fillText(vx.toFixed(2),toX(vx),H-pad+14);
     ctx.textAlign='right';  ctx.fillText(vy.toFixed(2),pad-6,toY(vy)+4);
   }
-  ctx.fillStyle='#94a3b8'; ctx.font='12px DM Sans,sans-serif';
+  ctx.fillStyle='#334155'; ctx.font='12px DM Sans,sans-serif';
   ctx.textAlign='center'; ctx.fillText(xKey,W/2,H-4);
   ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(yKey,0,0); ctx.restore();
@@ -571,13 +577,36 @@ function _renderScatter() {
     .sort((a, b) => vecStrToSum(a) - vecStrToSum(b));
   for (const vs of sortedVecs) {
     for (const p of byVecOrdered.get(vs)) {
+      const cx = toX(p.x), cy = toY(p.y);
+      const fill   = `rgba(${p.r},${p.g},${p.b},0.8)`;
+      const stroke = `rgba(${p.r},${p.g},${p.b},1)`;
+      ctx.lineWidth = 0.8;
+
+      // Always draw the circle first
       ctx.beginPath();
-      ctx.arc(toX(p.x), toY(p.y), p.radius, 0, Math.PI*2);
-      ctx.fillStyle   = `rgba(${p.r},${p.g},${p.b},0.8)`;
-      ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},1)`;
-      ctx.lineWidth   = 0.8;
+      ctx.arc(cx, cy, p.radius, 0, Math.PI*2);
+      ctx.fillStyle   = fill;
+      ctx.strokeStyle = stroke;
       ctx.fill();
       ctx.stroke();
+
+      // Draw 1px error bar if std available and enabled
+      if (showErrorBars && meanAxis && p.std > 0) {
+        const stdPx = meanAxis === 'x'
+          ? Math.abs(toX(p.x + p.std) - toX(p.x))
+          : Math.abs(toY(p.y - p.std) - toY(p.y));
+        ctx.beginPath();
+        if (meanAxis === 'x') {
+          ctx.moveTo(cx - stdPx, cy);
+          ctx.lineTo(cx + stdPx, cy);
+        } else {
+          ctx.moveTo(cx, cy - stdPx);
+          ctx.lineTo(cx, cy + stdPx);
+        }
+        ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},0.7)`;
+        ctx.lineWidth   = 1;
+        ctx.stroke();
+      }
     }
   }
 }

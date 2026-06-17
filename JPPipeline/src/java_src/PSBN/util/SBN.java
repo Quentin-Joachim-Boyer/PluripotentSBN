@@ -127,6 +127,7 @@ public class SBN {
     /**
      * Construit la ligne CSV : f_j (bitstrings) et w_i,j sont omis si
      * {@code includeWeightsAndTransitions} est false.
+     * Inclut toujours AtrSize et dynamics (encodage des attracteurs par etat).
      */
     public String toCsvRow(boolean includeWeightsAndTransitions) {
         StringBuilder sb = new StringBuilder();
@@ -144,7 +145,51 @@ public class SBN {
                 }
             }
         }
-        sb.append(meanSquaredAttractorSize());
+        Map<List<Integer>, Set<Integer>> basins = computeAttractionBasins();
+        sb.append(meanSquaredAttractorSize(basins));
+        sb.append(",");
+        sb.append(basins.size()); // NumBasins : nombre d'attracteurs = nombre de bassins
+        sb.append(",");
+        sb.append(attractorDynamicsEncoding(basins));
+        return sb.toString();
+    }
+
+    /**
+     * Encode, pour chaque etat s, le cycle attracteur auquel il converge.
+     * Format : chaines separees par '|', une par etat s=0..2^n-1 ;
+     * chaque chaine est le cycle en forme canonique (rotation minimale,
+     * en partant de l'etat minimal), etats separes par ','.
+     * Ex. pour d=3 : "0|1,5|4|4|0|1,5|4|4".
+     * Sert au calcul de dDA en Python : dDA(g,g') = somme_s dCYCLE(lim_g(s), lim_g'(s)).
+     */
+    public String attractorDynamicsEncoding(Map<List<Integer>, Set<Integer>> basins) {
+        int nbStates = 1 << n;
+        String[] stateToAtr = new String[nbStates];
+        for (Map.Entry<List<Integer>, Set<Integer>> entry : basins.entrySet()) {
+            String canonical = canonicalCycle(entry.getKey());
+            for (int s : entry.getValue()) {
+                stateToAtr[s] = canonical;
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int s = 0; s < nbStates; s++) {
+            if (s > 0) sb.append('|');
+            sb.append(stateToAtr[s]);
+        }
+        return sb.toString();
+    }
+
+    /** Rotation minimale d'un cycle : commence a l'etat le plus petit. */
+    private static String canonicalCycle(List<Integer> cycle) {
+        int minIdx = 0;
+        for (int i = 1; i < cycle.size(); i++) {
+            if (cycle.get(i) < cycle.get(minIdx)) minIdx = i;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < cycle.size(); i++) {
+            if (i > 0) sb.append(':');  // ':' et non ',' pour ne pas casser le CSV
+            sb.append(cycle.get((minIdx + i) % cycle.size()));
+        }
         return sb.toString();
     }
 
@@ -161,12 +206,8 @@ public class SBN {
         return sum;
     }
 
-    /**
-     * Moyenne des carres des tailles des attracteurs (longueurs de cycle),
-     * tous attracteurs confondus.
-     */
-    private double meanSquaredAttractorSize() {
-        Set<List<Integer>> attractors = computeAttractionBasins().keySet();
+    private double meanSquaredAttractorSize(Map<List<Integer>, Set<Integer>> basins) {
+        Set<List<Integer>> attractors = basins.keySet();
         long sumOfSquares = 0;
         for (List<Integer> attractor : attractors) {
             long size = attractor.size();
