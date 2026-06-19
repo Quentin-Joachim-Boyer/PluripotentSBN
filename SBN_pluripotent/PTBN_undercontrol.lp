@@ -20,12 +20,14 @@
 % Dimension 2
 % btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil).
 % btree(nil,nil,2,nil).
-btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil).
+% btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil).
+% btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil).
+
 
 % Dimension 3
 % btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil).
 % btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil).
-% btree(nil,nil,3,nil).
+btree(nil,nil,3,nil).
 % btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil).
 
 % Dimension 4
@@ -111,4 +113,4 @@ transition_function_bit(N,S) :- node(N), state(S), &sum{w(NI,N) : node(NI), acti
 % #show node/2.
 % #show state/1.
 % #show activated/3.
-#show fixed_state/2.
+% #show fixed_state/2.

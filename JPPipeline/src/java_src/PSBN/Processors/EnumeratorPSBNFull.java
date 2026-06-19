@@ -51,6 +51,8 @@ public class EnumeratorPSBNFull implements Processor<DecompVector, EnumerationRe
         for (int i = 0; i <= n; i++) {
             constants.put("v" + (n - i), dv.get(i));
         }
+        // Orientation de l'arbre (selectionne le btree dans setup_btree via `o`).
+        constants.put("o", dv.getOrientation());
 
         // Cap effectif : on ne demande jamais plus que le seuil de garde-fou.
         int userN = nSolutions.getValue();

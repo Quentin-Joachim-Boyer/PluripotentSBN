@@ -14,32 +14,54 @@
 
 % 10 valid decomposition vectors for d=3
 
-% vec = <0,0,0,8>
+% vec = <0,0,0,8>  (1 orientation(s))
 btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 8, v1 = 0, v2 = 0, v3 = 0.
 
-% vec = <0,0,1,6>
-btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 6, v1 = 1, v2 = 0, v3 = 0.
+% vec = <0,0,1,6>  (4 orientation(s))
+1 { orient(0); orient(1); orient(2); orient(3) } 1 :- v0 = 6, v1 = 1, v2 = 0, v3 = 0.
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(0).
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(1).
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(2).
+btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(3).
 
-% vec = <0,0,2,4>
-btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 4, v1 = 2, v2 = 0, v3 = 0.
+% vec = <0,0,2,4>  (6 orientation(s))
+1 { orient(0); orient(1); orient(2); orient(3); orient(4); orient(5) } 1 :- v0 = 4, v1 = 2, v2 = 0, v3 = 0.
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(0).
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(1).
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(2).
+btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(3).
+btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(4).
+btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(5).
 
-% vec = <0,0,3,2>
-btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 2, v1 = 3, v2 = 0, v3 = 0.
+% vec = <0,0,3,2>  (4 orientation(s))
+1 { orient(0); orient(1); orient(2); orient(3) } 1 :- v0 = 2, v1 = 3, v2 = 0, v3 = 0.
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(0).
+btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(1).
+btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(2).
+btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(3).
 
-% vec = <0,0,4,0>
+% vec = <0,0,4,0>  (1 orientation(s))
 btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- v0 = 0, v1 = 4, v2 = 0, v3 = 0.
 
-% vec = <0,1,0,4>
-btree(btree(nil,nil,2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 4, v1 = 0, v2 = 1, v3 = 0.
+% vec = <0,1,0,4>  (2 orientation(s))
+1 { orient(0); orient(1) } 1 :- v0 = 4, v1 = 0, v2 = 1, v3 = 0.
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(nil,nil,2,nil),3,nil) :- orient(0).
+btree(btree(nil,nil,2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(1).
 
-% vec = <0,1,1,2>
-btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- v0 = 2, v1 = 1, v2 = 1, v3 = 0.
+% vec = <0,1,1,2>  (4 orientation(s))
+1 { orient(0); orient(1); orient(2); orient(3) } 1 :- v0 = 2, v1 = 1, v2 = 1, v3 = 0.
+btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),btree(nil,nil,2,nil),3,nil) :- orient(0).
+btree(btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(nil,nil,2,nil),3,nil) :- orient(1).
+btree(btree(nil,nil,2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(2).
+btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil) :- orient(3).
 
-% vec = <0,1,2,0>
-btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- v0 = 0, v1 = 2, v2 = 1, v3 = 0.
+% vec = <0,1,2,0>  (2 orientation(s))
+1 { orient(0); orient(1) } 1 :- v0 = 0, v1 = 2, v2 = 1, v3 = 0.
+btree(btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),btree(nil,nil,2,nil),3,nil) :- orient(0).
+btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil) :- orient(1).
 
-% vec = <0,2,0,0>
+% vec = <0,2,0,0>  (1 orientation(s))
 btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil) :- v0 = 0, v1 = 0, v2 = 2, v3 = 0.
 
-% vec = <1,0,0,0>
+% vec = <1,0,0,0>  (1 orientation(s))
 btree(nil,nil,3,nil) :- v0 = 0, v1 = 0, v2 = 0, v3 = 1.

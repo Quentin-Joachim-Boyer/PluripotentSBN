@@ -107,27 +107,36 @@ Answer Set Programming, calcul parallèle.
 
 Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (SBN et variations) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
 
-Le modèle exploré ici est donc celui des 
+La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter des comportements distincts (potentiellement voisins ou pas). Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
 
-La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter des comportements distincts (potentiellement voisins ou pas). Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, mais aussi la génération des pensées par nos neurones (si l'on voit les pensées comme le comportement d'un groupe de neurones). La pluripotence prend donc sens dans le formalisme des réseaux booléens comme la présence de dynamiques disjointes dans le graphe de transition (la dynamique) des états du réseau (la structure).
+Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation du réseau comme une STRUCTURE (n nœuds) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE dans l'espace du graphe de transition de ces états (hypercube à n dimensions). [Insérer illustration]. La pluripotence prend donc sens dans le formalisme des SBN comme la présence de sous-dynamiques (au sens général : bassin d'attractions) disjointes dans la dynamique globale, et cela peut se faire de manière organisée (les supports des bassins disjoints sont des hyper-faces par exemple, et donc la sous-dynamique correspond peut-être elle aussi à un SBN) ou non (supports imbriqués).
+
 
 
 \subsection{Positionnement dans les travaux de l'équipe}
 
--- Les travaux passés et présents de l'équipe.
+Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. En voici une liste (non exhaustive, mais rassemblant les principaux).
 
-- Travaux de recherche généraux (HDR Nicolas).
-- JPP et thèse de Rémi.
-- Rapports Ailing et Rémy.
-- Rapport Danwen.
-- Programmes de Laurent.
-- Simulations de Corentin.
+- HDR de Nicolas Glade : la bible donnant le cadre général [Cf. tout].
+
+- Thèse de Rémi Segretain : et développement de la Java Parallel Pipeline (JPP) [Cf. partie technique]
+
+- Rapports d'Ailing Bonnet et de Rémy Defossez : approfondissement des travaux de Rémi [Cf. partie calcul de propriétés].
+
+- Rapport de Danwen Wu : Démonstration mathématique de l'équivalence entre l'existence de dynamiques séparées sur deux hyper-faces disjointes et de contraintes sur les poids du réseau [Cf. partie Méthodologie d'exploration].
+
+
+
+- Programmes de Laurent Trilling : le point de départ de ce travail, l'énumération en Answer Set Programming (ASP) des réseaux pluripotents sous nœud de contrôle via la dynamique [Cf. partie Méthodologie d'exploration].
+
+Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique d'un côté et expérimental de l'autre se rejoignant sur l'objectif exploratoire, nos échanges nous auront permis l'un l'autre de nous guider mutuellement.  
+
 
 \subsection{Contributions de ce stage}
 
 -- La pluripotence.
 
-- Calcul efficace.
+- Calcul efficace (scalabilité).
 - Visualisation efficace.
 - Cet article.
 - Discussions.

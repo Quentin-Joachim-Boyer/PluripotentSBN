@@ -1,4 +1,4 @@
-#include "PSBN_undercontrol.lp".
+#include "PTBN_undercontrol.lp".
 
 leaf_node(N,O) :- btree(nil,nil,N,O).
 noncontrol_node(N,LN,O) :- node(N), leaf_node(LN,O), N <= LN.

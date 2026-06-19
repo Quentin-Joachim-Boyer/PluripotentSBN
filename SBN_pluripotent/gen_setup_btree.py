@@ -34,25 +34,51 @@ def valid_vecs(n):
                 yield list(counts)
 
 
-def btree_term(vec, n):
-    """Build the btree/4 term string for the given decomposition vector."""
-    target = {}
+def btree_terms(vec, n):
+    """
+    Enumère TOUTES les formes d'arbres de décomposition pour un vecteur donné.
+
+    Un vecteur asymétrique (ex. <0,1,2>) admet plusieurs orientations d'arbre
+    distinctes (selon la répartition des feuilles entre sous-arbres gauche/droit).
+    L'ancien `btree_term` glouton n'en produisait qu'une, ce qui faisait perdre
+    les dynamiques réalisables uniquement sous les autres orientations.
+
+    Retourne la liste triée et dédupliquée des chaînes btree/4.
+    """
+    # counts : dim de feuille -> nombre de feuilles de cette dim
+    counts0 = {}
     for i, cnt in enumerate(vec):
         d = n - i
-        if cnt > 0 and d >= 1:
-            target[d] = cnt
+        if cnt > 0:
+            counts0[d] = cnt
 
-    def build(dim):
-        if target.get(dim, 0) > 0:
-            target[dim] -= 1
-            return f"btree(nil,nil,{dim},nil)"
-        if dim <= 0:
-            return f"btree(nil,nil,{dim},nil)"
-        left  = build(dim - 1)
-        right = build(dim - 1)
-        return f"btree({left},{right},{dim},nil)"
+    def vol(counts):
+        return sum(c * (2 ** d) for d, c in counts.items())
 
-    return build(n)
+    def sub_multisets_with_vol(counts, target):
+        """Tous les sous-multiensembles de `counts` de volume exact `target`."""
+        dims = sorted(counts)
+        ranges = [range(counts[d] + 1) for d in dims]
+        for pick in iproduct(*ranges):
+            chosen = {d: k for d, k in zip(dims, pick) if k > 0}
+            if vol(chosen) == target:
+                yield chosen
+
+    def build(dim, counts):
+        # Précondition : vol(counts) == 2**dim.
+        if counts == {dim: 1}:                      # une seule feuille de dim `dim`
+            return [f"btree(nil,nil,{dim},nil)"]
+        half = 2 ** (dim - 1)
+        out = set()
+        for left in sub_multisets_with_vol(counts, half):
+            right = {d: counts[d] - left.get(d, 0)
+                     for d in counts if counts[d] - left.get(d, 0) > 0}
+            for L in build(dim - 1, left):
+                for R in build(dim - 1, right):
+                    out.add(f"btree({L},{R},{dim},nil)")
+        return sorted(out)
+
+    return sorted(set(build(n, counts0)))
 
 
 def guards(vec, n):
@@ -82,6 +108,11 @@ def generate(n):
     ]
     for i in range(n+1):
         lines.append(f"#const v{i} = 0.")
+    # Index d'orientation de l'arbre (les vecteurs asymetriques en ont plusieurs).
+    # clingcon exige un btree FACTUEL (pour declarer les domaines &dom), donc on
+    # ne peut pas unir les orientations par choice/disjonction dans un meme run :
+    # chaque orientation est un run separe, selectionne par la constante `o`.
+    lines.append("#const o = 0.")
     lines.append("")
 
     vecs = list(valid_vecs(n))
@@ -89,14 +120,20 @@ def generate(n):
     lines.append("")
 
     for vec in vecs:
-        term  = btree_term(vec, n)
+        terms = btree_terms(vec, n)
         guard = guards(vec, n+1)
         vec_str = ",".join(map(str, vec))
-        lines.append(f"% vec = <{vec_str}>")
-        lines.append(f"{term} :- {guard}.")
+        lines.append(f"% vec = <{vec_str}>  ({len(terms)} orientation(s))")
+        for j, term in enumerate(terms):
+            lines.append(f"{term} :- {guard}, o = {j}.")
         lines.append("")
 
     return "\n".join(lines)
+
+
+def orientation_count(vec, n):
+    """Nombre d'orientations d'arbre pour un vecteur (= nb de runs `o` a lancer)."""
+    return len(btree_terms(vec, n))
 
 
 if __name__ == "__main__":

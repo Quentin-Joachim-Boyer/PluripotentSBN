@@ -6,21 +6,24 @@
 %   clingcon N -c d=2 -c v0=X ... -c v2=Y \
 %       setup_btree_2d.lp btree_constructor.lp
 
-#const d = 2.
 #const v0 = 0.
 #const v1 = 0.
 #const v2 = 0.
+% #const o = 0.
+
+d(2).
 
 % 4 valid decomposition vectors for d=2
 
-% vec = <0,0,4>
-btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil) :- v0 = 4, v1 = 0, v2 = 0.
+% vec = <0,0,4>  (1 orientation(s))
+btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil) :- v0 = 4, v1 = 0, v2 = 0, o = 0.
 
-% vec = <0,1,2>
-btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil) :- v0 = 2, v1 = 1, v2 = 0.
+% vec = <0,1,2>  (2 orientation(s))
+1 { btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(nil,nil,1,nil),2,nil);
+btree(btree(nil,nil,1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil) } 1 :- v0 = 2, v1 = 1, v2 = 0. %, o = 1.
 
-% vec = <0,2,0>
-btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil) :- v0 = 0, v1 = 2, v2 = 0.
+% vec = <0,2,0>  (1 orientation(s))
+btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil) :- v0 = 0, v1 = 2, v2 = 0, o = 0.
 
-% vec = <1,0,0>
-btree(nil,nil,2,nil) :- v0 = 0, v1 = 0, v2 = 1.
+% vec = <1,0,0>  (1 orientation(s))
+btree(nil,nil,2,nil) :- v0 = 0, v1 = 0, v2 = 1, o = 0.
