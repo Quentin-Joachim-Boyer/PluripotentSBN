@@ -182,19 +182,35 @@ function buildGraph(rows, header){
   const statKeys=header.filter(h=>!/^v_\d+$/.test(h)&&!/^f_\d+$/.test(h)&&!/^w_/.test(h));
 
   const neighbors=sbfNeighbors(n);
-  const N=rows.length;
 
-  // lookup vec(string joint) -> index ; les f_ sont déjà des bitstrings paddés
-  const vecs=new Array(N);
-  const lookup=new Map();
-  for(let i=0;i<N;i++){
-    const vec=fcols.map(c=>rows[i][c]);
-    vecs[i]=vec;
-    lookup.set(vec.join('|'), i);
+  // Déduplique par signature dynamique f_* : conserve le vecteur de décomposition
+  // le plus fin (somme des v_k maximale = plus de feuilles = plus décomposé).
+  const fkeyToIdx=new Map();
+  const uniqueRows=[];
+  const decomp=[];    // meilleure décomposition (pour coloration métagraphe)
+  const ownDecomp=[]; // décomposition de la ligne représentative (pour l'hypercube)
+  const decompSum=[];
+  for(const row of rows){
+    const fkey=fcols.map(c=>row[c]).join('|');
+    if(!fkeyToIdx.has(fkey)){
+      fkeyToIdx.set(fkey, uniqueRows.length);
+      uniqueRows.push(row);
+      const dv=vcols.length ? vcols.map(c=>+row[c]) : [];
+      decomp.push(dv);
+      ownDecomp.push(dv.slice());
+      decompSum.push(vcols.reduce((s,c)=>s+(+row[c]),0));
+    } else if(vcols.length){
+      const idx=fkeyToIdx.get(fkey);
+      const s=vcols.reduce((a,c)=>a+(+row[c]),0);
+      if(s>decompSum[idx]){decomp[idx]=vcols.map(c=>+row[c]);decompSum[idx]=s;}
+    }
   }
 
+  const N=uniqueRows.length;
+  const vecs=uniqueRows.map(row=>fcols.map(c=>row[c]));
+
   const adj=Array.from({length:N},()=>[]);
-  const eb=[]; // flat edge buffer
+  const eb=[];
   for(let i=0;i<N;i++){
     const vec=vecs[i];
     for(let k=0;k<n;k++){
@@ -202,22 +218,25 @@ function buildGraph(rows, header){
       const saved=vec[k];
       for(const nb of nbrs){
         vec[k]=nb;
-        const j=lookup.get(vec.join('|'));
+        const j=fkeyToIdx.get(vec.join('|'));
         if(j!==undefined && j>i){adj[i].push(j);adj[j].push(i);eb.push(i,j);}
       }
       vec[k]=saved;
     }
   }
 
-  // décompositions + stats
-  const decomp=new Array(N);
+  // Stats moyennées sur les doublons
   const stats={}; for(const k of statKeys) stats[k]=new Float64Array(N);
-  for(let i=0;i<N;i++){
-    decomp[i]=vcols.map(c=>+rows[i][c]);
-    for(const k of statKeys){const x=parseFloat(rows[i][k]); stats[k][i]=isNaN(x)?NaN:x;}
+  const statCounts=new Int32Array(N);
+  for(const row of rows){
+    const fkey=fcols.map(c=>row[c]).join('|');
+    const i=fkeyToIdx.get(fkey);
+    statCounts[i]++;
+    for(const k of statKeys){const x=parseFloat(row[k]); if(!isNaN(x))stats[k][i]+=x;}
   }
+  for(const k of statKeys) for(let i=0;i<N;i++) if(statCounts[i]>1) stats[k][i]/=statCounts[i];
 
-  return {n,N,adj,decomp,stats,statKeys,fcols,edges:new Int32Array(eb)};
+  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,edges:new Int32Array(eb),rows:uniqueRows};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -268,17 +287,19 @@ function nodeValue(i){
 }
 function computeContRange(){
   if(colorMode==='decomp'){contRange=null;return;}
+  const useLog=G.logStats&&G.logStats.has(colorMode);
   let mn=Infinity,mx=-Infinity;
-  for(let i=0;i<G.N;i++){const v=nodeValue(i); if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;}}
-  contRange={min:mn,max:mx};
+  for(let i=0;i<G.N;i++){let v=nodeValue(i);if(!isNaN(v)){if(useLog)v=Math.log(v);if(v<mn)mn=v;if(v>mx)mx=v;}}
+  contRange={min:mn,max:mx,log:useLog};
 }
 function nodeColorRGB(i){
   if(colorMode==='decomp'){
     const c=dcColorMap.get(dcKey(G.decomp[i]))||'#888';
     const n=parseInt(c.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255];
   }
-  const v=nodeValue(i);
+  let v=nodeValue(i);
   if(isNaN(v)) return [100,100,100];
+  if(contRange.log) v=Math.log(Math.max(v,1e-300));
   const t=contRange.max>contRange.min?(v-contRange.min)/(contRange.max-contRange.min):0.5;
   return viridis(t);
 }
@@ -405,11 +426,11 @@ function startLayout(){
       if(d.cmd==='tick'){
         setLoading('<span class="spinning">⟳</span> layout '+Math.round(d.it/d.iter*100)+'%');
         if(!userInteracted) fitView();
-        render();
+        scheduleRender();
       }else{
         layoutRunning=false; setLoading('');
         if(!userInteracted) fitView();
-        buildEdgeBitmap(); render();
+        buildEdgeBitmap(); scheduleRender();
         worker.terminate(); worker=null;
       }
     }
@@ -433,6 +454,28 @@ function applyPositions(x,y){
 // ═══════════════════════════════════════════════════════════════════════════
 //  Rendu
 // ═══════════════════════════════════════════════════════════════════════════
+// Cache de rendu : reconstruit après chargement ou changement de couleur
+let nodeKeyCache=null;   // string[N] — dcKey(decomp) pré-calculé par nœud
+let groupNodes=null;     // Map<key, Int32Array> — indices de nœuds par groupe
+let dcRenderOrder=null;  // tableau trié de DECOMPS pour le rendu
+let accentCol='#4f8ef7', accent2Col='#a78bfa';
+function buildRenderCache(){
+  if(!G)return;
+  nodeKeyCache=new Array(G.N);
+  const tmp=new Map();
+  for(let i=0;i<G.N;i++){
+    const k=dcKey(G.decomp[i]);
+    nodeKeyCache[i]=k;
+    if(!tmp.has(k))tmp.set(k,[]);
+    tmp.get(k).push(i);
+  }
+  groupNodes=new Map();
+  for(const[k,arr]of tmp)groupNodes.set(k,new Int32Array(arr));
+  dcRenderOrder=[...DECOMPS].sort((a,b)=>(dcCount.get(dcKey(b))||0)-(dcCount.get(dcKey(a))||0));
+  const s=getComputedStyle(document.documentElement);
+  accentCol=s.getPropertyValue('--accent').trim()||'#4f8ef7';
+  accent2Col=s.getPropertyValue('--accent2').trim()||'#a78bfa';
+}
 function resize(){const r=document.getElementById('canvas-wrap');const DPR=window.devicePixelRatio||1;W=canvas.width=r.clientWidth*DPR;H=canvas.height=r.clientHeight*DPR;}
 const wx=x=>panX+x*zoom, wy=y=>panY+(1-y)*zoom;
 const sx=px=>(px-panX)/zoom, sy=py=>1-(py-panY)/zoom;
@@ -478,50 +521,67 @@ function buildEdgeBitmap(){
   bc.stroke(); edgeBitmap=oc;
 }
 
+let _rafPending=false;
+function scheduleRender(){if(_rafPending)return;_rafPending=true;requestAnimationFrame(()=>{_rafPending=false;render();});}
 function render(){
-  if(!G||!nodeX)return;
+  if(!G||!nodeX||!nodeKeyCache)return;
   ctx.clearRect(0,0,W,H);
   if(showEdges && edgeBitmap && !layoutRunning){
     ctx.drawImage(edgeBitmap,0,0,BS,BS,panX,panY,zoom,zoom);
   }
-  // nœuds: dominante d'abord (fond), rares au-dessus (en mode decomp)
+  const focus=sel!==-1?sel:hov; // nœud principal (arêtes + voisins)
   ctx.globalAlpha=0.9;
   if(colorMode==='decomp'){
-    const order=[...DECOMPS].sort((a,b)=>(dcCount.get(dcKey(b))||0)-(dcCount.get(dcKey(a))||0));
-    for(const d of order){
+    // Un beginPath+fill par groupe de couleur (au lieu d'un par nœud)
+    for(const d of dcRenderOrder){
       const key=dcKey(d); if(hidden.has(key))continue;
+      const nodes=groupNodes.get(key); if(!nodes)continue;
       ctx.fillStyle=dcColorMap.get(key)||'#888';
-      for(let i=0;i<G.N;i++){
-        if(dcKey(G.decomp[i])!==key||i===hov||i===sel)continue;
-        ctx.beginPath();ctx.arc(wx(nodeX[i]),wy(nodeY[i]),nodeR(i),0,6.283);ctx.fill();
+      ctx.beginPath();
+      for(let ni=0;ni<nodes.length;ni++){
+        const i=nodes[ni],cx=wx(nodeX[i]),cy=wy(nodeY[i]),r=nodeRadius[i];
+        if(cx+r<0||cx-r>W||cy+r<0||cy-r>H)continue;
+        ctx.moveTo(cx+r,cy);ctx.arc(cx,cy,r,0,6.283);
       }
+      ctx.fill();
     }
   }else{
     for(let i=0;i<G.N;i++){
-      if(i===hov||i===sel)continue;
-      if(hidden.has(dcKey(G.decomp[i])))continue;
+      if(hidden.has(nodeKeyCache[i]))continue;
+      const cx=wx(nodeX[i]),cy=wy(nodeY[i]),r=nodeRadius[i];
+      if(cx+r<0||cx-r>W||cy+r<0||cy-r>H)continue;
       ctx.fillStyle=nodeColorCss(i);
-      ctx.beginPath();ctx.arc(wx(nodeX[i]),wy(nodeY[i]),nodeR(i),0,6.283);ctx.fill();
+      ctx.beginPath();ctx.moveTo(cx+r,cy);ctx.arc(cx,cy,r,0,6.283);ctx.fill();
     }
   }
   ctx.globalAlpha=1;
-  // focus
-  const focus=sel!==-1?sel:hov;
   if(focus!==-1){
     if(showEdges){
-      ctx.save();ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#4f8ef7';
+      ctx.save();ctx.strokeStyle=accentCol;
       ctx.globalAlpha=0.6;ctx.lineWidth=1.3;ctx.beginPath();
       for(const j of G.adj[focus]){ctx.moveTo(wx(nodeX[focus]),wy(nodeY[focus]));ctx.lineTo(wx(nodeX[j]),wy(nodeY[j]));}
       ctx.stroke();ctx.restore();
     }
+    ctx.globalAlpha=1;
     for(const j of G.adj[focus]){
       ctx.fillStyle=nodeColorCss(j);
-      ctx.beginPath();ctx.arc(wx(nodeX[j]),wy(nodeY[j]),nodeR(j)+2,0,6.283);ctx.fill();
+      ctx.beginPath();ctx.arc(wx(nodeX[j]),wy(nodeY[j]),nodeRadius[j],0,6.283);ctx.fill();
     }
-    ctx.fillStyle='#fff';
-    ctx.beginPath();ctx.arc(wx(nodeX[focus]),wy(nodeY[focus]),nodeR(focus)+3,0,6.283);ctx.fill();
-    ctx.fillStyle=nodeColorCss(focus);
-    ctx.beginPath();ctx.arc(wx(nodeX[focus]),wy(nodeY[focus]),nodeR(focus),0,6.283);ctx.fill();
+    ctx.lineWidth=1.5;
+    for(const j of G.adj[focus]){
+      ctx.strokeStyle='rgba(255,255,255,0.6)';
+      ctx.beginPath();ctx.arc(wx(nodeX[j]),wy(nodeY[j]),nodeRadius[j]+2.5,0,6.283);ctx.stroke();
+    }
+    // anneau du nœud sélectionné (blanc)
+    if(sel!==-1){
+      ctx.strokeStyle='#ffffff';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.arc(wx(nodeX[sel]),wy(nodeY[sel]),nodeRadius[sel]+3.5,0,6.283);ctx.stroke();
+    }
+    // anneau du nœud hover (accent2), toujours affiché même si sel actif
+    if(hov!==-1&&hov!==sel){
+      ctx.strokeStyle=accent2Col;ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(wx(nodeX[hov]),wy(nodeY[hov]),nodeRadius[hov]+3,0,6.283);ctx.stroke();
+    }
   }
 }
 
@@ -568,7 +628,9 @@ function trow(k,v){return `<div class="tip-row"><span class="tip-k">${k}</span><
 // Bloc stats + mini-dynamique, partagé entre tooltip (hover) et statbox (clic).
 function nodeStatsHTML(i){
   let h=trow('decomp',dcStr(G.decomp[i]))+trow('degré',G.adj[i].length);
-  for(const k of G.statKeys){const v=G.stats[k][i];h+=trow(k,isNaN(v)?'—':(Number.isInteger(v)?v:v.toFixed(4)));}
+  for(const k of G.colorableStats){
+    const v=G.stats[k][i];h+=trow(k,isNaN(v)?'—':(Number.isInteger(v)?v:v.toFixed(4)));
+  }
   return h;
 }
 function drawNodeDynamics(canvas,i){
@@ -581,12 +643,12 @@ function dynamicsBlockHTML(canvasId,w,hh){
 }
 function showTip(i,ex,ey){
   const tip=document.getElementById('tip');
-  tip.innerHTML=trow('id',i)+nodeStatsHTML(i)+dynamicsBlockHTML('tip-dyn',180,140)+networkBlockHTML(i,180,140);
+  tip.innerHTML=dynamicsBlockHTML('tip-dyn',180,140);
   tip.style.display='block';
   drawNodeDynamics(document.getElementById('tip-dyn'),i);
   const r=document.getElementById('canvas-wrap').getBoundingClientRect();
   tip.style.left=Math.min(ex+16,r.width-210)+'px';
-  tip.style.top=Math.min(ey+16,Math.max(4,r.height-430))+'px';
+  tip.style.top=Math.min(ey+16,Math.max(4,r.height-230))+'px';
 }
 const hideTip=()=>document.getElementById('tip').style.display='none';
 
@@ -595,34 +657,35 @@ const hideTip=()=>document.getElementById('tip').style.display='none';
 // ═══════════════════════════════════════════════════════════════════════════
 const wrap=document.getElementById('canvas-wrap');
 let dragMoved=false;
+let wrapRect=wrap.getBoundingClientRect();
+function toPx(ex,ey){const r=canvas.getBoundingClientRect(),DPR=window.devicePixelRatio||1;return[(ex-r.left)*DPR,(ey-r.top)*DPR];}
 wrap.addEventListener('mousedown',e=>{drag=true;dragMoved=false;dx0=e.clientX;dy0=e.clientY;px0=panX;py0=panY;wrap.classList.add('drag');});
 window.addEventListener('mouseup',()=>{drag=false;wrap.classList.remove('drag');});
 window.addEventListener('mousemove',e=>{
   if(!G||!nodeX)return;
-  const rect=canvas.getBoundingClientRect(),pr=canvas.width/rect.width;
-  const cpx=(e.clientX-rect.left)*pr,cpy=(e.clientY-rect.top)*pr;
+  const DPR=window.devicePixelRatio||1;
+  const[cpx,cpy]=toPx(e.clientX,e.clientY);
   if(drag){
     if(Math.abs(e.clientX-dx0)+Math.abs(e.clientY-dy0)>3){dragMoved=true;userInteracted=true;}
-    panX=px0+(e.clientX-dx0)*pr;panY=py0+(e.clientY-dy0)*pr;render();return;
+    panX=px0+(e.clientX-dx0)*DPR;panY=py0+(e.clientY-dy0)*DPR;scheduleRender();return;
   }
   const n=nearest(cpx,cpy);
-  if(n!==hov){hov=n;render();if(n!==-1)showTip(n,e.clientX-rect.left,e.clientY-rect.top);else hideTip();}
+  if(n!==hov){hov=n;if(n!==-1)showTip(n,e.clientX-wrapRect.left,e.clientY-wrapRect.top);else hideTip();scheduleRender();}
 });
 wrap.addEventListener('click',e=>{
   if(!G||!nodeX)return;
-  if(dragMoved)return; // c'était un glissement, pas un clic : on garde la sélection
-  const rect=canvas.getBoundingClientRect(),pr=canvas.width/rect.width;
-  const n=nearest((e.clientX-rect.left)*pr,(e.clientY-rect.top)*pr);
+  if(dragMoved)return;
+  const[cpx,cpy]=toPx(e.clientX,e.clientY);
+  const n=nearest(cpx,cpy);
   sel=(n===sel)?-1:n; updateStatbox(); render();
 });
 wrap.addEventListener('wheel',e=>{
   e.preventDefault();userInteracted=true;
-  const rect=canvas.getBoundingClientRect(),pr=canvas.width/rect.width;
-  const cpx=(e.clientX-rect.left)*pr,cpy=(e.clientY-rect.top)*pr;
+  const[cpx,cpy]=toPx(e.clientX,e.clientY);
   const f=e.deltaY<0?1.15:1/1.15;
-  panX=cpx-(cpx-panX)*f;panY=cpy-(cpy-panY)*f;zoom*=f;render();
+  panX=cpx-(cpx-panX)*f;panY=cpy-(cpy-panY)*f;zoom*=f;scheduleRender();
 },{passive:false});
-window.addEventListener('resize',()=>{resize();render();});
+window.addEventListener('resize',()=>{resize();wrapRect=wrap.getBoundingClientRect();render();});
 
 function fitView(){zoom=Math.min(W,H)*0.92;panX=(W-zoom)/2;panY=(H-zoom)/2;}
 function resetView(){userInteracted=true;fitView();render();}
@@ -649,7 +712,7 @@ function onSearch(){
 // Convention : w_i,j = poids de l'arc DE i VERS j. Une réalisation quelconque
 // du phénotype (les w_* du CSV ne sont pas minimisés).
 function extractWeights(rowIdx){
-  const row=files[curFile].rows[rowIdx], n=G.n, Wm={};
+  const row=G.rows[rowIdx], n=G.n, Wm={};
   for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)Wm[i+','+j]=parseInt(row['w_'+i+','+j])||0;
   return Wm;
 }
@@ -717,30 +780,29 @@ function groupColor(groupKey){
   return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
 }
 function hexA(hex,a){return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;}
-function freeInvBits(states,fixedBits,T,n){
-  const res=[];
-  for(let bit=n-1;bit>=0;bit--){if(fixedBits.has(bit))continue;if(states.every(s=>((T[s]>>bit)&1)===((s>>bit)&1)))res.push(bit);}
-  return res;
-}
 function buildDecompTree(vec,T,n){
-  const target={};
-  for(let i=0;i<vec.length;i++){const d=n-i;if(vec[i]>0&&d>=1)target[d]=(target[d]||0)+vec[i];}
-  if(!Object.keys(target).length)return null;
-  let nodeId=0;const nodes={},colorLeaves=[];let colorIdx=0;
-  function build(states,dim,fixed,parentId){
-    const id=++nodeId;
-    const node={id,states,dim,fixed:new Set(fixed),children:[],isColorLeaf:false,groupKey:null,splitBit:null};
-    nodes[id]=node;if(parentId)nodes[parentId].children.push(id);
-    if(target[dim]&&target[dim]>0){target[dim]--;node.isColorLeaf=true;node.groupKey=String(colorIdx++);colorLeaves.push(id);return id;}
-    const freeBits=[];for(let b=n-1;b>=0;b--)if(!fixed.has(b))freeBits.push(b);
-    if(!freeBits.length){node.isColorLeaf=true;node.groupKey=String(colorIdx++);colorLeaves.push(id);return id;}
-    const sb=freeBits[0];node.splitBit=sb;const nf=new Set(fixed);nf.add(sb);
-    build(states.filter(s=>!((s>>sb)&1)),dim-1,nf,id);
-    build(states.filter(s=>((s>>sb)&1)),dim-1,nf,id);
-    return id;
+  // Dérive la décomposition directement depuis T en cherchant récursivement
+  // les partitions bit-closes. vec n'est pas utilisé : la structure émerge de T.
+  let colorIdx=0; const colorLeaves=[];
+  function findSplitBit(states,fixed){
+    for(let b=n-1;b>=0;b--){
+      if(fixed.has(b))continue;
+      const L=new Set(),R=new Set();
+      for(const s of states)((s>>b)&1)?R.add(s):L.add(s);
+      if(L.size>0&&R.size>0&&[...L].every(s=>L.has(T[s]))&&[...R].every(s=>R.has(T[s])))return b;
+    }
+    return -1;
   }
-  build(Array.from({length:1<<n},(_,i)=>i),n,new Set(),null);
-  return colorLeaves.map(lid=>({groupKey:nodes[lid].groupKey,states:nodes[lid].states,dim:nodes[lid].dim}));
+  function build(states,fixed){
+    if(!states.length)return;
+    const sb=findSplitBit(states,fixed);
+    if(sb===-1){colorLeaves.push({groupKey:String(colorIdx++),states,dim:Math.round(Math.log2(states.length))});return;}
+    const nf=new Set(fixed);nf.add(sb);
+    const L=[],R=[];for(const s of states)((s>>sb)&1)?R.push(s):L.push(s);
+    build(L,nf);build(R,nf);
+  }
+  build(Array.from({length:1<<n},(_,i)=>i),new Set());
+  return colorLeaves.length>0?colorLeaves:null;
 }
 function findDecomposition(T,n,vec){if(!vec||!vec.length)return null;return buildDecompTree(vec,T,n);}
 function stateColor(s,decomp,inCycle){
@@ -752,7 +814,7 @@ function stateColor(s,decomp,inCycle){
 // ── Dynamique du phénotype (graphe de transition en hypercube, à la sbn_viz) ──
 // T(s) = état successeur : bit (j-1) = f_j(s) = caractère s de la chaîne f_j.
 function phenoTransitions(rowIdx){
-  const row=files[curFile].rows[rowIdx], n=G.n, N=1<<n;
+  const row=G.rows[rowIdx], n=G.n, N=1<<n;
   const fstr=G.fcols.map(c=>row[c]);
   const T=new Int32Array(N);
   for(let s=0;s<N;s++){let t=0;for(let j=0;j<n;j++)if(fstr[j].charCodeAt(s)===49)t|=(1<<j);T[s]=t;}
@@ -864,9 +926,21 @@ function updateStatbox(){
 // ═══════════════════════════════════════════════════════════════════════════
 //  Couleur (sélecteur) + légende
 // ═══════════════════════════════════════════════════════════════════════════
+function computeColorableStats(){
+  G.colorableStats=[];
+  G.logStats=new Set();
+  for(const k of G.statKeys){
+    const arr=G.stats[k]; if(!arr)continue;
+    let mn=Infinity,mx=-Infinity,allPos=true;
+    for(let i=0;i<G.N;i++){const v=arr[i];if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;if(v<=0)allPos=false;}}
+    if(!(mx>mn))continue;
+    G.colorableStats.push(k);
+    if(allPos && mx/mn>100) G.logStats.add(k);
+  }
+}
 function populateColorBy(){
   const sel=document.getElementById('color-by');
-  const opts=['decomp','degré',...G.statKeys];
+  const opts=['decomp','degré',...G.colorableStats];
   sel.innerHTML=opts.map(o=>`<option value="${o}">${o==='decomp'?'décomposition':o}</option>`).join('');
   sel.value='decomp';
 }
@@ -901,12 +975,15 @@ function sizeLegendHTML(){
 function colorbarHTML(){
   const stops=8; let grad='';
   for(let i=0;i<=stops;i++){const [r,g,b]=viridis(i/stops);grad+=`rgb(${r|0},${g|0},${b|0}) ${i/stops*100}%${i<stops?',':''}`;}
-  const mn=contRange.min, mx=contRange.max, fmt=v=>Number.isInteger(v)?v:v.toFixed(2);
+  const useLog=contRange.log;
+  const fmt=v=>{ const x=useLog?Math.exp(v):v; return x>=1000?x.toExponential(1):(Number.isInteger(x)?x:x.toFixed(2)); };
+  const mn=fmt(contRange.min), mx=fmt(contRange.max);
+  const logTag=useLog?` <span style="color:var(--muted);font-size:9px">(log)</span>`:'';
   return `<span class="scatter-legend-item" style="cursor:default">
-    <span style="color:var(--muted)">${colorMode}:</span>
-    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${fmt(mn)}</span>
+    <span style="color:var(--muted)">${colorMode}${logTag}:</span>
+    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${mn}</span>
     <span style="display:inline-block;width:180px;height:12px;border-radius:3px;background:linear-gradient(90deg,${grad})"></span>
-    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${fmt(mx)}</span></span>`;
+    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${mx}</span></span>`;
 }
 function decompChipsHTML(){
   // toujours disponibles (filtre par décomposition), quelle que soit la coloration
@@ -983,7 +1060,9 @@ function loadCurrent(){
       document.getElementById('search').value='';
       resize();
       setupColors();
+      buildRenderCache();
       computeRadii();
+      computeColorableStats();
       colorMode='decomp';populateColorBy();computeContRange();buildLegend();
       const nE=G.edges.length/2;
       document.getElementById('row-count').textContent=`${G.N.toLocaleString()} nœuds · ${nE.toLocaleString()} arêtes`;

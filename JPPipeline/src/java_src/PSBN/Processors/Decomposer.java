@@ -3,7 +3,6 @@ package PSBN.Processors;
 import com.gitlab.jpp.Processor;
 
 import PSBN.util.DecompVector;
-import PSBN.util.BtreeOrientations;
 import java.util.ArrayList;
 
 public class Decomposer implements Processor<Integer, ArrayList<DecompVector>> {
@@ -22,13 +21,8 @@ public class Decomposer implements Processor<Integer, ArrayList<DecompVector>> {
 
     private void enumerate(int n, int pos, int remaining, int[] current, ArrayList<DecompVector> result) {
         if (pos == n + 1) {
-            if (remaining == 0) {
-                // Un vecteur sous-determine l'arbre : on emet une tache par
-                // orientation (l'unite d'enumeration correcte est l'arbre).
-                int orientations = BtreeOrientations.orientationCount(current, n);
-                for (int o = 0; o < orientations; o++)
-                    result.add(new DecompVector(current.clone(), o));
-            }
+            if (remaining == 0)
+                result.add(new DecompVector(current.clone()));
             return;
         }
         int maxVal = 1 << pos;

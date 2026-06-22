@@ -53,13 +53,13 @@
   }
   .scatter-controls label { font-size: 12px; color: var(--muted); }
 
-  .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: #ffffff; }
+  .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
   canvas { width: 100%; height: 100%; display: block; }
 
   .scatter-legend {
     padding: 5px 16px; background: var(--panel);
     border-top: 1px solid var(--border);
-    display: flex; flex-wrap: wrap; gap: 5px 16px;
+    display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: flex-start;
     flex-shrink: 0; font-size: 11px; max-height: 80px; overflow-y: auto;
   }
   .scatter-legend-item { display: flex; align-items: center; gap: 5px; }
@@ -68,6 +68,16 @@
     width: 10px; height: 10px; border-radius: 50%;
     flex-shrink: 0; display: inline-block;
   }
+  .leg-group { display: inline-flex; flex-direction: column; }
+  .leg-group-hdr {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .leg-group-hdr:hover { border-color: var(--muted); }
+  .leg-group-body { display: none; flex-wrap: wrap; gap: 3px 10px; padding: 3px 2px 1px; }
+  .leg-group-body.open { display: flex; }
 
   .empty-state {
     position: absolute; inset: 0; display: flex;
@@ -101,7 +111,11 @@
   <select id="scatter-x" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
   <label style="margin-left:8px">Y axis:</label>
   <select id="scatter-y" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
-  <span id="loading-indicator" style="margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
+  <button id="reset-btn" onclick="resetView()"
+          style="display:none;margin-left:auto;background:var(--border);color:var(--text);
+                 border:none;padding:3px 10px;border-radius:5px;font-size:11px;
+                 cursor:pointer;font-family:inherit">&#8962; Reset</button>
+  <span id="loading-indicator" style="font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
 </div>
 
 <div class="canvas-wrap" id="canvas-wrap">
@@ -138,6 +152,8 @@ let curFile = 0;
 let selectedVecs = new Set(); // empty = all visible
 let scatterCache = null;
 let showErrorBars = true;
+let view = null;
+let dragging = false, dragAnchor = null, viewAtDrag = null;
 
 // ─── CSV Parsing ─────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
@@ -195,6 +211,13 @@ function vecStrToSum(vecStr) {
   const m = vecStr.match(/[0-9]+/g);
   if (!m) return 1;
   return m.reduce((a, v) => a + parseInt(v), 0);
+}
+
+function vecToHyperface(vecStr) {
+  const m = vecStr.match(/[0-9]+/g);
+  if (!m) return 0;
+  for (let i = 0; i < m.length; i++) if (parseInt(m[i]) > 0) return i;
+  return 0;
 }
 
 function hslToHex(hue, sat, light) {
@@ -432,9 +455,9 @@ function buildScatterCache() {
   // Assign colors in deterministic order
   assignVecColors(allVecStrs);
 
-  // Aggregate into pointMap: 4 sig digits for d<=3, 3 otherwise
+  // Aggregate into pointMap: 5 sig digits for d<=4, 4 otherwise
   const xRange0 = xMax - xMin || 1, yRange0 = yMax - yMin || 1;
-  const sigDigits = files[curFile].rows[0] && Object.keys(files[curFile].rows[0]).filter(k => /^v_\d+$/.test(k)).length <= 4 ? 4 : 3;
+  const sigDigits = files[curFile].rows[0] && Object.keys(files[curFile].rows[0]).filter(k => /^v_\d+$/.test(k)).length <= 4 ? 5 : 4;
   const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - sigDigits);
   const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - sigDigits);
   const pointMap = new Map();
@@ -455,7 +478,7 @@ function buildScatterCache() {
   const maxCount = allPts.reduce((m,p) => p.count>m ? p.count : m, 1);
 
   const nRows = rows.length;
-  const minR = 2;
+  const minR = 3.5;
   const maxR = nRows > 500000 ? 10  : nRows > 100000 ? 12 : nRows > 10000 ? 14  : 16;
 
   // Pre-compute colors and radii
@@ -476,24 +499,83 @@ function buildScatterCache() {
   }
 
   scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis };
+  view = { xMin, xMax, yMin, yMax };
 
   // Build legend (only when cache is rebuilt)
   drawSizeLegend(minR, maxR, maxCount);
+  buildLegend(byVec);
+  return true;
+}
+
+function buildLegend(byVec) {
   const legend = document.getElementById('scatter-legend');
-  if (legend) {
-    const allVecs = Array.from(byVec.keys()).sort((a,b) => vecStrToSum(a)-vecStrToSum(b));
-    legend.innerHTML = allVecs.map(vs => {
-      const col = vecColor(vs);
+  if (!legend) return;
+  const allVecs = Array.from(byVec.keys()).sort((a,b) => vecStrToSum(a)-vecStrToSum(b)||a.localeCompare(b));
+  const groups = new Map();
+  for (const vs of allVecs) {
+    const h = vecToHyperface(vs);
+    if (!groups.has(h)) groups.set(h, []);
+    groups.get(h).push(vs);
+  }
+  legend.innerHTML = Array.from(groups.entries()).sort((a,b)=>a[0]-b[0]).map(([sum, vecs]) => {
+    const swatches = vecs.slice(0,5).map(vs=>
+      `<span style="width:7px;height:7px;border-radius:50%;background:${vecColor(vs)};display:inline-block;flex-shrink:0"></span>`
+    ).join('');
+    const anyActive = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    const items = vecs.map(vs => {
       const active = selectedVecs.size === 0 || selectedVecs.has(vs);
       return `<span class="scatter-legend-item" onclick="toggleVec('${vs}')"
-               style="cursor:pointer;opacity:${active?1:0.3};transition:opacity 0.15s"
-               data-vec="${vs}">
-        <span class="scatter-legend-dot" style="background:${col}"></span>
+               style="cursor:pointer;opacity:${active?1:0.3};transition:opacity 0.15s" data-vec="${vs}">
+        <span class="scatter-legend-dot" style="background:${vecColor(vs)}"></span>
         <span style="color:var(--text)">${vs}</span>
       </span>`;
     }).join('');
+    return `<span class="leg-group" data-sum="${sum}">
+      <span class="leg-group-hdr" onclick="toggleLegGroupSel(${sum})" style="opacity:${anyActive?1:0.35}">
+        <span style="display:inline-flex;gap:2px;align-items:center">${swatches}</span>
+        <span style="font-size:10px;color:var(--muted)">d=${sum}</span>
+        <span style="font-size:10px;color:var(--border)">(${vecs.length})</span>
+        <span class="leg-arrow" onclick="event.stopPropagation();toggleLegGroupOpen(${sum})"
+              style="font-size:8px;color:var(--muted);padding:0 2px;cursor:pointer;line-height:1">▶</span>
+      </span>
+      <span class="leg-group-body" id="legbody-${sum}">${items}</span>
+    </span>`;
+  }).join('');
+}
+
+function toggleLegGroupOpen(sum) {
+  const body = document.getElementById(`legbody-${sum}`);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  const arrow = body.previousElementSibling.querySelector('.leg-arrow');
+  if (arrow) arrow.textContent = open ? '▼' : '▶';
+}
+
+function toggleLegGroupSel(sum) {
+  const group = document.querySelector(`.leg-group[data-sum="${sum}"]`);
+  if (!group) return;
+  const groupVecs = Array.from(group.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+  const allDomVecs = Array.from(document.querySelectorAll('.scatter-legend-item[data-vec]')).map(el => el.getAttribute('data-vec'));
+  if (selectedVecs.size === 0) {
+    allDomVecs.forEach(v => selectedVecs.add(v));
+    groupVecs.forEach(v => selectedVecs.delete(v));
+  } else {
+    const allInGroup = groupVecs.every(v => selectedVecs.has(v));
+    if (allInGroup) groupVecs.forEach(v => selectedVecs.delete(v));
+    else groupVecs.forEach(v => selectedVecs.add(v));
+    if (selectedVecs.size >= allDomVecs.length) selectedVecs.clear();
   }
-  return true;
+  document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el => {
+    const v = el.getAttribute('data-vec');
+    el.style.opacity = (selectedVecs.size === 0 || selectedVecs.has(v)) ? '1' : '0.3';
+  });
+  document.querySelectorAll('.leg-group').forEach(g => {
+    const s = parseInt(g.getAttribute('data-sum'));
+    const vecs = Array.from(g.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+    const active = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    g.querySelector('.leg-group-hdr').style.opacity = active ? '1' : '0.35';
+  });
+  drawScatter();
 }
 
 function toggleErrorBars() {
@@ -528,7 +610,8 @@ function drawScatter() {
 function _renderScatter() {
   const canvas = document.getElementById('scatter-canvas');
   if (!canvas) return;
-  const { allPts, xMin, xMax, yMin, yMax, xKey, yKey, meanAxis } = scatterCache;
+  const { allPts, xKey, yKey, meanAxis } = scatterCache;
+  const { xMin, xMax, yMin, yMax } = view;
 
   const DPR = window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
@@ -550,18 +633,24 @@ function _renderScatter() {
   const nTicks = 5;
   for (let i=0; i<=nTicks; i++) {
     const vx=xMin+i/nTicks*xRange, vy=yMin+i/nTicks*yRange;
-    ctx.strokeStyle='#e2e8f0'; ctx.lineWidth=1;
+    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(toX(vx),pad); ctx.lineTo(toX(vx),H-pad); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(pad,toY(vy)); ctx.lineTo(W-pad,toY(vy)); ctx.stroke();
-    ctx.fillStyle='#475569'; ctx.font='10px JetBrains Mono,monospace';
-    ctx.textAlign='center'; ctx.fillText(vx.toFixed(2),toX(vx),H-pad+14);
-    ctx.textAlign='right';  ctx.fillText(vy.toFixed(2),pad-6,toY(vy)+4);
+    ctx.fillStyle='#64748b'; ctx.font='10px JetBrains Mono,monospace';
+    ctx.textAlign='center'; ctx.fillText(fmtTick(vx,xRange),toX(vx),H-pad+14);
+    ctx.textAlign='right';  ctx.fillText(fmtTick(vy,yRange),pad-6,toY(vy)+4);
   }
-  ctx.fillStyle='#334155'; ctx.font='12px DM Sans,sans-serif';
+  ctx.fillStyle='#94a3b8'; ctx.font='12px DM Sans,sans-serif';
   ctx.textAlign='center'; ctx.fillText(xKey,W/2,H-4);
   ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(yKey,0,0); ctx.restore();
   ctx.restore();
+
+  // Clip points to plot area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad, pad, W - 2*pad, H - 2*pad);
+  ctx.clip();
 
   // Draw by vec group: least decomposed first (behind), most decomposed last (on top)
   const visiblePts = selectedVecs.size > 0
@@ -582,13 +671,12 @@ function _renderScatter() {
       const stroke = `rgba(${p.r},${p.g},${p.b},1)`;
       ctx.lineWidth = 0.8;
 
-      // Always draw the circle first
       ctx.beginPath();
       ctx.arc(cx, cy, p.radius, 0, Math.PI*2);
       ctx.fillStyle   = fill;
       ctx.strokeStyle = stroke;
       ctx.fill();
-      ctx.stroke();
+      if (p.radius >= 4) ctx.stroke();
 
       // Draw 1px error bar if std available and enabled
       if (showErrorBars && meanAxis && p.std > 0) {
@@ -609,6 +697,13 @@ function _renderScatter() {
       }
     }
   }
+  ctx.restore(); // end clip
+}
+
+function fmtTick(v, range) {
+  const mag = range > 0 ? Math.floor(Math.log10(range)) : 0;
+  if (mag >= 4 || mag < -3) return v.toExponential(2);
+  return v.toFixed(Math.min(Math.max(0, 2 - mag), 6));
 }
 
 function toggleVec(vecStr) {
@@ -617,14 +712,77 @@ function toggleVec(vecStr) {
   } else {
     selectedVecs.add(vecStr);
   }
-  // Update legend opacity without rebuilding cache
+  const allDomVecs = Array.from(document.querySelectorAll('.scatter-legend-item[data-vec]')).map(el => el.getAttribute('data-vec'));
+  if (selectedVecs.size >= allDomVecs.length) selectedVecs.clear();
   document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el => {
     const v = el.getAttribute('data-vec');
     el.style.opacity = (selectedVecs.size === 0 || selectedVecs.has(v)) ? '1' : '0.3';
   });
+  document.querySelectorAll('.leg-group').forEach(g => {
+    const vecs = Array.from(g.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+    const active = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    g.querySelector('.leg-group-hdr').style.opacity = active ? '1' : '0.35';
+  });
   drawScatter();
 }
 window.addEventListener('resize', drawScatter);
+
+function resetView() {
+  if (!scatterCache) return;
+  view = { xMin: scatterCache.xMin, xMax: scatterCache.xMax,
+           yMin: scatterCache.yMin, yMax: scatterCache.yMax };
+  document.getElementById('reset-btn').style.display = 'none';
+  _renderScatter();
+}
+
+(function initZoomPan() {
+  const canvas = document.getElementById('scatter-canvas');
+  const PAD = 52;
+  canvas.style.cursor = 'crosshair';
+
+  function markDirty() {
+    document.getElementById('reset-btn').style.display = '';
+  }
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!scatterCache || !view) return;
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    const factor = e.deltaY < 0 ? 1 / 1.2 : 1.2;
+    const dataX = view.xMin + (e.offsetX - PAD) / (W - 2*PAD) * (view.xMax - view.xMin);
+    const dataY = view.yMax - (e.offsetY - PAD) / (H - 2*PAD) * (view.yMax - view.yMin);
+    view.xMin = dataX - (dataX - view.xMin) * factor;
+    view.xMax = dataX + (view.xMax - dataX) * factor;
+    view.yMin = dataY - (dataY - view.yMin) * factor;
+    view.yMax = dataY + (view.yMax - dataY) * factor;
+    markDirty();
+    _renderScatter();
+  }, { passive: false });
+
+  canvas.addEventListener('mousedown', e => {
+    if (!scatterCache || !view) return;
+    dragging = true;
+    dragAnchor = { x: e.offsetX, y: e.offsetY };
+    viewAtDrag = { ...view };
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (!dragging || !viewAtDrag) return;
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    const dx = (e.offsetX - dragAnchor.x) / (W - 2*PAD) * (viewAtDrag.xMax - viewAtDrag.xMin);
+    const dy = (e.offsetY - dragAnchor.y) / (H - 2*PAD) * (viewAtDrag.yMax - viewAtDrag.yMin);
+    view.xMin = viewAtDrag.xMin - dx;
+    view.xMax = viewAtDrag.xMax - dx;
+    view.yMin = viewAtDrag.yMin + dy;
+    view.yMax = viewAtDrag.yMax + dy;
+    markDirty();
+    _renderScatter();
+  });
+
+  canvas.addEventListener('mouseup', () => { dragging = false; canvas.style.cursor = 'crosshair'; });
+  canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; });
+})();
 </script>
 </body>
 </html>

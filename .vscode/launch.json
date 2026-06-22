@@ -15,8 +15,8 @@
             "mainClass": "PSBN.Main",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "2",
-                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undecomposablePBN_beyond.lp",
+                "3",
+                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undercontrol_treeinsolver.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
                 "0",
                 "${workspaceFolder}/JPPipeline/out",

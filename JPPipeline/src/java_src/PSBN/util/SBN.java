@@ -127,7 +127,9 @@ public class SBN {
     /**
      * Construit la ligne CSV : f_j (bitstrings) et w_i,j sont omis si
      * {@code includeWeightsAndTransitions} est false.
-     * Inclut toujours AtrSize et dynamics (encodage des attracteurs par etat).
+     * Inclut toujours CycleLenMSQ et NumAttractors.
+     * La colonne dynamics (encodage des attracteurs par etat, utilisee pour dDA)
+     * est desactivee pour epurer les CSV ; reactiver la ligne commentee si besoin.
      */
     public String toCsvRow(boolean includeWeightsAndTransitions) {
         StringBuilder sb = new StringBuilder();
@@ -148,9 +150,8 @@ public class SBN {
         Map<List<Integer>, Set<Integer>> basins = computeAttractionBasins();
         sb.append(meanSquaredAttractorSize(basins));
         sb.append(",");
-        sb.append(basins.size()); // NumBasins : nombre d'attracteurs = nombre de bassins
-        sb.append(",");
-        sb.append(attractorDynamicsEncoding(basins));
+        sb.append(basins.size()); // NumAttractors : nombre d'attracteurs = nombre de bassins
+        // sb.append(","); sb.append(attractorDynamicsEncoding(basins)); // dynamics (dDA)
         return sb.toString();
     }
 

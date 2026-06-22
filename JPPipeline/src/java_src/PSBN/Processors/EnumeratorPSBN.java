@@ -57,8 +57,6 @@ public class EnumeratorPSBN implements Processor<Pair<DecompVector, BitSet>, Voi
         for (int i = 0; i <= n; i++) {
             constants.put("v" + (n - i), dv.get(i));
         }
-        // Orientation de l'arbre (selectionne le btree dans setup_btree via `o`).
-        constants.put("o", dv.getOrientation());
         // Fixe les n premiers bits (S=0..n-1) de la fonction de transition du
         // noeud 1, via les constantes fixed_sbf_bit_<s> declarees dans
         // Subdivision.lp : chaque tranche explore une partie disjointe de

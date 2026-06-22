@@ -26,8 +26,8 @@
 
 % Dimension 3
 % btree(btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),btree(btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),btree(btree(nil,nil,0,nil),btree(nil,nil,0,nil),1,nil),2,nil),3,nil).
-% btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil).
-btree(nil,nil,3,nil).
+btree(btree(nil,nil,2,nil),btree(nil,nil,2,nil),3,nil).
+% btree(nil,nil,3,nil).
 % btree(btree(nil,nil,2,nil),btree(btree(nil,nil,1,nil),btree(nil,nil,1,nil),2,nil),3,nil).
 
 % Dimension 4

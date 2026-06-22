@@ -165,9 +165,11 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                     csv_header.append("\"w_").append(i).append(",").append(j).append("\"");
                     if (i < n || j < n) csv_header.append(",");
                 }
-            csv_header.append(",AtrSize,NumBasins,dynamics,GenotypeCount,R_P_std,R_P_mean,E_P");
+            csv_header.append(",CycleLenMSQ,NumAttractors,GenotypeCount,Robustness_std,Robustness_mean,Evolvability");
+            // csv_header.append(",dynamics"); // encodage attracteurs pour dDA — reactiver avec attractorDynamicsEncoding dans SBN.toCsvRow
         } else {
-            csv_header.append("AtrSize,NumBasins,dynamics,GenotypeCount,R_P_std,R_P_mean,E_P");
+            csv_header.append("CycleLenMSQ,NumAttractors,GenotypeCount,Robustness_std,Robustness_mean,Evolvability");
+            // csv_header.append(",dynamics"); // encodage attracteurs pour dDA — reactiver avec attractorDynamicsEncoding dans SBN.toCsvRow
         }
         this.dataCollector.process(csv_header.toString());
     }
