@@ -31,7 +31,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
 
     // Au dela de ce nombre de solutions pour un vecteur, l'enumeration
     // monolithique fait sauter le garde-fou et le vecteur est subdivise par SBF.
-    private static final int SUBDIVISION_THRESHOLD = 100000;
+    private static final int SUBDIVISION_THRESHOLD = 1000;
 
     private final IntegerParameter dim;
     private final StringParameter lp_enumeratorFile;
@@ -112,7 +112,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         this.subdividedEnumerator = new EnumeratorPSBN(this.lp_enumeratorFile,this.setup_btreeFolder,this.nSolutions);
         this.SubdividedEnumerationJob = new Job.JobBuilder<Pair<DecompVector, BitSet>, Void>(this, this.subdividedEnumerator, this.EnumerationJob)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Subdivided Enumeration Job terminated"))
-                .setMaximumParallelTasks(10)
+                // .setMaximumParallelTasks(10)
                 .build();
         this.MinimizationJob = new Job.JobBuilder<SBNP,SBNP>(this, new Minimizer(), this.EnumerationJob, this.SubdividedEnumerationJob)
                 .setOutputHandler(new OutputHandler<SBNP>() {
