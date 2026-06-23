@@ -31,6 +31,11 @@
   .scatter-legend-item{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;transition:opacity .15s}
   .scatter-legend-item:hover{opacity:.75!important}
   .scatter-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block}
+  .leg-group{display:inline-flex;flex-direction:column}
+  .leg-group-hdr{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;transition:opacity .15s,border-color .15s}
+  .leg-group-hdr:hover{border-color:var(--muted)}
+  .leg-group-body{display:none;flex-wrap:wrap;gap:3px 10px;padding:3px 2px 1px}
+  .leg-group-body.open{display:flex}
   .empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:14px}
   .drop-zone{border:2px dashed var(--border);border-radius:12px;padding:24px 32px;text-align:center;cursor:pointer;transition:border-color .2s}
   .drop-zone:hover{border-color:var(--accent);color:var(--text)}
@@ -236,7 +241,17 @@ function buildGraph(rows, header){
   }
   for(const k of statKeys) for(let i=0;i<N;i++) if(statCounts[i]>1) stats[k][i]/=statCounts[i];
 
-  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,edges:new Int32Array(eb),rows:uniqueRows};
+  // Positions pré-calculées (colonnes x/y du CSV, ex. générées par layout_sfdp.py)
+  let csvX=null, csvY=null;
+  if(header.includes('x') && header.includes('y')){
+    csvX=new Float32Array(N); csvY=new Float32Array(N);
+    for(let i=0;i<N;i++){
+      csvX[i]=parseFloat(uniqueRows[i]['x'])||0;
+      csvY[i]=parseFloat(uniqueRows[i]['y'])||0;
+    }
+  }
+
+  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,edges:new Int32Array(eb),rows:uniqueRows,csvX,csvY};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -244,6 +259,8 @@ function buildGraph(rows, header){
 // ═══════════════════════════════════════════════════════════════════════════
 const dcKey=d=>d.join(',');
 const dcStr=d=>'<'+d.join(',')+'>';
+// Index de la première entrée non-nulle du vecteur (= position de la face de dim max)
+function vecMaxDim(vec){for(let i=0;i<vec.length;i++)if(vec[i]>0)return i;return vec.length-1;}
 function hslToHex(h,s,l){
   const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;let r,g,b;
   if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
@@ -306,103 +323,99 @@ function nodeColorRGB(i){
 const nodeColorCss=i=>{const [r,g,b]=nodeColorRGB(i);return `rgb(${r|0},${g|0},${b|0})`;};
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Layout: Web Worker (Barnes-Hut force-directed)
+//  Layout: Web Worker (Barnes-Hut force-directed, quadtree TypedArray)
 // ═══════════════════════════════════════════════════════════════════════════
 const WORKER_SRC = `
 let posX,posY,edges,N;
 const SIZE=1000, THETA2=0.81;
+// Quadtree dans des TypedArrays pré-alloués — élimine la pression GC
+let QX,QY,QH,MASS,MX,MY,CH,BODY,nc;
+function allocTree(cap){
+  QX=new Float32Array(cap);QY=new Float32Array(cap);QH=new Float32Array(cap);
+  MASS=new Float32Array(cap);MX=new Float32Array(cap);MY=new Float32Array(cap);
+  CH=new Int32Array(cap*4);BODY=new Int32Array(cap);
+}
+function newNode(qx,qy,qh){
+  const ni=nc++;
+  QX[ni]=qx;QY[ni]=qy;QH[ni]=qh;
+  MASS[ni]=0;MX[ni]=0;MY[ni]=0;BODY[ni]=-1;
+  const b=ni*4;CH[b]=CH[b+1]=CH[b+2]=CH[b+3]=-1;
+  return ni;
+}
+function subInsert(ni,p,px,py){
+  const q=(px>=QX[ni]?1:0)+(py>=QY[ni]?2:0);
+  const b=ni*4;let ch=CH[b+q];
+  if(ch===-1){const h=QH[ni]/2;ch=newNode(QX[ni]+(q&1?h:-h),QY[ni]+(q&2?h:-h),h);CH[b+q]=ch;}
+  treeInsert(ch,p,px,py);
+}
+function treeInsert(ni,p,px,py){
+  if(BODY[ni]===-1&&MASS[ni]===0){BODY[ni]=p;MASS[ni]=1;MX[ni]=px;MY[ni]=py;return;}
+  if(BODY[ni]!==-1){const old=BODY[ni];BODY[ni]=-1;subInsert(ni,old,posX[old],posY[old]);}
+  MASS[ni]++;MX[ni]+=px;MY[ni]+=py;
+  subInsert(ni,p,px,py);
+}
 function buildTree(){
-  // quadtree dans un tableau plat
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
   for(let i=0;i<N;i++){const x=posX[i],y=posY[i];if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;}
-  const cx=(x0+x1)/2, cy=(y0+y1)/2, half=Math.max(x1-x0,y1-y0,1e-6)/2+1e-3;
-  // noeuds: arrays
-  const QX=[],QY=[],QH=[],MASS=[],MX=[],MY=[],CH=[],BODY=[];
-  function newNode(qx,qy,qh){QX.push(qx);QY.push(qy);QH.push(qh);MASS.push(0);MX.push(0);MY.push(0);CH.push([-1,-1,-1,-1]);BODY.push(-1);return QX.length-1;}
-  const root=newNode(cx,cy,half);
-  function quad(ni,x,y){return (x>=QX[ni]?1:0)+(y>=QY[ni]?2:0);}
-  function insert(ni,p){
-    if(BODY[ni]===-1 && MASS[ni]===0){BODY[ni]=p;MASS[ni]=1;MX[ni]=posX[p];MY[ni]=posY[p];return;}
-    if(BODY[ni]!==-1){
-      const old=BODY[ni];BODY[ni]=-1;
-      subInsert(ni,old);
-    }
-    MASS[ni]++;MX[ni]+=posX[p];MY[ni]+=posY[p];
-    subInsert(ni,p);
-  }
-  function subInsert(ni,p){
-    const q=quad(ni,posX[p],posY[p]);
-    let ch=CH[ni][q];
-    if(ch===-1){
-      const h=QH[ni]/2;
-      const nx=QX[ni]+(q&1?h:-h), ny=QY[ni]+(q&2?h:-h);
-      ch=newNode(nx,ny,h);CH[ni][q]=ch;
-    }
-    insert(ch,p);
-  }
-  for(let i=0;i<N;i++)insert(root,i);
-  return {QH,MASS,MX,MY,CH,root};
+  const cx=(x0+x1)/2,cy=(y0+y1)/2,half=Math.max(x1-x0,y1-y0,1e-6)/2+1e-3;
+  nc=0;newNode(cx,cy,half);
+  for(let i=0;i<N;i++)treeInsert(0,i,posX[i],posY[i]);
 }
-function step(k, temp){
-  const dispX=new Float32Array(N), dispY=new Float32Array(N);
-  const T=buildTree();
-  const {QH,MASS,MX,MY,CH,root}=T;
+const _stk=new Int32Array(512);
+function step(k,temp){
+  const dispX=new Float32Array(N),dispY=new Float32Array(N);
+  buildTree();
   const k2=k*k;
-  const stack=[];
   for(let i=0;i<N;i++){
-    const xi=posX[i], yi=posY[i];
-    let dx=0,dy=0;
-    stack.length=0; stack.push(root);
-    while(stack.length){
-      const ni=stack.pop();
+    const xi=posX[i],yi=posY[i];
+    let dx=0,dy=0,sp=0;
+    _stk[sp++]=0;
+    while(sp>0){
+      const ni=_stk[--sp];
       const m=MASS[ni];if(m===0)continue;
-      const ccx=MX[ni]/m, ccy=MY[ni]/m;
-      let ex=xi-ccx, ey=yi-ccy, d2=ex*ex+ey*ey;
-      const w=QH[ni]*2;
-      const c=CH[ni];
-      const isLeaf=(c[0]===-1&&c[1]===-1&&c[2]===-1&&c[3]===-1);
-      if(isLeaf || (w*w < THETA2*d2)){
-        if(d2<1e-9){continue;} // même position (souvent le nœud i lui-même)
-        const d=Math.sqrt(d2), f=k2/d*m;
-        dx+=ex/d*f; dy+=ey/d*f;
+      const ex=xi-MX[ni]/m,ey=yi-MY[ni]/m,d2=ex*ex+ey*ey;
+      const w=QH[ni]*2,b=ni*4;
+      if((CH[b]===-1&&CH[b+1]===-1&&CH[b+2]===-1&&CH[b+3]===-1)||(w*w<THETA2*d2)){
+        if(d2<1e-9)continue;
+        const f=k2/d2*m;
+        dx+=ex*f;dy+=ey*f;
       }else{
-        for(let q=0;q<4;q++)if(c[q]!==-1)stack.push(c[q]);
+        if(CH[b]  !==-1)_stk[sp++]=CH[b];
+        if(CH[b+1]!==-1)_stk[sp++]=CH[b+1];
+        if(CH[b+2]!==-1)_stk[sp++]=CH[b+2];
+        if(CH[b+3]!==-1)_stk[sp++]=CH[b+3];
       }
     }
-    dispX[i]=dx; dispY[i]=dy;
+    dispX[i]=dx;dispY[i]=dy;
   }
-  // attraction le long des arêtes
   for(let e=0;e<edges.length;e+=2){
     const a=edges[e],b=edges[e+1];
-    let ex=posX[a]-posX[b], ey=posY[a]-posY[b];
-    let d=Math.sqrt(ex*ex+ey*ey)+1e-6;
-    const f=d*d/k;
-    const fx=ex/d*f, fy=ey/d*f;
+    const ex=posX[a]-posX[b],ey=posY[a]-posY[b];
+    const d=Math.sqrt(ex*ex+ey*ey)+1e-6,f=d*d/k;
+    const fx=ex/d*f,fy=ey/d*f;
     dispX[a]-=fx;dispY[a]-=fy;dispX[b]+=fx;dispY[b]+=fy;
   }
-  // gravité douce vers le centre + déplacement borné par température
   for(let i=0;i<N;i++){
-    dispX[i]+=(SIZE/2-posX[i])*0.01*k*0.1;
-    dispY[i]+=(SIZE/2-posY[i])*0.01*k*0.1;
-    let d=Math.sqrt(dispX[i]*dispX[i]+dispY[i]*dispY[i])||1e-6;
-    const lim=Math.min(d,temp);
-    posX[i]+=dispX[i]/d*lim;
-    posY[i]+=dispY[i]/d*lim;
+    dispX[i]+=(SIZE/2-posX[i])*0.001*k;
+    dispY[i]+=(SIZE/2-posY[i])*0.001*k;
+    const d=Math.sqrt(dispX[i]*dispX[i]+dispY[i]*dispY[i])||1e-6;
+    const s=Math.min(d,temp)/d;
+    posX[i]+=dispX[i]*s;posY[i]+=dispY[i]*s;
   }
 }
 onmessage=function(ev){
   const d=ev.data;
   if(d.cmd==='init'){
-    N=d.N; edges=d.edges;
-    posX=new Float32Array(N); posY=new Float32Array(N);
-    // init en disque
+    N=d.N;edges=d.edges;
+    posX=new Float32Array(N);posY=new Float32Array(N);
     for(let i=0;i<N;i++){const a=Math.random()*6.283,r=Math.sqrt(Math.random())*SIZE*0.45;posX[i]=SIZE/2+Math.cos(a)*r;posY[i]=SIZE/2+Math.sin(a)*r;}
+    allocTree(N*4);
     const k=0.9*Math.sqrt(SIZE*SIZE/Math.max(N,1));
     const ITER=d.iter||320;
     let temp=SIZE*0.12;
     for(let it=0;it<ITER;it++){
       step(k,temp);
-      temp*=0.985; if(temp<0.6)temp=0.6;
+      temp*=0.985;if(temp<0.6)temp=0.6;
       if(it%6===0||it===ITER-1){
         postMessage({cmd:'tick',it,iter:ITER,x:posX.slice(),y:posY.slice()});
       }
@@ -415,6 +428,13 @@ onmessage=function(ev){
 function startLayout(){
   if(!G) return;
   if(worker){worker.terminate();worker=null;}
+  if(G.csvX){
+    applyPositions(G.csvX,G.csvY);
+    layoutRunning=false;
+    setLoading('<span style="color:var(--muted)">positions CSV</span>');
+    setTimeout(()=>setLoading(''),2000);
+    fitView(); buildEdgeBitmap(); scheduleRender(); return;
+  }
   layoutRunning=true; userInteracted=false; edgeBitmap=null;
   setLoading('<span class="spinning">⟳</span> layout…');
   const blob=new Blob([WORKER_SRC],{type:'application/javascript'});
@@ -435,7 +455,6 @@ function startLayout(){
       }
     }
   };
-  // edges copie transférable
   worker.postMessage({cmd:'init', N:G.N, edges:G.edges.slice(), iter:320},[]);
 }
 
@@ -956,21 +975,20 @@ function radiusForValue(v){
 }
 function sizeLegendHTML(){
   if(!sizeLegend)return '';
-  const {attr,min,max,maxR}=sizeLegend;
-  // valeurs échantillons distinctes
-  const vals=[...new Set([Math.max(min,1),Math.round((min+max)/2),max].filter(v=>v>=min))]
-             .sort((a,b)=>a-b);
-  const gap=10, H=2*maxR+14; let x=2;
-  let circles='';
-  for(const v of vals){
-    const r=radiusForValue(v), cx=x+r, cy=maxR;
-    circles+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(148,163,184,0.45)" stroke="rgba(148,163,184,0.9)" stroke-width="0.8"/>`;
-    circles+=`<text x="${cx}" y="${H}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="#94a3b8">${v}</text>`;
-    x=cx+r+gap+12;
+  const {attr,min,max,minR,maxR}=sizeLegend;
+  const fmt=v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':String(Math.round(v));
+  const raw=[1,Math.round(max/4),Math.round(max/2),max].filter((v,i,a)=>v>=min&&a.indexOf(v)===i);
+  const pad=4, textH=12, baseline=maxR*2;
+  const H=baseline+textH+2; let x=pad, elems='';
+  for(const v of raw){
+    const r=radiusForValue(v), cx=x+r, cy=baseline-r; // alignement par le bas
+    elems+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(148,163,184,0.45)" stroke="rgba(148,163,184,0.9)" stroke-width="0.8"/>`;
+    elems+=`<text x="${cx}" y="${H-1}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="#94a3b8">${fmt(v)}</text>`;
+    x=cx+r+pad+26;
   }
   return `<span class="scatter-legend-item" style="cursor:default;gap:6px">
-    <span style="color:var(--muted)">taille ∝ ${attr}</span>
-    <svg width="${x}" height="${H}" style="display:block">${circles}</svg></span>`;
+    <span style="color:var(--muted);white-space:nowrap">taille ∝ ${attr}</span>
+    <svg width="${x}" height="${H}" style="display:block;overflow:visible">${elems}</svg></span>`;
 }
 function colorbarHTML(){
   const stops=8; let grad='';
@@ -986,12 +1004,28 @@ function colorbarHTML(){
     <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${mx}</span></span>`;
 }
 function decompChipsHTML(){
-  // toujours disponibles (filtre par décomposition), quelle que soit la coloration
-  return DECOMPS.map(d=>{
-    const key=dcKey(d),col=dcColorMap.get(key),active=!hidden.has(key);
-    return `<span class="scatter-legend-item" onclick="toggleVec('${key}')" data-vec="${key}" style="opacity:${active?1:0.3}">
-      <span class="scatter-legend-dot" style="background:${col}"></span>
-      <span style="color:var(--text)">${dcStr(d)}</span></span>`;
+  // Grouper par dimension max (position 1er non-nul du vecteur)
+  const groups=new Map();
+  for(const d of DECOMPS){const g=vecMaxDim(d);if(!groups.has(g))groups.set(g,[]);groups.get(g).push(d);}
+  return [...groups.entries()].sort((a,b)=>a[0]-b[0]).map(([dim,vecs])=>{
+    const dimLabel=vecs[0].length-1-dim; // dimension réelle (n-1-idx)
+    const swatches=vecs.slice(0,5).map(d=>`<span style="width:7px;height:7px;border-radius:50%;background:${dcColorMap.get(dcKey(d))};display:inline-block;flex-shrink:0"></span>`).join('');
+    const anyActive=vecs.some(d=>!hidden.has(dcKey(d)));
+    const items=vecs.map(d=>{
+      const key=dcKey(d),col=dcColorMap.get(key),active=!hidden.has(key);
+      return `<span class="scatter-legend-item" onclick="toggleVec('${key}')" data-vec="${key}" style="opacity:${active?1:0.3}">
+        <span class="scatter-legend-dot" style="background:${col}"></span>
+        <span style="color:var(--text)">${dcStr(d)}</span></span>`;
+    }).join('');
+    return `<span class="leg-group" data-dim="${dim}">
+      <span class="leg-group-hdr" onclick="toggleLegGroup(${dim})" style="opacity:${anyActive?1:0.35}">
+        <span style="display:inline-flex;gap:2px;align-items:center">${swatches}</span>
+        <span style="font-size:10px;color:var(--muted)">d≤${dimLabel}</span>
+        <span style="font-size:10px;color:var(--border)">(${vecs.length})</span>
+        <span class="leg-arrow" onclick="event.stopPropagation();toggleLegGroupOpen(${dim})" style="font-size:8px;color:var(--muted);padding:0 2px;cursor:pointer">▶</span>
+      </span>
+      <span class="leg-group-body" id="legbody-${dim}">${items}</span>
+    </span>`;
   }).join('');
 }
 function buildLegend(){
@@ -1003,12 +1037,44 @@ function buildLegend(){
   if(sl)parts.push(sep+sl);
   document.getElementById('scatter-legend').innerHTML=parts.join('');
 }
-function toggleVec(key){
-  if(hidden.has(key))hidden.delete(key);else hidden.add(key);
+function _updateLegendOpacity(){
   document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el=>{
-    const v=el.getAttribute('data-vec');el.style.opacity=hidden.has(v)?'0.3':'1';
+    el.style.opacity=hidden.has(el.getAttribute('data-vec'))?'0.3':'1';
   });
+  document.querySelectorAll('.leg-group[data-dim]').forEach(g=>{
+    const dim=parseInt(g.getAttribute('data-dim'));
+    const vecs=[...g.querySelectorAll('[data-vec]')].map(el=>el.getAttribute('data-vec'));
+    g.querySelector('.leg-group-hdr').style.opacity=vecs.some(k=>!hidden.has(k))?'1':'0.35';
+  });
+}
+function toggleVec(key){
+  if(hidden.size===0){
+    // tout visible → isoler ce vecteur
+    DECOMPS.forEach(d=>{const k=dcKey(d);if(k!==key)hidden.add(k);});
+  }else{
+    // mode filtré → toggle individuel
+    if(hidden.has(key))hidden.delete(key);else hidden.add(key);
+    // si tout redevient visible, reset propre
+    if(hidden.size===DECOMPS.length)hidden.clear();
+  }
+  _updateLegendOpacity();
   buildEdgeBitmap();render();
+}
+function toggleLegGroup(dim){
+  const g=document.querySelector(`.leg-group[data-dim="${dim}"]`);
+  if(!g)return;
+  const keys=[...g.querySelectorAll('[data-vec]')].map(el=>el.getAttribute('data-vec'));
+  const allVisible=keys.every(k=>!hidden.has(k));
+  keys.forEach(k=>allVisible?hidden.add(k):hidden.delete(k));
+  _updateLegendOpacity();
+  buildEdgeBitmap();render();
+}
+function toggleLegGroupOpen(dim){
+  const body=document.getElementById(`legbody-${dim}`);
+  if(!body)return;
+  const open=body.classList.toggle('open');
+  const arrow=body.previousElementSibling.querySelector('.leg-arrow');
+  if(arrow)arrow.textContent=open?'▼':'▶';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -53,14 +53,47 @@
   }
   .scatter-controls label { font-size: 12px; color: var(--muted); }
 
+  #main-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
   .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
   canvas { width: 100%; height: 100%; display: block; }
 
+  #detail-panel {
+    width: 240px; flex-shrink: 0;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.18s ease;
+  }
+  #detail-panel.hidden { width: 0; }
+  #detail-panel-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #detail-panel-hdr span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  #detail-close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  #detail-close:hover { color: var(--text); }
+  #detail-panel-body {
+    flex: 1; overflow-y: auto; padding: 10px 12px;
+    font-size: 11px; font-family: 'JetBrains Mono', monospace; line-height: 1.7;
+  }
+  #detail-panel-body .placeholder { color: var(--muted); font-size: 11px; margin-top: 8px; }
+
+  #legend-resize-handle {
+    height: 5px; flex-shrink: 0; cursor: ns-resize;
+    border-top: 1px solid var(--border);
+    background: transparent; transition: background 0.15s;
+  }
+  #legend-resize-handle:hover { background: var(--border); }
+
+  #legend-bar { display: flex; align-items: stretch; height: 80px; flex-shrink: 0; overflow: hidden; }
+
   .scatter-legend {
     padding: 5px 16px; background: var(--panel);
-    border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: flex-start;
-    flex-shrink: 0; font-size: 11px; max-height: 80px; overflow-y: auto;
+    font-size: 11px; overflow-y: auto; flex: 1;
   }
   .scatter-legend-item { display: flex; align-items: center; gap: 5px; }
   .scatter-legend-item:hover { opacity: 0.75 !important; }
@@ -111,28 +144,51 @@
   <select id="scatter-x" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
   <label style="margin-left:8px">Y axis:</label>
   <select id="scatter-y" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
+  <span id="loading-indicator" style="font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
   <button id="reset-btn" onclick="resetView()"
-          style="display:none;margin-left:auto;background:var(--border);color:var(--text);
+          style="display:none;background:var(--border);color:var(--text);
                  border:none;padding:3px 10px;border-radius:5px;font-size:11px;
                  cursor:pointer;font-family:inherit">&#8962; Reset</button>
-  <span id="loading-indicator" style="font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
+  <button id="detail-toggle-btn" onclick="toggleDetailPanel()"
+          style="margin-left:auto;background:var(--border);color:var(--text);
+                 border:none;padding:3px 10px;border-radius:5px;font-size:11px;
+                 cursor:pointer;font-family:inherit">⊞ Detail</button>
 </div>
 
-<div class="canvas-wrap" id="canvas-wrap">
-  <div class="empty-state" id="empty-state">
-    <div class="drop-zone" onclick="document.getElementById('file-input').click()">
-      <div style="font-size:28px;margin-bottom:8px">📂</div>
-      <div>Load a CSV file to begin</div>
-      <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv format</div>
+<div id="main-area">
+  <div class="canvas-wrap" id="canvas-wrap">
+    <div class="empty-state" id="empty-state">
+      <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div style="font-size:28px;margin-bottom:8px">📂</div>
+        <div>Load a CSV file to begin</div>
+        <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv format</div>
+      </div>
+    </div>
+    <canvas id="scatter-canvas"></canvas>
+    <div id="scatter-tip" style="
+      display:none; position:absolute; pointer-events:none; z-index:10;
+      background:var(--panel); border:1px solid var(--border); border-radius:6px;
+      padding:6px 8px; font-size:11px; font-family:'JetBrains Mono',monospace;
+      color:var(--text); box-shadow:0 4px 16px rgba(0,0,0,0.5);
+    "></div>
+  </div>
+
+  <div id="detail-panel" class="hidden">
+    <div id="detail-panel-hdr">
+      <span>Detail</span>
+      <button id="detail-close" onclick="toggleDetailPanel()">✕</button>
+    </div>
+    <div id="detail-panel-body">
+      <div class="placeholder">Hover over a point</div>
     </div>
   </div>
-  <canvas id="scatter-canvas"></canvas>
 </div>
 
-<div style="display:flex;align-items:stretch;border-top:1px solid var(--border)">
-  <div class="scatter-legend" id="scatter-legend" style="border-top:none;flex:1"></div>
+<div id="legend-resize-handle"></div>
+<div id="legend-bar">
+  <div class="scatter-legend" id="scatter-legend"></div>
   <div style="flex-shrink:0;padding:5px 14px;background:var(--panel);
-              border-left:1px solid var(--border);display:flex;align-items:center;gap:10px">
+              border-left:1px solid var(--border);display:flex;align-items:center;gap:10px;overflow:hidden">
     <span style="font-size:11px;color:var(--muted)">count:</span>
     <canvas id="size-legend-canvas" height="22" style="display:block"></canvas>
     <span id="errbar-toggle" onclick="toggleErrorBars()"
@@ -146,6 +202,7 @@
 </div>
 
 <script>
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let files = [];
 let curFile = 0;
@@ -154,6 +211,14 @@ let scatterCache = null;
 let showErrorBars = true;
 let view = null;
 let dragging = false, dragAnchor = null, viewAtDrag = null;
+let detailPanelVisible = false;
+let hoverGrid = null, hoveredPt = null;
+const HOVER_GS = 60;
+let _rafId = null;
+function scheduleRender() {
+  if (_rafId) return;
+  _rafId = requestAnimationFrame(() => { _rafId = null; _renderScatter(); });
+}
 
 // ─── CSV Parsing ─────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
@@ -253,7 +318,7 @@ function vecColor(vecStr) {
 
 
 // ─── File loading ─────────────────────────────────────────────────────────────
-async function parseCSVStream(file) {
+async function parseCSVStream(file, decomp_vec = []) {
   const isGzip = file.name.endsWith('.gz');
   let stream = file.stream();
   if (isGzip) stream = stream.pipeThrough(new DecompressionStream('gzip'));
@@ -262,15 +327,34 @@ async function parseCSVStream(file) {
   let header = null;
   const rows = [];
   let leftover = '';
-
-  // Only keep useful columns: v_*, stat columns (not f_* or w_*)
-  // We determine kept indices after reading the header
   let keptIndices = null;
+  let fIndices = [], wIndices = [];
+  const fdataRows = [], wdataRows = [];
+  const fdataDedup = new Map(), wdataDedup = new Map();
 
   function parseLine(fields) {
     const obj = {};
     for (const i of keptIndices) obj[header[i]] = fields[i] ?? '';
     return obj;
+  }
+
+  function captureRow(fields) {
+    // fdata
+    if (!fIndices.length) { fdataRows.push(null); }
+    else {
+      const arr = fIndices.map(i => fields[i] ?? '');
+      const sig = arr.join('\x00');
+      if (!fdataDedup.has(sig)) fdataDedup.set(sig, arr);
+      fdataRows.push(fdataDedup.get(sig));
+    }
+    // wdata
+    if (!wIndices.length) { wdataRows.push(null); }
+    else {
+      const arr = wIndices.map(i => fields[i] ?? '');
+      const sig = arr.join('\x00');
+      if (!wdataDedup.has(sig)) wdataDedup.set(sig, arr);
+      wdataRows.push(wdataDedup.get(sig));
+    }
   }
 
   while (true) {
@@ -284,22 +368,35 @@ async function parseCSVStream(file) {
       const fields = parseCSVLine(line);
       if (!header) {
         header = fields;
-        // Determine which columns to keep
-        keptIndices = header.map((h, i) => i).filter(i => {
-          const h = header[i];
-          return !/^f_\d+$/.test(h) && !/^w_\d+,\d+$/.test(h);
-        });
+        keptIndices = header.map((h, i) => i).filter(i =>
+          !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i])
+        );
+        fIndices = header.map((h, i) => i)
+          .filter(i => /^f_\d+$/.test(header[i]))
+          .sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
+        wIndices = header.map((h, i) => i)
+          .filter(i => /^w_\d+,\d+$/.test(header[i]))
+          .sort((a, b) => {
+            const [ra, ca] = header[a].slice(2).split(',').map(Number);
+            const [rb, cb] = header[b].slice(2).split(',').map(Number);
+            return ra !== rb ? ra - rb : ca - cb;
+          });
         continue;
       }
       if (fields.length < header.length) continue;
       rows.push(parseLine(fields));
+      captureRow(fields);
     }
   }
   if (leftover.trim() && header) {
     const fields = parseCSVLine(leftover);
-    if (fields.length >= header.length) rows.push(parseLine(fields));
+    if (fields.length >= header.length) {
+      rows.push(parseLine(fields));
+      captureRow(fields);
+    }
   }
-  return rows;
+  const wN = wIndices.length ? Math.round(Math.sqrt(wIndices.length)) : 0;
+  return { rows, fdataRows, wdataRows, wN };
 }
 
 document.getElementById('file-input').addEventListener('change', async e => {
@@ -310,10 +407,10 @@ document.getElementById('file-input').addEventListener('change', async e => {
     document.getElementById('row-count').textContent = `Loading ${file.name}…`;
     document.getElementById('loading-indicator').innerHTML = '<span class="spinning">⟳</span> loading…';
     try {
-      const rows = await parseCSVStream(file);
-      if (!rows.length) { loaded++; continue; }
       const { dim, vec } = parseName(file.name.replace('.csv.gz','').replace('.csv',''));
-      files.push({ name: file.name, rows, decomp_vec: vec });
+      const { rows, fdataRows, wdataRows, wN } = await parseCSVStream(file, vec);
+      if (!rows.length) { loaded++; continue; }
+      files.push({ name: file.name, rows, fdataRows, wdataRows, wN, decomp_vec: vec });
       files.sort((a,b) => a.name.localeCompare(b.name));
     } catch(err) {
       console.error('Error loading', file.name, err);
@@ -412,9 +509,7 @@ function drawSizeLegend(minR, maxR, maxCount) {
     ctx.font         = '9px JetBrains Mono,monospace';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'middle';
-    const label = cnt >= 1e6 ? (cnt/1e6).toFixed(1)+'M'
-                : cnt >= 1e3 ? (cnt/1e3).toFixed(1)+'k'
-                : String(Math.round(cnt));
+    const label = cnt >= 1e4 ? cnt.toExponential(1) : String(Math.round(cnt));
     ctx.fillText(label, x + r * 2 + 3, cy);
     x += r * 2 + 40 + padding;
   }
@@ -434,11 +529,18 @@ function buildScatterCache() {
   const allVecStrs = new Set();
   const rawPts = []; // lightweight [x, y, vecStr, weight] tuples
 
-  // Detect which axis is R_P_mean and find matching std column
-  const meanAxis = xKey === 'R_P_mean' ? 'x' : yKey === 'R_P_mean' ? 'y' : null;
-  const stdKey   = meanAxis ? 'R_P_std' : null;
+  // Auto-detect std column: any axis whose name ends in _mean gets a matching _std
+  const xStdKey = rows.length && xKey.endsWith('_mean') && (xKey.replace(/_mean$/, '_std') in rows[0])
+    ? xKey.replace(/_mean$/, '_std') : null;
+  const yStdKey = rows.length && yKey.endsWith('_mean') && (yKey.replace(/_mean$/, '_std') in rows[0])
+    ? yKey.replace(/_mean$/, '_std') : null;
+  const meanAxis = xStdKey ? 'x' : yStdKey ? 'y' : null;
+  const stdKey   = xStdKey ?? yStdKey ?? null;
 
-  for (const row of rows) {
+  const fdataRows = files[curFile].fdataRows;
+  const wdataRows = files[curFile].wdataRows;
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
     const x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
     if (isNaN(x) || isNaN(y)) continue;
     const vec = getRowVec(row, files[curFile].decomp_vec);
@@ -448,7 +550,7 @@ function buildScatterCache() {
     if (x < xMin) xMin=x; if (x > xMax) xMax=x;
     if (y < yMin) yMin=y; if (y > yMax) yMax=y;
     allVecStrs.add(vecStr);
-    rawPts.push(x, y, vecStr, weight, std); // 5 values per point
+    rawPts.push(x, y, vecStr, weight, std, ri); // 6 values per point
   }
   if (!rawPts.length) return false;
 
@@ -461,14 +563,19 @@ function buildScatterCache() {
   const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - sigDigits);
   const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - sigDigits);
   const pointMap = new Map();
-  for (let i = 0; i < rawPts.length; i += 5) {
+  for (let i = 0; i < rawPts.length; i += 6) {
     const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
     const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
     const vecStr = rawPts[i+2];
     const weight = rawPts[i+3];
     const std    = rawPts[i+4];
+    const ri     = rawPts[i+5];
     const key = `${rx}|${ry}|${vecStr}`;
-    if (!pointMap.has(key)) pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0 });
+    if (!pointMap.has(key)) {
+      const fdata = fdataRows?.[ri] ?? null;
+      const wdata = wdataRows?.[ri] ?? null;
+      pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0, fdata, wdata, ri });
+    }
     const entry = pointMap.get(key);
     if (weight > entry.count) entry.count = weight;
     if (std    > entry.std)   entry.std   = std;   // keep max std
@@ -498,12 +605,13 @@ function buildScatterCache() {
     byVec.get(p.vecStr).push(p);
   }
 
-  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis };
+  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis, stdKey, sizeKey };
   view = { xMin, xMax, yMin, yMax };
 
-  // Build legend (only when cache is rebuilt)
+  // Build legend and hover grid (only when cache is rebuilt)
   drawSizeLegend(minR, maxR, maxCount);
   buildLegend(byVec);
+  buildHoverGrid();
   return true;
 }
 
@@ -578,6 +686,344 @@ function toggleLegGroupSel(sum) {
   drawScatter();
 }
 
+// ─── Dynamics (ported from metagraphe) ───────────────────────────────────────
+function computeTransitions(fdata, n) {
+  const N = 1 << n, T = new Int32Array(N);
+  for (let s = 0; s < N; s++) {
+    let t = 0;
+    for (let j = 0; j < n; j++) if (fdata[j].charCodeAt(s) === 49) t |= (1 << j);
+    T[s] = t;
+  }
+  return T;
+}
+function computeBasins(T, n) {
+  const N = 1 << n, inCycle = new Uint8Array(N), cycleId = new Int32Array(N).fill(-1);
+  let cid = 0;
+  for (let start = 0; start < N; start++) {
+    const path = [], seen = {}; let cur = start;
+    while (seen[cur] === undefined) { seen[cur] = path.length; path.push(cur); cur = T[cur]; }
+    if (cycleId[cur] === -1) { for (let k = seen[cur]; k < path.length; k++) { inCycle[path[k]] = 1; cycleId[path[k]] = cid; } cid++; }
+  }
+  return { inCycle };
+}
+function hcPositions(n) {
+  const N = 1 << n, p = [];
+  for (let s = 0; s < N; s++) {
+    const x = s&1, y = (s>>1)&1, z = (s>>2)&1;
+    if (n <= 3) p.push([x*2-1, y*2-1, z*2-1]);
+    else if (n === 4) { const w=(s>>3)&1, sc=w?1:0.5; p.push([(x*2-1)*sc,(y*2-1)*sc,(z*2-1)*sc]); }
+    else { const sc=1-(s>>3)*0.15; p.push([(x*2-1)*sc,(y*2-1)*sc,(z*2-1)*sc]); }
+  }
+  return p;
+}
+function hcEdges(n) {
+  const N=1<<n, e=[];
+  for (let s=0;s<N;s++) for (let b=0;b<n;b++) if (!((s>>b)&1)) e.push([s, s|(1<<b)]);
+  return e;
+}
+function rot3(p,rx,ry) {
+  let [x,y,z]=p, y2=y*Math.cos(rx)-z*Math.sin(rx), z2=y*Math.sin(rx)+z*Math.cos(rx);
+  y=y2; z=z2; return [x*Math.cos(ry)+z*Math.sin(ry), y, -x*Math.sin(ry)+z*Math.cos(ry)];
+}
+function dynGroupColor(idx) {
+  const hue=(220+idx*34)%360, sat=(68+(idx%3)*4)/100, light=(52+(idx%2)*12)/100;
+  const c=(1-Math.abs(2*light-1))*sat, x=c*(1-Math.abs((hue/60)%2-1)), m=light-c/2;
+  let r,g,b;
+  if(hue<60){r=c;g=x;b=0;}else if(hue<120){r=x;g=c;b=0;}else if(hue<180){r=0;g=c;b=x;}
+  else if(hue<240){r=0;g=x;b=c;}else if(hue<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
+}
+function hexA(hex,a) { return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`; }
+function buildDecompTree(vec, T, n) {
+  let colorIdx=0; const colorLeaves=[];
+  function findSplitBit(states,fixed) {
+    for (let b=n-1;b>=0;b--) {
+      if (fixed.has(b)) continue;
+      const L=new Set(), R=new Set();
+      for (const s of states) ((s>>b)&1)?R.add(s):L.add(s);
+      if (L.size>0&&R.size>0&&[...L].every(s=>L.has(T[s]))&&[...R].every(s=>R.has(T[s]))) return b;
+    }
+    return -1;
+  }
+  function build(states,fixed) {
+    if (!states.length) return;
+    const sb=findSplitBit(states,fixed);
+    if (sb===-1){colorLeaves.push({groupKey:String(colorIdx++),states});return;}
+    const nf=new Set(fixed); nf.add(sb);
+    const L=[],R=[]; for (const s of states) ((s>>sb)&1)?R.push(s):L.push(s);
+    build(L,nf); build(R,nf);
+  }
+  build(Array.from({length:1<<n},(_,i)=>i), new Set());
+  return colorLeaves.length>0 ? colorLeaves : null;
+}
+function drawDynamics(canvas, T, n, decomp) {
+  const DPR=window.devicePixelRatio||1, w=canvas.clientWidth||170, hh=canvas.clientHeight||130;
+  canvas.width=w*DPR; canvas.height=hh*DPR;
+  const ctx=canvas.getContext('2d'); ctx.scale(DPR,DPR);
+  ctx.clearRect(0,0,w,hh);
+  const cx=w/2, cy=hh/2, scale=Math.min(w,hh)*0.28, fov=5, rx=0.4, ry=0.5;
+  const pos=hcPositions(n).map(p=>{const r=rot3(p,rx,ry),d=fov/(fov+r[2]*0.4);return[cx+r[0]*scale*d,cy-r[1]*scale*d,r[2]];});
+  const {inCycle}=computeBasins(T,n);
+  const N=1<<n, nr=Math.max(3,Math.min(8,scale*0.13));
+  const groupOf=s=>decomp?decomp.find(g=>g.states.includes(s)):null;
+  // Hypercube skeleton
+  ctx.strokeStyle='rgba(100,116,139,0.22)'; ctx.lineWidth=1;
+  for (const [a,b] of hcEdges(n)){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+  // Decomp sub-face outlines
+  if (decomp){
+    ctx.setLineDash([4,4]); ctx.lineWidth=1.3;
+    for (const g of decomp){
+      const col=dynGroupColor(parseInt(g.groupKey)); ctx.strokeStyle=hexA(col,0.5);
+      for (let i=0;i<g.states.length;i++) for (let j=i+1;j<g.states.length;j++){
+        const a=g.states[i],b=g.states[j],diff=a^b;
+        if (diff&&(diff&(diff-1))===0){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+      }
+    }
+    ctx.setLineDash([]);
+  }
+  // Transition arrows
+  ctx.lineWidth=1.4;
+  for (let s=0;s<N;s++){
+    const t=T[s]; if(t===s)continue;
+    const[sx,sy]=pos[s],[tx,ty]=pos[t],dx=tx-sx,dy=ty-sy,dist=Math.hypot(dx,dy); if(dist<1)continue;
+    const grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):'#4f8ef7';
+    ctx.strokeStyle=col; ctx.fillStyle=col;
+    const ux=dx/dist,uy=dy/dist,nv=-uy,nvy=ux,curve=dist*0.18;
+    const x1=sx+ux*nr,y1=sy+uy*nr,x2=tx-ux*nr,y2=ty-uy*nr;
+    const qx=(x1+x2)/2+nv*curve,qy=(y1+y2)/2+nvy*curve;
+    const edx=x2-qx,edy=y2-qy,el=Math.hypot(edx,edy)||1,ang=Math.atan2(edy,edx),hs=6;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.quadraticCurveTo(qx,qy,x2-hs*0.85*edx/el,y2-hs*0.85*edy/el);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(ang-0.38),y2-hs*Math.sin(ang-0.38));ctx.lineTo(x2-hs*Math.cos(ang+0.38),y2-hs*Math.sin(ang+0.38));ctx.closePath();ctx.fill();
+  }
+  // Nodes back-to-front
+  for (const s of pos.map((_,i)=>i).sort((a,b)=>pos[a][2]-pos[b][2])){
+    const[px,py]=pos[s],att=inCycle[s],grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):'#4f8ef7';
+    ctx.save(); if(att){ctx.shadowColor=col;ctx.shadowBlur=8;}
+    ctx.beginPath();ctx.arc(px,py,nr,0,Math.PI*2);ctx.fillStyle=att?col:'#1e2535';ctx.fill();
+    ctx.strokeStyle=att?col:hexA(col,0.7);ctx.lineWidth=att?2:1.3;ctx.stroke();ctx.restore();
+    if (T[s]===s){
+      const ra=Math.atan2(py-cy,px-cx)||-Math.PI/2,da=0.55,ld=nr*1.25;
+      const lsx=px+Math.cos(ra-da)*nr,lsy=py+Math.sin(ra-da)*nr,lex=px+Math.cos(ra+da)*nr,ley=py+Math.sin(ra+da)*nr;
+      const c1x=px+Math.cos(ra-da*0.6)*(nr+ld),c1y=py+Math.sin(ra-da*0.6)*(nr+ld),c2x=px+Math.cos(ra+da*0.6)*(nr+ld),c2y=py+Math.sin(ra+da*0.6)*(nr+ld);
+      const aAng=Math.atan2(ley-c2y,lex-c2x),hs=4;
+      ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1.4;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(lsx,lsy);ctx.bezierCurveTo(c1x,c1y,c2x,c2y,lex,ley);ctx.stroke();
+      ctx.lineCap='butt';
+      ctx.beginPath();ctx.moveTo(lex,ley);ctx.lineTo(lex-hs*Math.cos(aAng-0.5),ley-hs*Math.sin(aAng-0.5));ctx.lineTo(lex-hs*Math.cos(aAng+0.5),ley-hs*Math.sin(aAng+0.5));ctx.closePath();ctx.fill();
+    }
+  }
+}
+
+function buildHoverGrid() {
+  hoverGrid = null;
+  if (!scatterCache) return;
+  const { allPts, xMin, xMax, yMin, yMax } = scatterCache;
+  const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+  hoverGrid = new Map();
+  for (const p of allPts) {
+    const gx = Math.floor((p.x - xMin) / xRange * HOVER_GS);
+    const gy = Math.floor((p.y - yMin) / yRange * HOVER_GS);
+    const k = `${gx},${gy}`;
+    if (!hoverGrid.has(k)) hoverGrid.set(k, []);
+    hoverGrid.get(k).push(p);
+  }
+}
+
+function findNearestPt(mouseX, mouseY) {
+  if (!hoverGrid || !scatterCache || !view) return null;
+  const canvas = document.getElementById('scatter-canvas');
+  const W = canvas.clientWidth, H = canvas.clientHeight, PAD = 52;
+  // Mouse → data coords
+  const dataX = view.xMin + (mouseX - PAD) / (W - 2*PAD) * (view.xMax - view.xMin);
+  const dataY = view.yMax - (mouseY - PAD) / (H - 2*PAD) * (view.yMax - view.yMin);
+  // 14px threshold → data units
+  const radX = 14 / (W - 2*PAD) * (view.xMax - view.xMin);
+  const radY = 14 / (H - 2*PAD) * (view.yMax - view.yMin);
+  // Grid cells to search (using cache bounds for grid indexing)
+  const { xMin, xMax, yMin, yMax } = scatterCache;
+  const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+  const gx0 = Math.floor((dataX - radX - xMin) / xRange * HOVER_GS) - 1;
+  const gx1 = Math.floor((dataX + radX - xMin) / xRange * HOVER_GS) + 1;
+  const gy0 = Math.floor((dataY - radY - yMin) / yRange * HOVER_GS) - 1;
+  const gy1 = Math.floor((dataY + radY - yMin) / yRange * HOVER_GS) + 1;
+  let best = null, bestPx = Infinity, bestSum = -1;
+  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+    const pts = hoverGrid.get(`${gx},${gy}`);
+    if (!pts) continue;
+    for (const p of pts) {
+      if (selectedVecs.size > 0 && !selectedVecs.has(p.vecStr)) continue;
+      const cx = PAD + (p.x - view.xMin) / (view.xMax - view.xMin) * (W - 2*PAD);
+      const cy = (H - PAD) - (p.y - view.yMin) / (view.yMax - view.yMin) * (H - 2*PAD);
+      const d = Math.hypot(mouseX - cx, mouseY - cy);
+      if (d > p.radius + 8) continue;
+      const s = vecStrToSum(p.vecStr);
+      // prefer most decomposed; use pixel distance as tiebreaker
+      if (s > bestSum || (s === bestSum && d < bestPx)) { bestPx = d; bestSum = s; best = p; }
+    }
+  }
+  return best;
+}
+
+// Same color convention as metagraphe: green for positive, red for negative, gray for zero
+function weightColor(w) {
+  if (w === 0) return '#64748b';
+  const t = Math.min(1, Math.abs(w) / 4);
+  return w > 0
+    ? `rgb(20,${Math.round(80 + 175 * t)},80)`
+    : `rgb(${Math.round(80 + 175 * t)},20,20)`;
+}
+
+function drawWeightMatrix(canvas, wdata, n) {
+  const DPR = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width || canvas.offsetWidth || 200;
+  const H = rect.height || W;
+  canvas.width  = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  const vals = wdata.map(v => parseInt(v) || 0);
+  const pad = 18; // gutter for axis labels
+  const cW = (W - pad) / n;
+  const cH = (H - pad) / n;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const w = vals[i * n + j];
+      const cx = pad + (j + 0.5) * cW;
+      const cy = (i + 0.5) * cH;
+
+      if (w !== 0) {
+        ctx.fillStyle = weightColor(w);
+        ctx.fillRect(pad + j * cW + 0.5, i * cH + 0.5, cW - 1, cH - 1);
+      }
+
+      if (w !== 0) {
+        const fs = Math.max(7, Math.min(11, Math.floor(cW * 0.42)));
+        ctx.font = `600 ${fs}px JetBrains Mono, monospace`;
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText(String(w), cx, cy);
+      }
+    }
+  }
+
+  // axis labels (1-based, matching metagraphe convention)
+  const lfs = Math.max(7, Math.min(10, Math.floor(cW * 0.38)));
+  ctx.font = `${lfs}px JetBrains Mono, monospace`;
+  ctx.fillStyle = '#64748b';
+  for (let k = 0; k < n; k++) {
+    ctx.fillText(String(k + 1), pad + (k + 0.5) * cW, H - pad * 0.38);
+    ctx.fillText(String(k + 1), pad * 0.42, (k + 0.5) * cH);
+  }
+}
+
+function repositionTip(ex, ey) {
+  const tip = document.getElementById('scatter-tip');
+  if (tip.style.display === 'none') return;
+  const wrap = document.getElementById('canvas-wrap');
+  const tW = tip.offsetWidth || 200, tH = tip.offsetHeight || 200;
+  tip.style.left = (ex + 16 + tW > wrap.clientWidth ? ex - tW - 8 : ex + 16) + 'px';
+  tip.style.top  = Math.max(4, Math.min(ey + 4, wrap.clientHeight - tH - 4)) + 'px';
+}
+
+function toggleDetailPanel() {
+  detailPanelVisible = !detailPanelVisible;
+  document.getElementById('detail-panel').classList.toggle('hidden', !detailPanelVisible);
+  // canvas size changes → force re-render after transition
+  setTimeout(scheduleRender, 200);
+}
+
+function updateDetailPanel(p) {
+  const body = document.getElementById('detail-panel-body');
+  if (!body) return;
+  if (!p) { body.innerHTML = '<div class="placeholder">Hover over a point</div>'; return; }
+
+  const { xKey, yKey, meanAxis, stdKey, sizeKey } = scatterCache;
+  const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;
+    background:rgb(${p.r},${p.g},${p.b});margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
+  const trow = (k, v) => `<div style="display:flex;justify-content:space-between;gap:8px;line-height:1.7;min-width:0">
+    <span style="color:var(--muted);flex-shrink:0">${k}</span>
+    <span style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v}</span></div>`;
+
+  let html = `<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600;flex-wrap:wrap">${dot}${p.vecStr}</div>`;
+  html += trow(xKey, p.x.toPrecision(5));
+  html += trow(yKey, p.y.toPrecision(5));
+  html += trow('count', Math.round(p.count).toLocaleString());
+  if (meanAxis && p.std > 0) html += trow('±1σ', p.std.toPrecision(4));
+
+  const row = files[curFile]?.rows[p.ri];
+  if (row) {
+    const shownKeys = new Set([xKey, yKey, sizeKey, stdKey].filter(Boolean));
+    for (const [k, v] of Object.entries(row)) {
+      if (/^v_\d+$/.test(k)) continue;
+      if (shownKeys.has(k)) continue;
+      const num = parseFloat(v);
+      if (!isNaN(num) && isFinite(num)) html += trow(k, num.toPrecision(5));
+    }
+  }
+
+  if (p.fdata) {
+    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:4px">Dynamics</div>`;
+    html += `<canvas id="detail-dyn" style="display:block;width:100%;height:180px"></canvas>`;
+  }
+
+  const wN = files[curFile]?.wN ?? 0;
+  if (p.wdata && wN > 0) {
+    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:2px">Weights w<sub>i→j</sub></div>`;
+    html += `<div style="color:var(--muted);font-size:9px;font-style:italic;margin-bottom:4px">one possible realization</div>`;
+    html += `<canvas id="detail-wmat" style="display:block;width:216px;height:216px"></canvas>`;
+  }
+
+  body.innerHTML = html;
+
+  if (p.fdata) {
+    const c = document.getElementById('detail-dyn');
+    const n = p.fdata.length;
+    const T = computeTransitions(p.fdata, n);
+    const vecNums = p.vecStr.match(/[0-9]+/g)?.map(Number) ?? [];
+    const decomp = vecNums.length ? buildDecompTree(vecNums, T, n) : null;
+    drawDynamics(c, T, n, decomp);
+  }
+
+  if (p.wdata && wN > 0) {
+    drawWeightMatrix(document.getElementById('detail-wmat'), p.wdata, wN);
+  }
+}
+
+function showHoverTip(p, ex, ey) {
+  // Update side panel unconditionally
+  if (detailPanelVisible) updateDetailPanel(p);
+
+  // Tooltip: just the transition graph (or nothing if no fdata)
+  const tip = document.getElementById('scatter-tip');
+  if (!p.fdata) { tip.style.display = 'none'; return; }
+
+  const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:rgb(${p.r},${p.g},${p.b});margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
+  let html = `<div style="display:flex;align-items:center;margin-bottom:5px;font-size:11px;font-weight:600;color:var(--muted)">${dot}${p.vecStr}</div>`;
+  html += `<canvas id="tip-dyn" style="display:block;width:160px;height:120px"></canvas>`;
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+
+  const dynCanvas = document.getElementById('tip-dyn');
+  const n = p.fdata.length;
+  const T = computeTransitions(p.fdata, n);
+  const vecNums = p.vecStr.match(/[0-9]+/g)?.map(Number) ?? [];
+  const decomp = vecNums.length ? buildDecompTree(vecNums, T, n) : null;
+  drawDynamics(dynCanvas, T, n, decomp);
+  repositionTip(ex, ey);
+}
+
+function hideHoverTip() {
+  hoveredPt = null;
+  document.getElementById('scatter-tip').style.display = 'none';
+  if (detailPanelVisible) updateDetailPanel(null);
+}
+
 function toggleErrorBars() {
   showErrorBars = !showErrorBars;
   const btn = document.getElementById('errbar-toggle');
@@ -615,13 +1061,15 @@ function _renderScatter() {
 
   const DPR = window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
-  canvas.width  = rect.width  * DPR;
-  canvas.height = rect.height * DPR;
-  canvas.style.width  = rect.width  + 'px';
-  canvas.style.height = rect.height + 'px';
-  const ctx = canvas.getContext('2d');
-  ctx.scale(DPR, DPR);
   const W = rect.width, H = rect.height;
+  if (canvas.width !== Math.round(W * DPR) || canvas.height !== Math.round(H * DPR)) {
+    canvas.width  = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
   const pad=52, xRange=xMax-xMin||1, yRange=yMax-yMin||1;
@@ -756,7 +1204,7 @@ function resetView() {
     view.yMin = dataY - (dataY - view.yMin) * factor;
     view.yMax = dataY + (view.yMax - dataY) * factor;
     markDirty();
-    _renderScatter();
+    scheduleRender();
   }, { passive: false });
 
   canvas.addEventListener('mousedown', e => {
@@ -768,20 +1216,57 @@ function resetView() {
   });
 
   canvas.addEventListener('mousemove', e => {
-    if (!dragging || !viewAtDrag) return;
-    const W = canvas.clientWidth, H = canvas.clientHeight;
-    const dx = (e.offsetX - dragAnchor.x) / (W - 2*PAD) * (viewAtDrag.xMax - viewAtDrag.xMin);
-    const dy = (e.offsetY - dragAnchor.y) / (H - 2*PAD) * (viewAtDrag.yMax - viewAtDrag.yMin);
-    view.xMin = viewAtDrag.xMin - dx;
-    view.xMax = viewAtDrag.xMax - dx;
-    view.yMin = viewAtDrag.yMin + dy;
-    view.yMax = viewAtDrag.yMax + dy;
-    markDirty();
-    _renderScatter();
+    if (dragging) {
+      if (!viewAtDrag) return;
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      const dx = (e.offsetX - dragAnchor.x) / (W - 2*PAD) * (viewAtDrag.xMax - viewAtDrag.xMin);
+      const dy = (e.offsetY - dragAnchor.y) / (H - 2*PAD) * (viewAtDrag.yMax - viewAtDrag.yMin);
+      view.xMin = viewAtDrag.xMin - dx;
+      view.xMax = viewAtDrag.xMax - dx;
+      view.yMin = viewAtDrag.yMin + dy;
+      view.yMax = viewAtDrag.yMax + dy;
+      markDirty();
+      scheduleRender();
+      return;
+    }
+    const p = findNearestPt(e.offsetX, e.offsetY);
+    if (p !== hoveredPt) {
+      hoveredPt = p;
+      if (p) showHoverTip(p, e.offsetX, e.offsetY);
+      else hideHoverTip();
+    } else if (p) {
+      repositionTip(e.offsetX, e.offsetY);
+    }
   });
 
   canvas.addEventListener('mouseup', () => { dragging = false; canvas.style.cursor = 'crosshair'; });
-  canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; });
+  canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; hideHoverTip(); });
+})();
+
+(function initLegendResize() {
+  const handle = document.getElementById('legend-resize-handle');
+  const bar    = document.getElementById('legend-bar');
+  let startY, startH;
+
+  handle.addEventListener('mousedown', e => {
+    startY = e.clientY;
+    startH = bar.offsetHeight;
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    const newH = Math.max(24, Math.min(500, startH - (e.clientY - startY)));
+    bar.style.height = newH + 'px';
+    drawScatter();
+  }
+  function onUp() {
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
 })();
 </script>
 </body>

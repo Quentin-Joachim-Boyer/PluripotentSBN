@@ -119,7 +119,7 @@ Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus lar
 
 - HDR de Nicolas Glade : la bible donnant le cadre général [Cf. tout].
 
-- Thèse de Rémi Segretain : et développement de la Java Parallel Pipeline (JPP) [Cf. partie technique]
+- Thèse de Rémi Segretain : réflexions générales sur les SBN et développement de la Java Parallel Pipeline (JPP) [Cf. partie technique]
 
 - Rapports d'Ailing Bonnet et de Rémy Defossez : approfondissement des travaux de Rémi [Cf. partie calcul de propriétés].
 
@@ -129,17 +129,25 @@ Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus lar
 
 - Programmes de Laurent Trilling : le point de départ de ce travail, l'énumération en Answer Set Programming (ASP) des réseaux pluripotents sous nœud de contrôle via la dynamique [Cf. partie Méthodologie d'exploration].
 
-Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique d'un côté et expérimental de l'autre se rejoignant sur l'objectif exploratoire, nos échanges nous auront permis l'un l'autre de nous guider mutuellement.  
+Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique du présent travail d'un côté et l'aspect expérimental des simulations de l'autre aura alimenté nos échanges qui nous auront permis l'un l'autre de nous guider mutuellement.  
 
 
 \subsection{Contributions de ce stage}
 
--- La pluripotence.
+L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 6 noeuds [Cf table des échelles]. Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
 
-- Calcul efficace (scalabilité).
-- Visualisation efficace.
-- Cet article.
-- Discussions.
+Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques, mais aussi pour vérifier la justesse de nos programmes. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
+
+- sbn\_viz(7).html : réseaux et graphes de transitions détaillés.
+
+- sbn\_scatter(5).html : nuages des réseaux placés selon différentes métriques.
+
+- metagraphe.html : nuages des réseaux placés les uns par rapport aux autres selon des règles de mutations. 
+
+[Cf. partie technique pour un usage détaillé] 
+
+Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une longue réflexion sur les SBN ???
+
 
 % ============================================================
 \section{Formalisme des Réseaux Booléens à Signe}
@@ -149,9 +157,8 @@ Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin
 
 \begin{definition}[Réseau Booléen à Signe]
 Un SBN est un graphe orienté pondéré $G = (V, W)$ où $V = \{v_1, \ldots, v_n\}$ est un
-ensemble de $n$ nœuds à valeur dans $\{0,1\}$, et $W \in \mathbb{Z}^{n \times n}$ est la
-matrice de poids. Un poids $w_{ij} > 0$ représente une activation de $v_i$ sur $v_j$,
-un poids $w_{ij} < 0$ une inhibition.
+ensemble de $n$ nœuds, et $W \in \mathbb{Z}^{n \times n}$ est la
+matrice de poids. 
 \end{definition}
 
 % Fonction booléenne de seuil (SBF), graphe de transition, attracteurs, bassins d'attraction.
@@ -188,11 +195,8 @@ Pour deux SBN $g, g'$ de même dimension $d$ :
 
 \subsection{Méthodologie et périmètre d'exploration}
 
-% Pourquoi une approche naïve ne passe pas à l'échelle
-% (explosion combinatoire du nombre de SBN avec la dimension)
-% Choix des dimensions explorées, paramètres epsilon et delta
 
-\lipsum[7] % à remplacer
+
 
 \subsection{Robustesse et évolutivité}
 
@@ -211,11 +215,21 @@ Pour deux SBN $g, g'$ de même dimension $d$ :
 
 \subsection{Résultats et limites}
 
-% Synthèse des résultats obtenus
-% Limites : dimensions accessibles, choix de distances, hypothèses de travail
-% Perspectives ouvertes
+Dans un premier temps, il est rassurant d'observer que nos graphiques confirment les résultats de [Wagner]. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. [Insérer graphique scatter EP/RP en plusieurs dimensions]
 
-\lipsum[10] % à remplacer
+
+
+Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication semblent pouvoir se généraliser aux dimensions supérieures.
+
+- La décomposition d'un SBN en sous-dynamiques distinctes est déterminante dans le calcul de ses autres propriétés.
+
+- Les propriétés d'un PSBN semblent être très liés à la dimension de sa plus grande hyper-face non décomposable. Notamment la variance de la robustesse génotypique pour chaque phénotype (Robustness\_std)
+
+Dans le contexte de mutations sur les poids [Cf. règles de mutations] :
+
+- Les PSBN sont plutôt proches les uns des autres, notamment au sein d'une même orientation (élément d'une orbite de permutation). Les PSBN les plus décomposés (que les permutations affectent moins[illustration]) font en quelque sortent le lien entre ces différentes orientations.
+
+Ces conclusions résument les observations sur les visualisations générées, tentent d'en trouver des explications qui nous permettent d'oser une généralisation, mais peuvent difficilement dépasser en précision les visualisations elles-mêmes. C'est pourquoi le lecteur est fortement invité à les tester par lui-même (et qui sait, peut-être trouver de tendances que l'on aurait manquée).   
 
 % ============================================================
 \section{Aspects techniques}
