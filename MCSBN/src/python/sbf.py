@@ -23,7 +23,9 @@ import os
 import pickle
 from itertools import product
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+# Cache partage avec le binaire C, a la racine du projet MCSBN (src/python -> ../..).
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "..", "..", ".cache")
 
 
 def wbound(n):

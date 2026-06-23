@@ -6,10 +6,11 @@
  * decomposition "sous controle" (inegalites exactes sur la matrice de poids
  * echantillonnee). La sortie CSV est byte-pour-byte comparable.
  *
- * Compilation :
- *   gcc -O3 -march=native -o mcsbn mcsbn.c -lm
+ * Compilation (depuis la racine MCSBN) :
+ *   make            # -> ./bin/mcsbn
+ *   gcc -O3 -march=native -fopenmp -o bin/mcsbn src/c/mcsbn.c -lm -lz
  *
- * Voir le README et `./mcsbn --help`.
+ * Voir le README et `./bin/mcsbn --help`.
  */
 
 #include <stdio.h>
@@ -19,6 +20,14 @@
 #include <math.h>
 #include <immintrin.h>
 #include <omp.h>
+#include <zlib.h>
+#ifdef _WIN32
+  #include <io.h>
+  #define MCSBN_ISATTY(fp) _isatty(_fileno(fp))
+#else
+  #include <unistd.h>
+  #define MCSBN_ISATTY(fp) isatty(fileno(fp))
+#endif
 
 typedef uint64_t u64;
 typedef uint32_t u32;
@@ -144,14 +153,6 @@ static int ttmap_get_or_add(TtMap *m, u64 k, int next_index) {
     }
     m->key[h] = k; m->val[h] = next_index; m->size++;
     return next_index;
-}
-static int ttmap_get(const TtMap *m, u64 k) { /* lecture seule (sur apres construction) */
-    u64 h = (k * 0x9E3779B97F4A7C15ULL) & m->mask;
-    while (m->key[h] != U64SET_EMPTY) {
-        if (m->key[h] == k) return m->val[h];
-        h = (h + 1) & m->mask;
-    }
-    return -1;
 }
 
 static void build_table(void) {
@@ -355,6 +356,7 @@ static int curW[8][8];     /* W[i][j] poids i->j */
 static u64 curf[8];        /* dynamique f[j] */
 static signed char memo_status[1 << 12]; /* index = fn*N+fv ; 0 inconnu,1 valide,2 invalide */
 static int memo_counts[1 << 12][9];
+static int decomp_tbn;   /* 0 = SBN (avec garde de realisabilite), 1 = TBN (sans) */
 
 static int popcnt(int x) { return __builtin_popcount(x); }
 
@@ -373,18 +375,21 @@ static int decompose(int fn, int fv, int *out) {
         return 1;
     }
 
-    /* etats de la face, indexes par la config des noeuds libres */
-    int ns = 1 << k;
-    /* realisabilite : fonction restreinte de chaque noeud libre = SBF dim k */
-    for (int Nn = 0; Nn < n; Nn++) {
-        if (!((free_mask >> Nn) & 1)) continue;
-        u64 rtt = 0;
-        u64 fN = curf[Nn];
-        for (int c = 0; c < ns; c++) {
-            int s = fv | (int)_pdep_u64((u64)c, (u64)free_mask);
-            if ((fN >> s) & 1) rtt |= (u64)1 << c;
+    /* realisabilite : fonction restreinte de chaque noeud libre = SBF dim k.
+     * Garde du mode SBN uniquement ; en TBN (PTBN) toute face est une feuille
+     * valide (le contexte n'ajoute qu'un biais a une fonction qui reste seuil). */
+    if (!decomp_tbn) {
+        int ns = 1 << k;   /* etats de la face, indexes par la config libre */
+        for (int Nn = 0; Nn < n; Nn++) {
+            if (!((free_mask >> Nn) & 1)) continue;
+            u64 rtt = 0;
+            u64 fN = curf[Nn];
+            for (int c = 0; c < ns; c++) {
+                int s = fv | (int)_pdep_u64((u64)c, (u64)free_mask);
+                if ((fN >> s) & 1) rtt |= (u64)1 << c;
+            }
+            if (!u64set_has(&keyset[k], rtt)) { memo_status[key] = 2; return 0; }
         }
-        if (!u64set_has(&keyset[k], rtt)) { memo_status[key] = 2; return 0; }
     }
 
     /* feuille valide de dimension k */
@@ -512,8 +517,14 @@ static int dd_add(const u32 *idx) { /* 1 si nouveau */
 
 /* ------------------------------------------------------------------- sortie */
 static char *obuf; static size_t opos, ocap;
-static FILE *out_fp;
-static void oflush(void) { fwrite(obuf, 1, opos, out_fp); opos = 0; }
+static FILE *out_fp;        /* sortie texte/binaire brute (NULL si gz) */
+static gzFile out_gz;       /* sortie compressee zlib si -o *.gz, sinon NULL */
+static void oflush(void) {
+    if (opos == 0) return;
+    if (out_gz) gzwrite(out_gz, obuf, (unsigned)opos);
+    else        fwrite(obuf, 1, opos, out_fp);
+    opos = 0;
+}
 static inline void oput(const char *s, int len) {
     if (opos + len >= ocap) oflush();
     memcpy(obuf + opos, s, len); opos += len;
@@ -565,16 +576,18 @@ static void emit_row(const u32 *idx) {
     double r_std = sqrt(rvar) / Knorm;
     double r_mean = rmean / Knorm;
 
-    /* decomposition */
-    memset(memo_status, 0, sizeof(signed char) * (size_t)N * N);
+    /* decomposition "sous controle" en mode TBN (PTBN) : on relache la garde de
+     * realisabilite SBF des faces (cf. decompose / decomp_tbn). */
     int vec[9];
+    decomp_tbn = 1;
+    memset(memo_status, 0, sizeof(signed char) * (size_t)N * N);
     decompose(0, 0, vec);
 
     char t[64];
     /* v_n..v_0 */
     for (int i = 0; i <= n; i++) { oint(vec[n - i]); oput(",", 1); }
     if (include_weights) {
-        char fs[1 << 6 + 1];
+        char fs[(1 << 6) + 1];
         for (int j = 0; j < n; j++) {
             for (int s = 0; s < N; s++) fs[s] = ((curf[j] >> s) & 1) ? '1' : '0';
             oput(fs, N); oput(",", 1);
@@ -591,6 +604,31 @@ static void emit_row(const u32 *idx) {
     oint(ev); oput("\n", 1);
 }
 
+/* ------------------------------------------------------ progression runtime
+ * Ligne reecrite sur stderr (\r) pour ne pas polluer le CSV (stdout).
+ * Throttlee dans la boucle pour un cout negligeable. */
+static double t_start;   /* debut de la generation (omp_get_wtime) */
+
+static void progress_sampling(long written, long target, long draws) {
+    double el = omp_get_wtime() - t_start;
+    double rate = el > 0 ? written / el : 0;
+    double nov  = draws > 0 ? 100.0 * written / draws : 0;
+    double eta  = rate > 0 ? (target - written) / rate : 0;
+    fprintf(stderr, "\r[d=%d] %ld/%ld %5.1f%% | %.0fk dyn/s | nouveaute %5.2f%% | ETA %.0fs   ",
+            n, written, target, 100.0 * written / target, rate / 1000.0, nov, eta);
+    fflush(stderr);
+}
+
+static void progress_exhaustive(u64 done, u64 space) {
+    double el = omp_get_wtime() - t_start;
+    double rate = el > 0 ? done / el : 0;
+    double eta  = rate > 0 ? (double)(space - done) / rate : 0;
+    fprintf(stderr, "\r[d=%d] %llu/%llu %5.1f%% | %.0fk dyn/s | ETA %.0fs   ",
+            n, (unsigned long long)done, (unsigned long long)space,
+            100.0 * done / space, rate / 1000.0, eta);
+    fflush(stderr);
+}
+
 /* ------------------------------------------------------------------- main */
 static const char *cache_path(void) {
     static char p[512];
@@ -601,7 +639,7 @@ static const char *cache_path(void) {
 
 int main(int argc, char **argv) {
     long target = 100000, max_draws = 0;
-    int seed = 0, exhaustive = 0, genotype = 0;
+    int seed = 0, exhaustive = 0, genotype = 0, progress = -1;  /* -1 = auto (isatty) */
     const char *opath = "-";
     n = 0;
     for (int i = 1; i < argc; i++) {
@@ -613,9 +651,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--exhaustive")) exhaustive = 1;
         else if (!strcmp(argv[i], "--measure")) genotype = !strcmp(argv[++i], "genotype");
         else if (!strcmp(argv[i], "--no-weights")) include_weights = 0;
+        else if (!strcmp(argv[i], "--progress")) progress = 1;
+        else if (!strcmp(argv[i], "--no-progress")) progress = 0;
         else if (!strcmp(argv[i], "--help")) {
             fprintf(stderr, "usage: mcsbn -d D [-n N] [-o file] [--measure variety|genotype]\n"
-                            "             [--seed S] [--max-draws M] [--exhaustive] [--no-weights]\n");
+                            "             [--seed S] [--max-draws M] [--exhaustive] [--no-weights]\n"
+                            "             [--progress|--no-progress]\n"
+                            "  progression sur stderr : auto si terminal, sinon silencieuse.\n");
             return 0;
         }
     }
@@ -633,10 +675,23 @@ int main(int argc, char **argv) {
     succ_buf = malloc(sizeof(int) * N * 3);
     state_attr = malloc(sizeof(int) * N);
 
-    out_fp = (!strcmp(opath, "-")) ? stdout : fopen(opath, "wb");
-    if (!out_fp) { fprintf(stderr, "ouverture de %s impossible\n", opath); return 1; }
+    out_fp = NULL; out_gz = NULL;
+    size_t olen = strlen(opath);
+    if (!strcmp(opath, "-")) {
+        out_fp = stdout;                       /* stdout reste non compresse */
+    } else if (olen >= 3 && !strcmp(opath + olen - 3, ".gz")) {
+        out_gz = gzopen(opath, "wb");          /* compression zlib native */
+    } else {
+        out_fp = fopen(opath, "wb");
+    }
+    if (!out_fp && !out_gz) { fprintf(stderr, "ouverture de %s impossible\n", opath); return 1; }
     ocap = 1 << 22; obuf = malloc(ocap); opos = 0;
     emit_header();
+
+    if (progress < 0) progress = MCSBN_ISATTY(stderr);  /* auto : actif si terminal */
+    t_start = omp_get_wtime();
+    double t_last = t_start;
+    int progress_shown = 0;   /* au moins une ligne ecrite -> il faudra un \n final */
 
     u32 *idx = malloc(sizeof(u32) * n);
 
@@ -647,8 +702,13 @@ int main(int argc, char **argv) {
         for (u64 c = 0; c < space; c++) {
             emit_row(idx);
             int p = 0; while (p < n) { if (++idx[p] < (u32)M) break; idx[p++] = 0; }
+            if (progress && (c & 0xFFFF) == 0) {
+                double now = omp_get_wtime();
+                if (now - t_last >= 0.5) { progress_exhaustive(c, space); t_last = now; progress_shown = 1; }
+            }
         }
         oflush();
+        if (progress_shown) fputc('\n', stderr);
         fprintf(stderr, "Exhaustif : %llu dynamiques (= %d^%d).\n", (unsigned long long)space, M, n);
     } else {
         /* tirage cumulatif pour le mode genotype */
@@ -668,8 +728,13 @@ int main(int argc, char **argv) {
                 } else idx[j] = rng_below(M);
             }
             draws++;
+            if (progress && (draws & 0xFFFF) == 0) {
+                double now = omp_get_wtime();
+                if (now - t_last >= 0.5) { progress_sampling(written, target, draws); t_last = now; progress_shown = 1; }
+            }
             if (!dd_add(idx)) {
                 if (++stale > 200000 && stale > 20 * (written + 1)) {
+                    if (progress_shown) { fputc('\n', stderr); progress_shown = 0; }
                     fprintf(stderr, "espace probablement epuise (%ld distinctes).\n", written); break;
                 }
                 continue;
@@ -679,9 +744,11 @@ int main(int argc, char **argv) {
             written++;
         }
         oflush();
+        if (progress_shown) fputc('\n', stderr);
         fprintf(stderr, "%ld dynamiques distinctes en %ld tirages (%.1f%% de nouveaute).\n",
                 written, draws, 100.0 * written / (draws > 0 ? draws : 1));
     }
-    if (out_fp != stdout) fclose(out_fp);
+    if (out_gz) gzclose(out_gz);
+    else if (out_fp != stdout) fclose(out_fp);
     return 0;
 }

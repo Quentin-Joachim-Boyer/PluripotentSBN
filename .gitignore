@@ -12,6 +12,16 @@ JPPipeline/out/**
 JPPipeline/archive/*output.csv.gz
 JPPipeline/archive/*output.csv
 
+# MCSBN compiled binary
+MCSBN/bin/
+
+# MCSBN output
+MCSBN/out/**
+
+# MCSBN archive
+MCSBN/archive/*output.csv.gz
+MCSBN/archive/*output.csv
+
 
 # Latex compilation
 Redaction/rapport_stage.*

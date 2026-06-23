@@ -20,11 +20,16 @@ from decompose import Decomposer, DecomposerW, vector_from_counts
 from mcsbn import Generator
 
 PIPE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "..", "JPPipeline", "out")
+                        "..", "..", "..", "JPPipeline", "out")
 
 
 def _pipe_csv(d):
     p = os.path.join(PIPE_DIR, "%dd_PSBN_undercontrol_treeinsolver_output.csv" % d)
+    return p if os.path.exists(p) else None
+
+
+def _pipe_csv_tbn(d):
+    p = os.path.join(PIPE_DIR, "%dd_PTBN_undercontrol_treeinsolver_output.csv" % d)
     return p if os.path.exists(p) else None
 
 
@@ -110,7 +115,11 @@ def test_sandwich_dW(d):
 
 
 def test_full_match_d3():
-    """Sortie exhaustive d=3 : distribution des vecteurs ET stats == pipeline."""
+    """Sortie exhaustive d=3 : distribution des vecteurs SBN ET stats == pipeline.
+
+    Le generateur n'emet plus que le vecteur TBN (v_*) ; on recompute donc ici le
+    vecteur SBN (DecomposerW mode "sbn") pour le comparer a la pipeline PSBN, et on
+    valide en parallele les statistiques lues dans la sortie du generateur."""
     path = _pipe_csv(3)
     if not path:
         print("SKIP test_full_match_d3")
@@ -119,14 +128,13 @@ def test_full_match_d3():
     csv_dist = Counter(gt.values())
 
     gen = Generator(3)
-    # Indices analytiques (le header quote les colonnes w_, un split naif est faux).
+    dec_sbn = DecomposerW(3, "sbn")   # vecteur SBN recompute (le v_* emis est TBN)
     n = 3
+    # Indices analytiques (le header quote les colonnes w_, un split naif est faux).
     base = (n + 1) + n + n * n  # apres v_*, f_*, w_*
     col = {"GenotypeCount": base + 2, "Robustness_std": base + 3,
            "Robustness_mean": base + 4, "Evolvability": base + 5,
            "CycleLenMSQ": base + 0, "NumAttractors": base + 1}
-    for i in range(n + 1):
-        col["v_%d" % (n - i)] = i
     fcols = [(n + 1) + (j - 1) for j in range(1, n + 1)]
 
     mc_dist = Counter()
@@ -134,8 +142,9 @@ def test_full_match_d3():
     for idx in product(range(gen.M), repeat=3):
         line, key = gen.row(list(idx))
         p = line.split(",")
-        v = tuple(int(p[col["v_%d" % (3 - i)]]) for i in range(4))
-        mc_dist[v] += 1
+        W = [[gen.repr_col[idx[j]][i] for j in range(n)] for i in range(n)]
+        vsbn = tuple(vector_from_counts(dec_sbn.finest(W), n))
+        mc_dist[vsbn] += 1
         fk = tuple(p[i] for i in fcols)
         cs = stats[fk]
         same = (cs[0] == p[col["GenotypeCount"]]
@@ -146,9 +155,9 @@ def test_full_match_d3():
                 and abs(float(cs[5]) - float(p[col["CycleLenMSQ"]])) <= 1e-9)
         if not same:
             sbad += 1
-    assert csv_dist == mc_dist, "distribution des vecteurs differente"
+    assert csv_dist == mc_dist, "distribution des vecteurs SBN differente de PSBN"
     assert sbad == 0, "%d ecarts de statistiques" % sbad
-    print("OK test_full_match_d3 (distribution + stats exactes)")
+    print("OK test_full_match_d3 (distribution SBN + stats exactes)")
 
 
 def test_variety_novelty():
@@ -187,11 +196,57 @@ def test_genotype_measure_differs():
           % (mv, mg))
 
 
+def test_tbn_finer_than_sbn(d, draws=5000):
+    """Invariant PTBN >= PSBN : sur un meme reseau, la decomposition TBN (= le
+    vecteur v_* desormais emis) est toujours au moins aussi fine que la SBN, car
+    TBF est un sur-ensemble de SBF. Compare les deux decomposeurs directement."""
+    gen = Generator(d, seed=3)
+    ds = DecomposerW(d, "sbn")
+    dt = DecomposerW(d, "tbn")
+    n = d
+    strict = 0
+    for _ in range(draws):
+        idx = gen._sample_indices()
+        W = [[gen.repr_col[idx[j]][i] for j in range(n)] for i in range(n)]
+        vs = vector_from_counts(ds.finest(W), n)
+        vt = vector_from_counts(dt.finest(W), n)
+        assert sum(vt) >= sum(vs), "TBN moins fin que SBN : sbn=%s tbn=%s" % (vs, vt)
+        if sum(vt) > sum(vs):
+            strict += 1
+    print("OK test_tbn_finer_than_sbn(d=%d) : %d reseaux, TBN strictement plus fin "
+          "que SBN dans %d (%.1f%%)" % (d, draws, strict, 100.0 * strict / draws))
+
+
+def test_sandwich_dW_tbn(d):
+    """W-decomposition TBN : >= vecteur PTBN prouve par le solveur, <= max phenotype.
+    Meme encadrement que test_sandwich_dW, contre une reference PTBN."""
+    path = _pipe_csv_tbn(d)
+    if not path:
+        print("SKIP test_sandwich_dW_tbn(d=%d) (pas de CSV PTBN)" % d)
+        return
+    gt, _, rows = _load_pipeline(path, d)
+    dec = DecomposerW(d, "tbn")
+    bad_lower = bad_upper = 0
+    for fk, v, W in rows:
+        mine = vector_from_counts(dec.finest(W), d)
+        if sum(mine) < sum(v):
+            bad_lower += 1
+        if sum(mine) > sum(gt[fk]):
+            bad_upper += 1
+    assert bad_lower == 0, "d=%d : %d cas ou W-decomp TBN sous-estime le solveur" % (d, bad_lower)
+    print("OK test_sandwich_dW_tbn(d=%d) : %d lignes, bad_lower=0, bad_upper=%d"
+          % (d, len(rows), bad_upper))
+
+
 if __name__ == "__main__":
     test_decomposition_exact_d3()
     test_full_match_d3()
     test_sandwich_dW(3)
     test_sandwich_dW(4)
+    test_sandwich_dW_tbn(3)
+    test_sandwich_dW_tbn(4)
+    test_tbn_finer_than_sbn(3)
+    test_tbn_finer_than_sbn(4)
     test_variety_novelty()
     test_genotype_measure_differs()
     print("\nTous les tests passes.")

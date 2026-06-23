@@ -26,11 +26,12 @@ en post-traitement (aucun appel a un solveur).
 
   Proprietes inferees (colonnes du CSV)
   -------------------------------------
-  - v_n..v_0      : vecteur de decomposition "sous controle" du reseau echantillonne
-                    (cf. decompose.DecomposerW : inegalites exactes sur W). C'est
-                    une propriete du GENOTYPE tire ; la pipeline rapporte, elle, le
-                    maximum sur toutes les realisations d'une dynamique. Pour la
-                    plupart des dynamiques (indecomposables) les deux coincident.
+  - v_n..v_0      : vecteur de decomposition "sous controle" en ThresholdBN (PTBN)
+                    du reseau echantillonne (cf. decompose.DecomposerW mode "tbn" :
+                    inegalites exactes de noeud de controle sur W, SANS garde de
+                    realisabilite SBF des faces). C'est une propriete du GENOTYPE
+                    tire ; la pipeline rapporte, elle, le maximum sur toutes les
+                    realisations d'une dynamique.
   - f_1..f_n      : tables de transition (bitstrings de longueur 2^n).
   - w_i,j         : une realisation exacte des poids (f_j = seuil(colonne j)).
   - CycleLenMSQ   : moyenne des (longueurs de cycle)^2 sur les attracteurs.
@@ -100,7 +101,7 @@ class Generator:
         domain_size = 2 * wbound(n) + 1
         self.K = n * n * (domain_size - 1)
 
-        self.decomposer = DecomposerW(n)
+        self.decomposer = DecomposerW(n, "tbn")        # v_* = decomposition TBN (PTBN)
 
         if measure == "genotype":
             # Poids cumulatifs pour le tirage proportionnel a |ColumnSet|.

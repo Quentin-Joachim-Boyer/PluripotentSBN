@@ -22,6 +22,16 @@ critere `decompSum` retenu cote visualisation pour dedupliquer les orbites).
 
 Tout depend uniquement de la face (partition figee/libre + valeurs figees), pas
 de l'ordre des scissions : on memoise donc sur les 3^n faces possibles.
+
+Modes "sbn" vs "tbn".
+  * "sbn" (defaut) reproduit PSBN_undercontrol : une face n'est une feuille que si
+    elle est re-realisable comme SBF a seuil 0 bornee (la garde ci-dessus).
+  * "tbn" reproduit PTBN_undercontrol (dont PSBN est l'extension qui ajoute juste
+    cette garde) : on ABANDONNE la garde de realisabilite — toute face est une
+    feuille valide, car restreindre = fixer des entrees = ajouter un biais a une
+    fonction qui reste une fonction seuil. Seules les inegalites de noeud de
+    controle limitent encore les scissions. Consequence : pour une meme dynamique,
+    le vecteur "tbn" est toujours >= aussi fin que le "sbn".
 """
 
 from sbf import get_key_set_bounded, wbound
@@ -79,12 +89,18 @@ def _finer(a, b, n):
 class Decomposer:
     """Inference memoisee, reutilisable sur plusieurs dynamiques de meme dim."""
 
-    def __init__(self, n):
+    def __init__(self, n, mode="sbn"):
+        assert mode in ("sbn", "tbn")
         self.n = n
-        # Tous les sous-reseaux sont realises avec le bound du sommet wb(n).
+        self.mode = mode
+        # Mode "sbn" : une face est une feuille valide seulement si chaque fonction
+        # restreinte est une SBF (seuil 0) realisable avec le bound du sommet wb(n).
+        # Mode "tbn" : on RELACHE cette garde (cf. PTBN_undercontrol) — toute face
+        # est une feuille valide, car le contexte n'ajoute qu'un biais a une
+        # fonction qui reste une fonction seuil. Les key_sets sont alors inutiles.
         top_bound = wbound(n)
-        self.key_sets = {k: get_key_set_bounded(k, top_bound)
-                         for k in range(0, n + 1)}
+        self.key_sets = ({k: get_key_set_bounded(k, top_bound)
+                          for k in range(0, n + 1)} if mode == "sbn" else None)
 
     def finest(self, f):
         """Vecteur de decomposition le plus fin de la dynamique f.
@@ -117,17 +133,19 @@ class Decomposer:
 
         states = _states_in_face(fixed_nodes, fixed_vals, free, n)
 
-        # PRECONDITION : la face est un sous-SBN valide ssi la fonction restreinte
+        # Mode "sbn" : la face est un sous-SBN valide ssi la fonction restreinte
         # de CHAQUE noeud libre est une SBF realisable de dimension k. C'est
         # essentiel : les deux moitiees d'une scission partagent la meme colonne
         # de poids (le noeud de controle ajoute un offset constant), donc une face
         # qui n'est pas elle-meme une SBF (ex. un XOR) ne peut pas figurer dans
         # l'arbre, meme si on pouvait la scinder en feuilles triviales.
-        keyset = self.key_sets[k]
-        for n_idx in free:
-            if _restricted_tt(f[n_idx], states) not in keyset:
-                memo[key] = None
-                return None
+        # Mode "tbn" (PTBN) : on saute cette garde — toute face est valide.
+        if self.mode == "sbn":
+            keyset = self.key_sets[k]
+            for n_idx in free:
+                if _restricted_tt(f[n_idx], states) not in keyset:
+                    memo[key] = None
+                    return None
 
         # La face est valide : au minimum une feuille de dimension k.
         best = {k: 1}
@@ -179,11 +197,15 @@ class DecomposerW:
     effectivement echantillonne.
     """
 
-    def __init__(self, n):
+    def __init__(self, n, mode="sbn"):
+        assert mode in ("sbn", "tbn")
         self.n = n
+        self.mode = mode
+        # cf. Decomposer.__init__ : "tbn" (PTBN) relache la garde de realisabilite
+        # de face, on garde les memes inegalites EXACTES de noeud de controle.
         top_bound = wbound(n)
-        self.key_sets = {k: get_key_set_bounded(k, top_bound)
-                         for k in range(0, n + 1)}
+        self.key_sets = ({k: get_key_set_bounded(k, top_bound)
+                          for k in range(0, n + 1)} if mode == "sbn" else None)
 
     def finest(self, W):
         self.W = W
@@ -222,11 +244,13 @@ class DecomposerW:
         states = _states_in_face(fixed_nodes, fixed_vals, free, n)
 
         # Realisabilite de la face comme sous-SBN (fonctions restreintes = SBF).
-        keyset = self.key_sets[k]
-        for nidx in free:
-            if _restricted_tt(f[nidx], states) not in keyset:
-                memo[key] = None
-                return None
+        # Mode "tbn" (PTBN) : garde desactivee, toute face est valide.
+        if self.mode == "sbn":
+            keyset = self.key_sets[k]
+            for nidx in free:
+                if _restricted_tt(f[nidx], states) not in keyset:
+                    memo[key] = None
+                    return None
 
         best = {k: 1}
 
