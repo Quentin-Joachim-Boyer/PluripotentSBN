@@ -175,7 +175,7 @@
 
   <div id="detail-panel" class="hidden">
     <div id="detail-panel-hdr">
-      <span>Detail</span>
+      <span id="detail-panel-title">Detail</span>
       <button id="detail-close" onclick="toggleDetailPanel()">✕</button>
     </div>
     <div id="detail-panel-body">
@@ -213,6 +213,8 @@ let view = null;
 let dragging = false, dragAnchor = null, viewAtDrag = null;
 let detailPanelVisible = false;
 let hoverGrid = null, hoveredPt = null;
+// Pinned selection: a clicked point whose coordinate may host several dynamics
+let selectedPt = null, selectedDyns = null, selectedDynIdx = 0;
 const HOVER_GS = 60;
 let _rafId = null;
 function scheduleRender() {
@@ -517,6 +519,7 @@ function drawSizeLegend(minR, maxR, maxCount) {
 
 function buildScatterCache() {
   if (!files.length) return false;
+  clearSelection();   // old pinned point refers to a stale cache
   const xKey = document.getElementById('scatter-x')?.value;
   const yKey = document.getElementById('scatter-y')?.value;
   if (!xKey || !yKey) return false;
@@ -563,6 +566,7 @@ function buildScatterCache() {
   const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - sigDigits);
   const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - sigDigits);
   const pointMap = new Map();
+  const coordMap = new Map(); // "rx|ry" → { nDyn, vecs:Set } — all dynamics sharing a position
   for (let i = 0; i < rawPts.length; i += 6) {
     const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
     const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
@@ -574,11 +578,18 @@ function buildScatterCache() {
     if (!pointMap.has(key)) {
       const fdata = fdataRows?.[ri] ?? null;
       const wdata = wdataRows?.[ri] ?? null;
-      pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0, fdata, wdata, ri });
+      pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0, fdata, wdata, ri, nDyn: 0 });
     }
     const entry = pointMap.get(key);
+    entry.nDyn++;                                  // dynamics behind this exact bubble
     if (weight > entry.count) entry.count = weight;
     if (std    > entry.std)   entry.std   = std;   // keep max std
+    const ckey = `${rx}|${ry}`;
+    let co = coordMap.get(ckey);
+    if (!co) { co = { nDyn: 0, vecs: new Set(), ris: [] }; coordMap.set(ckey, co); }
+    co.nDyn++;                                     // all dynamics at this position…
+    co.vecs.add(vecStr);                           // …spread over these decompositions
+    co.ris.push(ri);                               // …keep every row so we can browse them
   }
 
   const allPts = Array.from(pointMap.values());
@@ -594,6 +605,9 @@ function buildScatterCache() {
     const rgb = parseInt(col.slice(1), 16);
     p.r = (rgb>>16)&255; p.g = (rgb>>8)&255; p.b = rgb&255;
     p.radius = minR + (p.count / maxCount) * (maxR - minR);
+    const co = coordMap.get(`${p.x}|${p.y}`);
+    p.coDyn  = co ? co.nDyn      : p.nDyn; // total dynamics sharing this position
+    p.coVecs = co ? co.vecs.size : 1;      // distinct decompositions stacked here
   }
 
   // Sort: largest radius first (drawn behind), then more decomposed on top at equal size
@@ -605,7 +619,7 @@ function buildScatterCache() {
     byVec.get(p.vecStr).push(p);
   }
 
-  scatterCache = { allPts, byVec, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis, stdKey, sizeKey };
+  scatterCache = { allPts, byVec, coordMap, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis, stdKey, sizeKey };
   view = { xMin, xMax, yMin, yMax };
 
   // Build legend and hover grid (only when cache is rebuilt)
@@ -933,8 +947,98 @@ function repositionTip(ex, ey) {
 function toggleDetailPanel() {
   detailPanelVisible = !detailPanelVisible;
   document.getElementById('detail-panel').classList.toggle('hidden', !detailPanelVisible);
+  if (!detailPanelVisible) clearSelection();
   // canvas size changes → force re-render after transition
   setTimeout(scheduleRender, 200);
+}
+
+// ── Pinned-point selection: click a point, then browse the dynamics it hides ──
+function setDetailTitle(txt) {
+  const el = document.getElementById('detail-panel-title');
+  if (el) el.textContent = txt;
+}
+
+// All distinct dynamics (decomposition + transition graph) at a point's coordinate
+function buildDynList(p) {
+  const f = files[curFile];
+  const co = scatterCache?.coordMap?.get(`${p.x}|${p.y}`);
+  const ris = co ? co.ris : [p.ri];
+  const seen = new Set(), list = [];
+  for (const ri of ris) {
+    const row = f.rows[ri];
+    const vec = getRowVec(row, f.decomp_vec);
+    const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+    const fdata = f.fdataRows?.[ri] ?? null;
+    const sig = vecStr + '|' + (fdata ? fdata.join('') : '');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    list.push(ri);
+  }
+  return list;
+}
+
+// Build a display point for one dynamic, anchored at the pinned coordinate
+function makeDynPoint(ri, x, y) {
+  const f = files[curFile];
+  const row = f.rows[ri];
+  const { sizeKey, stdKey } = scatterCache;
+  const vec = getRowVec(row, f.decomp_vec);
+  const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+  const col = vecColor(vecStr);
+  const rgb = parseInt(col.slice(1), 16);
+  return {
+    x, y, vecStr, ri,
+    r: (rgb>>16)&255, g: (rgb>>8)&255, b: rgb&255,
+    count: parseFloat(row[sizeKey]) || 1,
+    std:   stdKey ? (parseFloat(row[stdKey]) || 0) : 0,
+    fdata: f.fdataRows?.[ri] ?? null,
+    wdata: f.wdataRows?.[ri] ?? null,
+    coVecs: selectedPt ? selectedPt.coVecs : 1,
+    _pinned: true, _idx: selectedDynIdx, _total: selectedDyns ? selectedDyns.length : 1,
+  };
+}
+
+function selectPoint(p) {
+  selectedPt = p;
+  selectedDyns = buildDynList(p);
+  // Start browsing from the dynamic actually under the cursor, if present
+  const f = files[curFile];
+  const pSig = p.vecStr + '|' + (p.fdata ? p.fdata.join('') : '');
+  const idx = selectedDyns.findIndex(ri => {
+    const vec = getRowVec(f.rows[ri], f.decomp_vec);
+    const vs = vec ? '<'+vec.join(',')+'>' : '?';
+    const fd = f.fdataRows?.[ri] ?? null;
+    return vs + '|' + (fd ? fd.join('') : '') === pSig;
+  });
+  selectedDynIdx = idx < 0 ? 0 : idx;
+  if (!detailPanelVisible) {
+    detailPanelVisible = true;
+    document.getElementById('detail-panel').classList.remove('hidden');
+    setTimeout(scheduleRender, 200);
+  }
+  renderSelectedDyn();
+  scheduleRender();
+}
+
+function clearSelection() {
+  if (!selectedPt) return;
+  selectedPt = null; selectedDyns = null; selectedDynIdx = 0;
+  setDetailTitle('Detail');
+  if (detailPanelVisible) updateDetailPanel(hoveredPt);
+  scheduleRender();
+}
+
+function renderSelectedDyn() {
+  if (!selectedPt || !selectedDyns || !selectedDyns.length) return;
+  setDetailTitle(selectedDyns.length > 1 ? '📌 Pinned · browse below' : '📌 Pinned');
+  updateDetailPanel(makeDynPoint(selectedDyns[selectedDynIdx], selectedPt.x, selectedPt.y));
+}
+
+function navigateDyn(delta) {
+  if (!selectedDyns || selectedDyns.length <= 1) return;
+  const n = selectedDyns.length;
+  selectedDynIdx = (selectedDynIdx + delta % n + n) % n;
+  renderSelectedDyn();
 }
 
 function updateDetailPanel(p) {
@@ -949,7 +1053,19 @@ function updateDetailPanel(p) {
     <span style="color:var(--muted);flex-shrink:0">${k}</span>
     <span style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v}</span></div>`;
 
-  let html = `<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600;flex-wrap:wrap">${dot}${p.vecStr}</div>`;
+  let html = '';
+  if (p._pinned && p._total > 1) {
+    const btn = `cursor:pointer;background:var(--bg);color:var(--text);border:1px solid var(--border);
+      border-radius:4px;padding:1px 8px;font-size:13px;line-height:1.4;font-family:inherit`;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;
+        margin-bottom:8px;padding:4px 5px;background:var(--border);border-radius:5px">
+      <button title="Previous dynamic (←)" style="${btn}" onclick="navigateDyn(-1)">◀</button>
+      <span style="font-size:10px;font-weight:600;color:var(--text);white-space:nowrap">
+        Dynamic ${p._idx+1} / ${p._total}</span>
+      <button title="Next dynamic (→)" style="${btn}" onclick="navigateDyn(1)">▶</button>
+    </div>`;
+  }
+  html += `<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600;flex-wrap:wrap">${dot}${p.vecStr}</div>`;
   html += trow(xKey, p.x.toPrecision(5));
   html += trow(yKey, p.y.toPrecision(5));
   html += trow('count', Math.round(p.count).toLocaleString());
@@ -966,8 +1082,18 @@ function updateDetailPanel(p) {
     }
   }
 
+  const grouped = p._pinned ? p._total : (p.coDyn || 1);
+  if (grouped > 1) {
+    const extra = p.coVecs > 1 ? ` · ${p.coVecs} decompositions` : '';
+    const hint = p._pinned ? 'use ◀ ▶ (or ← →) to browse them' : 'click the point to browse them';
+    html += `<div style="margin-top:8px;padding:5px 7px;background:var(--border);border-radius:4px;font-size:10px;line-height:1.4">
+      <span style="color:var(--accent);font-weight:600">⊕ ${grouped.toLocaleString()} dynamics at this position${extra}</span><br>
+      <span style="color:var(--muted)">${hint}</span></div>`;
+  }
+
   if (p.fdata) {
-    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:4px">Dynamics</div>`;
+    const sub = p.nDyn > 1 ? ` <span style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--muted)">— 1 of ${p.nDyn.toLocaleString()}</span>` : '';
+    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:4px">Dynamics${sub}</div>`;
     html += `<canvas id="detail-dyn" style="display:block;width:100%;height:180px"></canvas>`;
   }
 
@@ -995,8 +1121,8 @@ function updateDetailPanel(p) {
 }
 
 function showHoverTip(p, ex, ey) {
-  // Update side panel unconditionally
-  if (detailPanelVisible) updateDetailPanel(p);
+  // Update side panel on hover — unless a point is pinned (it stays fixed)
+  if (detailPanelVisible && !selectedPt) updateDetailPanel(p);
 
   // Tooltip: just the transition graph (or nothing if no fdata)
   const tip = document.getElementById('scatter-tip');
@@ -1006,6 +1132,10 @@ function showHoverTip(p, ex, ey) {
     background:rgb(${p.r},${p.g},${p.b});margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
   let html = `<div style="display:flex;align-items:center;margin-bottom:5px;font-size:11px;font-weight:600;color:var(--muted)">${dot}${p.vecStr}</div>`;
   html += `<canvas id="tip-dyn" style="display:block;width:160px;height:120px"></canvas>`;
+  if (p.coDyn > 1) {
+    const extra = p.coVecs > 1 ? ` · ${p.coVecs} decomps` : '';
+    html += `<div style="margin-top:4px;font-size:9.5px;color:var(--accent);font-style:italic">1 of ${p.coDyn.toLocaleString()} dynamics here${extra} — click to browse</div>`;
+  }
   tip.innerHTML = html;
   tip.style.display = 'block';
 
@@ -1021,7 +1151,7 @@ function showHoverTip(p, ex, ey) {
 function hideHoverTip() {
   hoveredPt = null;
   document.getElementById('scatter-tip').style.display = 'none';
-  if (detailPanelVisible) updateDetailPanel(null);
+  if (detailPanelVisible && !selectedPt) updateDetailPanel(null);
 }
 
 function toggleErrorBars() {
@@ -1145,6 +1275,17 @@ function _renderScatter() {
       }
     }
   }
+
+  // Highlight the pinned point so it's clear which coordinate is being browsed
+  if (selectedPt) {
+    const cx = toX(selectedPt.x), cy = toY(selectedPt.y);
+    const rr = (selectedPt.radius || 5) + 4;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
   ctx.restore(); // end clip
 }
 
@@ -1239,8 +1380,30 @@ function resetView() {
     }
   });
 
-  canvas.addEventListener('mouseup', () => { dragging = false; canvas.style.cursor = 'crosshair'; });
+  canvas.addEventListener('mouseup', e => {
+    const wasDragging = dragging;
+    dragging = false;
+    canvas.style.cursor = 'crosshair';
+    if (!wasDragging || !scatterCache) return;
+    // A near-stationary press is a click → (de)select a point
+    const moved = dragAnchor ? Math.hypot(e.offsetX - dragAnchor.x, e.offsetY - dragAnchor.y) : 0;
+    if (moved < 4) {
+      const p = findNearestPt(e.offsetX, e.offsetY);
+      if (p) selectPoint(p);
+      else clearSelection();
+    }
+  });
   canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; hideHoverTip(); });
+
+  // Arrow keys browse the dynamics of the pinned point; Esc releases it
+  window.addEventListener('keydown', e => {
+    if (!selectedPt) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { navigateDyn(1);  e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { navigateDyn(-1); e.preventDefault(); }
+    else if (e.key === 'Escape') { clearSelection(); }
+  });
 })();
 
 (function initLegendResize() {
