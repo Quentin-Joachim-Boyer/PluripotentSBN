@@ -171,6 +171,12 @@
       padding:6px 8px; font-size:11px; font-family:'JetBrains Mono',monospace;
       color:var(--text); box-shadow:0 4px 16px rgba(0,0,0,0.5);
     "></div>
+    <div id="perf-overlay" onclick="document.getElementById('perf-overlay').style.display='none'"
+         title="render stats — click to hide" style="
+      display:none; position:absolute; left:8px; bottom:8px; z-index:9; cursor:pointer;
+      pointer-events:auto; background:rgba(22,27,39,0.82); border:1px solid var(--border);
+      border-radius:5px; padding:3px 7px; font-size:10px; font-family:'JetBrains Mono',monospace;
+      color:var(--muted); white-space:nowrap;"></div>
   </div>
 
   <div id="detail-panel" class="hidden">
@@ -192,7 +198,7 @@
     <span style="font-size:11px;color:var(--muted)">count:</span>
     <canvas id="size-legend-canvas" height="22" style="display:block"></canvas>
     <span id="errbar-toggle" onclick="toggleErrorBars()"
-          style="cursor:pointer;font-size:11px;color:var(--text);
+          style="cursor:pointer;font-size:11px;color:var(--text);opacity:0.3;
                  border:1px solid var(--border);border-radius:4px;
                  padding:2px 8px;white-space:nowrap;user-select:none">
       <span style="display:inline-block;width:14px;height:1.5px;background:currentColor;
@@ -208,13 +214,57 @@ let files = [];
 let curFile = 0;
 let selectedVecs = new Set(); // empty = all visible
 let scatterCache = null;
-let showErrorBars = true;
+let showErrorBars = false;
 let view = null;
 let dragging = false, dragAnchor = null, viewAtDrag = null;
 let detailPanelVisible = false;
 let hoverGrid = null, hoveredPt = null;
 // Pinned selection: a clicked point whose coordinate may host several dynamics
 let selectedPt = null, selectedDyns = null, selectedDynIdx = 0;
+// Rendering: degrade quality while panning/zooming, restore when idle
+let interacting = false, _interactTimer = null;
+// Guards against a stale async cache build (axis/file changed mid-build) winning the race
+let _buildToken = 0;
+// Cached disc sprites (one offscreen canvas per colour) — much faster than per-point arc+fill
+const SPRITE_R = 32;                  // disc radius inside the sprite (hi-res, scaled down per point)
+const SPRITE_PAD = 3;                 // room for the outline
+const spriteCache = new Map();        // "r,g,b" → HTMLCanvasElement
+// Perf instrumentation (shown in #perf-overlay, logged once per cache build)
+let _renderMs = 0, _drawnPts = 0;
+// Reusable pixel-occupancy buffer: collapse the heavy overdraw of dense clouds
+let _occ = null, _occW = 0, _occH = 0;
+
+function getDiscSprite(r, g, b) {
+  const key = r + ',' + g + ',' + b;
+  let s = spriteCache.get(key);
+  if (s) return s;
+  const size = (SPRITE_R + SPRITE_PAD) * 2;
+  s = document.createElement('canvas');
+  s.width = s.height = size;
+  const sx = s.getContext('2d');
+  const c = size / 2;
+  sx.beginPath(); sx.arc(c, c, SPRITE_R, 0, Math.PI * 2);
+  sx.fillStyle = `rgba(${r},${g},${b},0.8)`; sx.fill();
+  sx.lineWidth = SPRITE_R * 0.06;
+  sx.strokeStyle = `rgba(${r},${g},${b},1)`; sx.stroke();
+  spriteCache.set(key, s);
+  return s;
+}
+
+function markInteracting() {
+  interacting = true;
+  if (_interactTimer) clearTimeout(_interactTimer);
+  _interactTimer = setTimeout(() => { interacting = false; scheduleRender(); }, 160);
+}
+
+function updatePerfOverlay() {
+  const el = document.getElementById('perf-overlay');
+  if (!el) return;
+  const total = scatterCache ? scatterCache.allPts.length : 0;
+  el.style.display = 'block';
+  el.textContent = `${_drawnPts.toLocaleString()}/${total.toLocaleString()} pts · ${_renderMs.toFixed(1)} ms`
+    + (interacting ? ' · fast' : '');
+}
 const HOVER_GS = 60;
 let _rafId = null;
 function scheduleRender() {
@@ -263,6 +313,20 @@ function getRowVec(row, fileVec) {
   if (!vKeys.length) return fileVec;
   vKeys.sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
   return vKeys.map(k => parseInt(row[k]));
+}
+
+// Columnar access: a "file" stores kept columns as parallel Float32Arrays (see parseCSVStream),
+// not 10M string objects — this is what keeps a 10M-row dataset near ~0.5 GB instead of ~10 GB.
+function rowVecOf(file, ri) {
+  const vk = file.vKeys;
+  if (!vk || !vk.length) return file.decomp_vec;
+  const out = new Array(vk.length);
+  for (let i = 0; i < vk.length; i++) out[i] = file.cols[vk[i]][ri];
+  return out;
+}
+function colNum(file, ri, key) {
+  const a = file.cols[key];
+  return a ? +a[ri] : NaN;
 }
 
 function getStatKeys(row) {
@@ -320,24 +384,57 @@ function vecColor(vecStr) {
 
 
 // ─── File loading ─────────────────────────────────────────────────────────────
-async function parseCSVStream(file, decomp_vec = []) {
+// Show "<step> … NN%" in the top indicator. frac null → step name only (spinner).
+function setLoadProgress(step, frac) {
+  const el = document.getElementById('loading-indicator');
+  if (!el) return;
+  if (frac == null) { el.innerHTML = `<span class="spinning">⟳</span> ${step}…`; return; }
+  const pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+  el.innerHTML = `<span class="spinning">⟳</span> ${step} … ${pct}%`;
+}
+// Yield to the event loop so the progress text actually paints between heavy chunks
+const _nextFrame = () => new Promise(r => setTimeout(r, 0));
+
+async function parseCSVStream(file, decomp_vec = [], onProgress) {
   const isGzip = file.name.endsWith('.gz');
-  let stream = file.stream();
+  // Count raw (compressed) bytes consumed → progress vs file.size, works for .gz and .csv
+  const total = file.size || 0;
+  let bytesRead = 0, lastPct = -1;
+  const counter = new TransformStream({
+    transform(chunk, controller) {
+      bytesRead += chunk.byteLength;
+      controller.enqueue(chunk);
+      if (onProgress && total) {
+        const pct = Math.floor(bytesRead / total * 100);
+        if (pct !== lastPct) { lastPct = pct; onProgress(bytesRead / total); }
+      }
+    }
+  });
+  let stream = file.stream().pipeThrough(counter);
   if (isGzip) stream = stream.pipeThrough(new DecompressionStream('gzip'));
 
   const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
   let header = null;
-  const rows = [];
   let leftover = '';
-  let keptIndices = null;
+  let keptIndices = null, colNames = null, numericCols = null, colData = null;
   let fIndices = [], wIndices = [];
   const fdataRows = [], wdataRows = [];
   const fdataDedup = new Map(), wdataDedup = new Map();
 
-  function parseLine(fields) {
-    const obj = {};
-    for (const i of keptIndices) obj[header[i]] = fields[i] ?? '';
-    return obj;
+  // Append a row's kept columns into per-column accumulators as numbers (not string objects)
+  function pushRow(fields) {
+    if (!colData) {
+      // Classify each kept column numeric/string from the first data row
+      numericCols = keptIndices.map(i => {
+        const v = fields[i];
+        return v !== '' && v != null && Number.isFinite(parseFloat(v));
+      });
+      colData = keptIndices.map(() => []);
+    }
+    for (let j = 0; j < keptIndices.length; j++) {
+      const v = fields[keptIndices[j]] ?? '';
+      colData[j].push(numericCols[j] ? parseFloat(v) : v);
+    }
   }
 
   function captureRow(fields) {
@@ -373,6 +470,7 @@ async function parseCSVStream(file, decomp_vec = []) {
         keptIndices = header.map((h, i) => i).filter(i =>
           !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i])
         );
+        colNames = keptIndices.map(i => header[i]);
         fIndices = header.map((h, i) => i)
           .filter(i => /^f_\d+$/.test(header[i]))
           .sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
@@ -386,33 +484,47 @@ async function parseCSVStream(file, decomp_vec = []) {
         continue;
       }
       if (fields.length < header.length) continue;
-      rows.push(parseLine(fields));
+      pushRow(fields);
       captureRow(fields);
     }
   }
   if (leftover.trim() && header) {
     const fields = parseCSVLine(leftover);
     if (fields.length >= header.length) {
-      rows.push(parseLine(fields));
+      pushRow(fields);
       captureRow(fields);
     }
   }
   const wN = wIndices.length ? Math.round(Math.sqrt(wIndices.length)) : 0;
-  return { rows, fdataRows, wdataRows, wN };
+
+  // Finalise columns: numeric → Float32Array (4 B/cell), freeing the transient number[] as we go
+  const nRows = (colData && colData.length) ? colData[0].length : 0;
+  const cols = {};
+  if (colData) {
+    for (let j = 0; j < colNames.length; j++) {
+      cols[colNames[j]] = numericCols[j] ? Float32Array.from(colData[j]) : colData[j];
+      colData[j] = null;
+    }
+  }
+  const vKeys = (colNames || []).filter(k => /^v_[0-9]+$/.test(k))
+    .sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
+  return { nRows, cols, colNames: colNames || [], vKeys, fdataRows, wdataRows, wN };
 }
 
 document.getElementById('file-input').addEventListener('change', async e => {
   const fileList = Array.from(e.target.files);
   let loaded = 0;
-  for (const file of fileList) {
-    // Show loading indicator
+  for (let fi = 0; fi < fileList.length; fi++) {
+    const file = fileList[fi];
+    const tag = fileList.length > 1 ? `(${fi+1}/${fileList.length}) ` : '';
     document.getElementById('row-count').textContent = `Loading ${file.name}…`;
-    document.getElementById('loading-indicator').innerHTML = '<span class="spinning">⟳</span> loading…';
+    setLoadProgress(`${tag}Reading ${file.name}`, 0);
     try {
       const { dim, vec } = parseName(file.name.replace('.csv.gz','').replace('.csv',''));
-      const { rows, fdataRows, wdataRows, wN } = await parseCSVStream(file, vec);
-      if (!rows.length) { loaded++; continue; }
-      files.push({ name: file.name, rows, fdataRows, wdataRows, wN, decomp_vec: vec });
+      const parsed = await parseCSVStream(file, vec,
+        frac => setLoadProgress(`${tag}Reading ${file.name}`, frac));
+      if (!parsed.nRows) { loaded++; continue; }
+      files.push({ name: file.name, ...parsed, decomp_vec: vec });
       files.sort((a,b) => a.name.localeCompare(b.name));
     } catch(err) {
       console.error('Error loading', file.name, err);
@@ -423,12 +535,11 @@ document.getElementById('file-input').addEventListener('change', async e => {
     curFile = files.length - loaded;
     populateFileSelect();
     document.getElementById('empty-state').style.display = 'none';
-    document.getElementById('loading-indicator').textContent = '';
     scatterCache = null;
     selectedVecs.clear();
     vecColorCache.clear();
     populateAxes();
-    drawScatter();
+    drawScatter();   // manages its own progress (aggregating → rendering) and clears the indicator
   }
 });
 
@@ -442,7 +553,7 @@ function populateFileSelect() {
   });
   sel.value = curFile;
   document.getElementById('row-count').textContent =
-    files[curFile].rows.length.toLocaleString() + ' rows';
+    files[curFile].nRows.toLocaleString() + ' rows';
 }
 
 document.getElementById('file-select').addEventListener('change', e => {
@@ -453,13 +564,13 @@ document.getElementById('file-select').addEventListener('change', e => {
   populateAxes();
   drawScatter();
   document.getElementById('row-count').textContent =
-    files[curFile].rows.length.toLocaleString() + ' rows';
+    files[curFile].nRows.toLocaleString() + ' rows';
 });
 
 function populateAxes() {
   if (!files.length) return;
-  const row = files[curFile].rows[0];
-  const stats = getStatKeys(row);
+  // Stat columns = kept columns minus the v_ decomposition columns (f_/w_ already excluded)
+  const stats = files[curFile].colNames.filter(k => !/^v_[0-9]+$/.test(k));
   ['scatter-x','scatter-y'].forEach((id, i) => {
     const sel = document.getElementById(id);
     const cur = sel.value;
@@ -517,15 +628,18 @@ function drawSizeLegend(minR, maxR, maxCount) {
   }
 }
 
-function buildScatterCache() {
+async function buildScatterCache() {
   if (!files.length) return false;
   clearSelection();   // old pinned point refers to a stale cache
   const xKey = document.getElementById('scatter-x')?.value;
   const yKey = document.getElementById('scatter-y')?.value;
   if (!xKey || !yKey) return false;
 
-  const rows = files[curFile].rows;
+  const f = files[curFile];
+  const cols = f.cols;
   const sizeKey = 'GenotypeCount';
+  const CHUNK = 250000;   // yield to the UI every N rows so the % can paint
+  const myToken = ++_buildToken;   // abort if a newer build starts while we yield
 
   // Single pass: compute bounds + collect vecStrs + build pointMap simultaneously
   let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
@@ -533,85 +647,135 @@ function buildScatterCache() {
   const rawPts = []; // lightweight [x, y, vecStr, weight] tuples
 
   // Auto-detect std column: any axis whose name ends in _mean gets a matching _std
-  const xStdKey = rows.length && xKey.endsWith('_mean') && (xKey.replace(/_mean$/, '_std') in rows[0])
+  const xStdKey = f.nRows && xKey.endsWith('_mean') && (xKey.replace(/_mean$/, '_std') in cols)
     ? xKey.replace(/_mean$/, '_std') : null;
-  const yStdKey = rows.length && yKey.endsWith('_mean') && (yKey.replace(/_mean$/, '_std') in rows[0])
+  const yStdKey = f.nRows && yKey.endsWith('_mean') && (yKey.replace(/_mean$/, '_std') in cols)
     ? yKey.replace(/_mean$/, '_std') : null;
   const meanAxis = xStdKey ? 'x' : yStdKey ? 'y' : null;
   const stdKey   = xStdKey ?? yStdKey ?? null;
 
-  const fdataRows = files[curFile].fdataRows;
-  const wdataRows = files[curFile].wdataRows;
-  for (let ri = 0; ri < rows.length; ri++) {
-    const row = rows[ri];
-    const x = parseFloat(row[xKey]), y = parseFloat(row[yKey]);
+  const fdataRows = f.fdataRows;
+  const wdataRows = f.wdataRows;
+  const xCol = cols[xKey], yCol = cols[yKey], sizeCol = cols[sizeKey], stdCol = stdKey ? cols[stdKey] : null;
+  const nR = f.nRows;
+  for (let ri = 0; ri < nR; ri++) {
+    if (ri % CHUNK === 0) {
+      setLoadProgress('Building scatter', ri / nR * 0.40);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
+    const x = xCol ? +xCol[ri] : NaN, y = yCol ? +yCol[ri] : NaN;
     if (isNaN(x) || isNaN(y)) continue;
-    const vec = getRowVec(row, files[curFile].decomp_vec);
+    const vec = rowVecOf(f, ri);
     const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
-    const weight = parseFloat(row[sizeKey]) || 1;
-    const std    = stdKey ? (parseFloat(row[stdKey]) || 0) : 0;
+    const weight = (sizeCol ? sizeCol[ri] : 1) || 1;
+    const std    = stdCol ? (stdCol[ri] || 0) : 0;
     if (x < xMin) xMin=x; if (x > xMax) xMax=x;
     if (y < yMin) yMin=y; if (y > yMax) yMax=y;
     allVecStrs.add(vecStr);
     rawPts.push(x, y, vecStr, weight, std, ri); // 6 values per point
   }
   if (!rawPts.length) return false;
+  const nRaw = rawPts.length;
 
   // Assign colors in deterministic order
   assignVecColors(allVecStrs);
 
-  // Aggregate into pointMap: 5 sig digits for d<=4, 4 otherwise
+  // Adaptive precision: pick the most significant digits whose distinct-cell count stays under a
+  // budget. nRows is a poor proxy (4d & 5d both have 10M rows but 14k vs 1.1M cells), so we measure.
+  // Coarse/small clouds (e.g. d=3) keep fine detail; huge ones coarsen to stay light & fluid.
   const xRange0 = xMax - xMin || 1, yRange0 = yMax - yMin || 1;
-  const sigDigits = files[curFile].rows[0] && Object.keys(files[curFile].rows[0]).filter(k => /^v_\d+$/.test(k)).length <= 4 ? 5 : 4;
-  const xPrec = Math.pow(10, Math.floor(Math.log10(xRange0)) - sigDigits);
-  const yPrec = Math.pow(10, Math.floor(Math.log10(yRange0)) - sigDigits);
+  const xMag = Math.floor(Math.log10(xRange0)), yMag = Math.floor(Math.log10(yRange0));
+  const precAt = sd => [Math.pow(10, xMag - sd), Math.pow(10, yMag - sd)];
+  const POINT_BUDGET = 1500000, MAX_SIG = 6, MIN_SIG = 3;  // MAX_SIG ≤ 6 keeps the cell key < 2^53
+  let sigDigits = MAX_SIG;
+  for (; sigDigits > MIN_SIG; sigDigits--) {
+    const [xp, yp] = precAt(sigDigits);
+    const seen = new Set();
+    let over = false;
+    for (let i = 0; i < nRaw; i += 6) {
+      if (i % (CHUNK * 6) === 0) {
+        setLoadProgress('Adapting precision', 0.42);
+        await _nextFrame();
+        if (myToken !== _buildToken) return false;
+      }
+      const bx = Math.round((rawPts[i]   - xMin) / xp);
+      const by = Math.round((rawPts[i+1] - yMin) / yp);
+      seen.add(bx * 33554432 + by);          // pack (bx,by); by < 2^25 for sd ≤ 6
+      if (seen.size > POINT_BUDGET) { over = true; break; }
+    }
+    if (!over) break;
+  }
+
+  // Aggregate into pointMap at the chosen precision
+  const [xPrec, yPrec] = precAt(sigDigits);
   const pointMap = new Map();
   const coordMap = new Map(); // "rx|ry" → { nDyn, vecs:Set } — all dynamics sharing a position
-  for (let i = 0; i < rawPts.length; i += 6) {
+  for (let i = 0; i < nRaw; i += 6) {
+    if (i % (CHUNK * 6) === 0) {
+      setLoadProgress('Building scatter', 0.45 + i / nRaw * 0.40);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
     const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
     const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
     const vecStr = rawPts[i+2];
     const weight = rawPts[i+3];
     const std    = rawPts[i+4];
     const ri     = rawPts[i+5];
-    const key = `${rx}|${ry}|${vecStr}`;
-    if (!pointMap.has(key)) {
-      const fdata = fdataRows?.[ri] ?? null;
-      const wdata = wdataRows?.[ri] ?? null;
-      pointMap.set(key, { x: rx, y: ry, vecStr, count: 0, std: 0, fdata, wdata, ri, nDyn: 0 });
-    }
-    const entry = pointMap.get(key);
-    entry.nDyn++;                                  // dynamics behind this exact bubble
-    if (weight > entry.count) entry.count = weight;
-    if (std    > entry.std)   entry.std   = std;   // keep max std
     const ckey = `${rx}|${ry}`;
     let co = coordMap.get(ckey);
     if (!co) { co = { nDyn: 0, vecs: new Set(), ris: [] }; coordMap.set(ckey, co); }
     co.nDyn++;                                     // all dynamics at this position…
     co.vecs.add(vecStr);                           // …spread over these decompositions
     co.ris.push(ri);                               // …keep every row so we can browse them
+
+    const key = `${rx}|${ry}|${vecStr}`;
+    let entry = pointMap.get(key);
+    if (!entry) {
+      entry = { x: rx, y: ry, vecStr, count: 0, std: 0,
+                fdata: fdataRows?.[ri] ?? null, wdata: wdataRows?.[ri] ?? null,
+                ri, nDyn: 0, _co: co };           // keep the coord entry — avoids a lookup later
+      pointMap.set(key, entry);
+    }
+    entry.nDyn++;                                  // dynamics behind this exact bubble
+    if (weight > entry.count) entry.count = weight;
+    if (std    > entry.std)   entry.std   = std;   // keep max std
   }
 
   const allPts = Array.from(pointMap.values());
   const maxCount = allPts.reduce((m,p) => p.count>m ? p.count : m, 1);
 
-  const nRows = rows.length;
+  const nRows = f.nRows;
   const minR = 3.5;
   const maxR = nRows > 500000 ? 10  : nRows > 100000 ? 12 : nRows > 10000 ? 14  : 16;
 
-  // Pre-compute colors and radii
-  for (const p of allPts) {
+  // Pre-compute colours, radii, coordinate-group counts, and a cached numeric sort key
+  const nPts = allPts.length;
+  for (let k = 0; k < nPts; k++) {
+    if (k % CHUNK === 0) {
+      setLoadProgress('Building scatter', 0.85 + (k / nPts) * 0.12);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
+    const p = allPts[k];
     const col = vecColor(p.vecStr);
     const rgb = parseInt(col.slice(1), 16);
     p.r = (rgb>>16)&255; p.g = (rgb>>8)&255; p.b = rgb&255;
     p.radius = minR + (p.count / maxCount) * (maxR - minR);
-    const co = coordMap.get(`${p.x}|${p.y}`);
+    const co = p._co;
     p.coDyn  = co ? co.nDyn      : p.nDyn; // total dynamics sharing this position
     p.coVecs = co ? co.vecs.size : 1;      // distinct decompositions stacked here
+    p._sum   = vecStrToSum(p.vecStr);      // cache once → keeps the sort comparator regex-free
+    p._co    = undefined;                  // drop the reference, no longer needed
   }
 
-  // Sort: largest radius first (drawn behind), then more decomposed on top at equal size
-  allPts.sort((a, b) => b.radius - a.radius || vecStrToSum(a.vecStr) - vecStrToSum(b.vecStr));
+  setLoadProgress('Building scatter', 0.98);
+  await _nextFrame();
+  if (myToken !== _buildToken) return false;
+  // Sort: largest radius first (drawn behind), then more decomposed on top at equal size.
+  // Uses the cached p._sum — the old comparator ran a regex per comparison (O(n·log n) regexes).
+  allPts.sort((a, b) => b.radius - a.radius || a._sum - b._sum);
 
   const byVec = new Map();
   for (const p of allPts) {
@@ -622,10 +786,15 @@ function buildScatterCache() {
   scatterCache = { allPts, byVec, coordMap, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis, stdKey, sizeKey };
   view = { xMin, xMax, yMin, yMax };
 
+  setLoadProgress('Building scatter', 0.99);
+  await _nextFrame();
+  if (myToken !== _buildToken) return false;
   // Build legend and hover grid (only when cache is rebuilt)
   drawSizeLegend(minR, maxR, maxCount);
   buildLegend(byVec);
   buildHoverGrid();
+  console.log(`[scatter] ${nRows.toLocaleString()} rows → ${allPts.length.toLocaleString()} points`
+    + ` (${byVec.size} decompositions, ${sigDigits} sig. digits)`);
   return true;
 }
 
@@ -965,8 +1134,7 @@ function buildDynList(p) {
   const ris = co ? co.ris : [p.ri];
   const seen = new Set(), list = [];
   for (const ri of ris) {
-    const row = f.rows[ri];
-    const vec = getRowVec(row, f.decomp_vec);
+    const vec = rowVecOf(f, ri);
     const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
     const fdata = f.fdataRows?.[ri] ?? null;
     const sig = vecStr + '|' + (fdata ? fdata.join('') : '');
@@ -980,17 +1148,16 @@ function buildDynList(p) {
 // Build a display point for one dynamic, anchored at the pinned coordinate
 function makeDynPoint(ri, x, y) {
   const f = files[curFile];
-  const row = f.rows[ri];
   const { sizeKey, stdKey } = scatterCache;
-  const vec = getRowVec(row, f.decomp_vec);
+  const vec = rowVecOf(f, ri);
   const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
   const col = vecColor(vecStr);
   const rgb = parseInt(col.slice(1), 16);
   return {
     x, y, vecStr, ri,
     r: (rgb>>16)&255, g: (rgb>>8)&255, b: rgb&255,
-    count: parseFloat(row[sizeKey]) || 1,
-    std:   stdKey ? (parseFloat(row[stdKey]) || 0) : 0,
+    count: colNum(f, ri, sizeKey) || 1,
+    std:   stdKey ? (colNum(f, ri, stdKey) || 0) : 0,
     fdata: f.fdataRows?.[ri] ?? null,
     wdata: f.wdataRows?.[ri] ?? null,
     coVecs: selectedPt ? selectedPt.coVecs : 1,
@@ -1005,7 +1172,7 @@ function selectPoint(p) {
   const f = files[curFile];
   const pSig = p.vecStr + '|' + (p.fdata ? p.fdata.join('') : '');
   const idx = selectedDyns.findIndex(ri => {
-    const vec = getRowVec(f.rows[ri], f.decomp_vec);
+    const vec = rowVecOf(f, ri);
     const vs = vec ? '<'+vec.join(',')+'>' : '?';
     const fd = f.fdataRows?.[ri] ?? null;
     return vs + '|' + (fd ? fd.join('') : '') === pSig;
@@ -1022,6 +1189,7 @@ function selectPoint(p) {
 
 function clearSelection() {
   if (!selectedPt) return;
+  stopDynRepeat();
   selectedPt = null; selectedDyns = null; selectedDynIdx = 0;
   setDetailTitle('Detail');
   if (detailPanelVisible) updateDetailPanel(hoveredPt);
@@ -1041,6 +1209,23 @@ function navigateDyn(delta) {
   renderSelectedDyn();
 }
 
+// Press-and-hold on ◀ ▶ to scroll fast. The panel (and its buttons) is rebuilt on every step,
+// so the stop must be a document-level mouseup, not a handler on the (replaced) button.
+let _dynRepeatT = null, _dynRepeatI = null;
+function startDynRepeat(delta) {
+  stopDynRepeat();
+  navigateDyn(delta);                                  // immediate first step (also covers a plain click)
+  _dynRepeatT = setTimeout(() => {                     // hold past the initial delay → fast repeat
+    _dynRepeatI = setInterval(() => navigateDyn(delta), 60);
+  }, 300);
+}
+function stopDynRepeat() {
+  if (_dynRepeatT) { clearTimeout(_dynRepeatT); _dynRepeatT = null; }
+  if (_dynRepeatI) { clearInterval(_dynRepeatI); _dynRepeatI = null; }
+}
+window.addEventListener('mouseup', stopDynRepeat);
+window.addEventListener('blur', stopDynRepeat);
+
 function updateDetailPanel(p) {
   const body = document.getElementById('detail-panel-body');
   if (!body) return;
@@ -1059,10 +1244,12 @@ function updateDetailPanel(p) {
       border-radius:4px;padding:1px 8px;font-size:13px;line-height:1.4;font-family:inherit`;
     html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;
         margin-bottom:8px;padding:4px 5px;background:var(--border);border-radius:5px">
-      <button title="Previous dynamic (←)" style="${btn}" onclick="navigateDyn(-1)">◀</button>
+      <button title="Previous dynamic (← · hold to scroll)" style="${btn}"
+        onmousedown="startDynRepeat(-1)">◀</button>
       <span style="font-size:10px;font-weight:600;color:var(--text);white-space:nowrap">
         Dynamic ${p._idx+1} / ${p._total}</span>
-      <button title="Next dynamic (→)" style="${btn}" onclick="navigateDyn(1)">▶</button>
+      <button title="Next dynamic (→ · hold to scroll)" style="${btn}"
+        onmousedown="startDynRepeat(1)">▶</button>
     </div>`;
   }
   html += `<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600;flex-wrap:wrap">${dot}${p.vecStr}</div>`;
@@ -1071,13 +1258,13 @@ function updateDetailPanel(p) {
   html += trow('count', Math.round(p.count).toLocaleString());
   if (meanAxis && p.std > 0) html += trow('±1σ', p.std.toPrecision(4));
 
-  const row = files[curFile]?.rows[p.ri];
-  if (row) {
+  const f = files[curFile];
+  if (f && p.ri != null) {
     const shownKeys = new Set([xKey, yKey, sizeKey, stdKey].filter(Boolean));
-    for (const [k, v] of Object.entries(row)) {
+    for (const k of f.colNames) {
       if (/^v_\d+$/.test(k)) continue;
       if (shownKeys.has(k)) continue;
-      const num = parseFloat(v);
+      const num = colNum(f, p.ri, k);
       if (!isNaN(num) && isFinite(num)) html += trow(k, num.toPrecision(5));
     }
   }
@@ -1170,14 +1357,16 @@ function drawScatter() {
   if (!files.length) return;
   if (!scatterCache) {
     showLoading();
-    setTimeout(() => {
-      if (!buildScatterCache()) {
-        document.getElementById('loading-indicator').textContent = '';
-        return;
-      }
+    buildScatterCache().then(ok => {
+      const ind = document.getElementById('loading-indicator');
+      if (!ok) { ind.textContent = ''; return; }
+      // Final step: paint the "Rendering" label, then do the (blocking) draw, then clear
+      setLoadProgress('Rendering', null);
+      requestAnimationFrame(() => { _renderScatter(); ind.textContent = ''; });
+    }).catch(err => {
+      console.error('buildScatterCache failed', err);
       document.getElementById('loading-indicator').textContent = '';
-      _renderScatter();
-    }, 0);
+    });
     return;
   }
   _renderScatter();
@@ -1186,6 +1375,7 @@ function drawScatter() {
 function _renderScatter() {
   const canvas = document.getElementById('scatter-canvas');
   if (!canvas) return;
+  const _t0 = performance.now();
   const { allPts, xKey, yKey, meanAxis } = scatterCache;
   const { xMin, xMax, yMin, yMax } = view;
 
@@ -1242,33 +1432,57 @@ function _renderScatter() {
   }
   const sortedVecs = Array.from(byVecOrdered.keys())
     .sort((a, b) => vecStrToSum(a) - vecStrToSum(b));
+
+  // While panning/zooming a huge cloud, draw a stable subsample to keep ~60fps.
+  const FAST_LIMIT = 60000;
+  const stride = (interacting && visiblePts.length > FAST_LIMIT)
+    ? Math.ceil(visiblePts.length / FAST_LIMIT) : 1;
+  const cullLo = pad, cullHiX = W - pad, cullHiY = H - pad;
+
+  // Overdraw culling, per colour group. With one occupancy id per vec group, a disc is
+  // skipped only if a same-coloured disc already claimed its pixel — so the dominant blue
+  // blob (the source of the overdraw) is thinned, while rarer decompositions drawn on top
+  // are never hidden. Kills the cost of 1.1M discs landing on far fewer pixels.
+  const iW = Math.max(1, Math.ceil(W)), iH = Math.max(1, Math.ceil(H)), need = iW * iH;
+  if (!_occ || _occ.length < need) { _occ = new Int32Array(need); _occW = iW; _occH = iH; }
+  else _occ.fill(0, 0, need);
+
+  // Error bars: off by default, drawn only when not interacting. One bar per disc actually
+  // drawn (i.e. after pixel-dedup) — so they always match what's on screen, never a partial subset.
+  const drawBars = showErrorBars && meanAxis && !interacting;
+  let drawn = 0, groupId = 0;
+
   for (const vs of sortedVecs) {
-    for (const p of byVecOrdered.get(vs)) {
+    groupId++;
+    const group = byVecOrdered.get(vs);
+    for (let i = 0; i < group.length; i += stride) {
+      const p = group[i];
       const cx = toX(p.x), cy = toY(p.y);
-      const fill   = `rgba(${p.r},${p.g},${p.b},0.8)`;
-      const stroke = `rgba(${p.r},${p.g},${p.b},1)`;
-      ctx.lineWidth = 0.8;
+      const r = p.radius;
+      // Viewport culling — skips offscreen points (big win when zoomed in)
+      if (cx < cullLo - r || cx > cullHiX + r || cy < cullLo - r || cy > cullHiY + r) continue;
 
-      ctx.beginPath();
-      ctx.arc(cx, cy, p.radius, 0, Math.PI*2);
-      ctx.fillStyle   = fill;
-      ctx.strokeStyle = stroke;
-      ctx.fill();
-      if (p.radius >= 4) ctx.stroke();
+      // Same-colour overdraw culling — one disc per pixel per group
+      const px = cx | 0, py = cy | 0;
+      if (px >= 0 && px < iW && py >= 0 && py < iH) {
+        const idx = py * iW + px;
+        if (_occ[idx] === groupId) continue;
+        _occ[idx] = groupId;
+      }
 
-      // Draw 1px error bar if std available and enabled
-      if (showErrorBars && meanAxis && p.std > 0) {
+      // Cached disc sprite (fill + outline pre-rendered once per colour), scaled to radius
+      const sprite = getDiscSprite(p.r, p.g, p.b);
+      const dim = sprite.width * (r / SPRITE_R);
+      ctx.drawImage(sprite, cx - dim / 2, cy - dim / 2, dim, dim);
+      drawn++;
+
+      if (drawBars && p.std > 0) {
         const stdPx = meanAxis === 'x'
           ? Math.abs(toX(p.x + p.std) - toX(p.x))
           : Math.abs(toY(p.y - p.std) - toY(p.y));
         ctx.beginPath();
-        if (meanAxis === 'x') {
-          ctx.moveTo(cx - stdPx, cy);
-          ctx.lineTo(cx + stdPx, cy);
-        } else {
-          ctx.moveTo(cx, cy - stdPx);
-          ctx.lineTo(cx, cy + stdPx);
-        }
+        if (meanAxis === 'x') { ctx.moveTo(cx - stdPx, cy); ctx.lineTo(cx + stdPx, cy); }
+        else                  { ctx.moveTo(cx, cy - stdPx); ctx.lineTo(cx, cy + stdPx); }
         ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},0.7)`;
         ctx.lineWidth   = 1;
         ctx.stroke();
@@ -1287,6 +1501,10 @@ function _renderScatter() {
   }
 
   ctx.restore(); // end clip
+
+  _renderMs = performance.now() - _t0;
+  _drawnPts = drawn;
+  updatePerfOverlay();
 }
 
 function fmtTick(v, range) {
@@ -1345,6 +1563,7 @@ function resetView() {
     view.yMin = dataY - (dataY - view.yMin) * factor;
     view.yMax = dataY + (view.yMax - dataY) * factor;
     markDirty();
+    markInteracting();
     scheduleRender();
   }, { passive: false });
 
@@ -1367,6 +1586,7 @@ function resetView() {
       view.yMin = viewAtDrag.yMin + dy;
       view.yMax = viewAtDrag.yMax + dy;
       markDirty();
+      markInteracting();
       scheduleRender();
       return;
     }
@@ -1391,6 +1611,11 @@ function resetView() {
       const p = findNearestPt(e.offsetX, e.offsetY);
       if (p) selectPoint(p);
       else clearSelection();
+    } else {
+      // Drag finished → restore full quality immediately
+      interacting = false;
+      if (_interactTimer) { clearTimeout(_interactTimer); _interactTimer = null; }
+      scheduleRender();
     }
   });
   canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; hideHoverTip(); });
