@@ -240,13 +240,42 @@ MCSBN/
 │   │   └── mcsbn.c        # générateur rapide en C (production)
 │   └── python/
 │       ├── mcsbn.py       # générateur Python (référence lisible, mêmes options)
-│       ├── sbf.py         # énumération des SBF + statistiques (cache disque)
+│       ├── sbf.py         # énumération des SBF + statistiques + voisins (cache disque)
 │       ├── decompose.py   # inférence du vecteur de décomposition
 │       │                  #   (Decomposer : depuis la dynamique ;
 │       │                  #    DecomposerW : depuis la matrice de poids, exact)
+│       ├── add_metagraph_layout.py  # ajoute metagraph_x,metagraph_y via DRGraph
 │       └── test_mcsbn.py  # suite de validation contre la pipeline
+├── tools/
+│   └── DRGraph/           # DRGraph vendorisé (layout du métagraphe)
+│       ├── build.sh       # build CPU conda-aware (gsl/boost, sans sudo)
+│       └── src/ ...       # sources (binaire Vis reconstruit, non versionné)
 ├── bin/                   # binaire compilé ./bin/mcsbn (non versionné)
 ├── out/                   # CSV générés (non versionné)
 ├── archive/               # sorties archivées
 └── .cache/                # tables SBF précalculées, partagées C ↔ Python
 ```
+
+## Layout du métagraphe (`metagraph_x`, `metagraph_y`)
+
+`src/python/add_metagraph_layout.py` prend un CSV (ou `.csv.gz`) généré et lui
+ajoute deux colonnes `metagraph_x,metagraph_y` : la position 2D de chaque
+dynamique dans le **métagraphe**.
+
+- **Nœuds** = dynamiques distinctes (signature `f_1..f_n`).
+- **Arêtes** = deux dynamiques qui ne diffèrent que sur une colonne `f_k`, le
+  changement allant vers un SBF voisin (mutation d'un poids ;
+  `sbf.get_neighbor_map`). C'est exactement le graphe de `metagraphe.html`.
+
+Le layout est délégué à **DRGraph** (`tools/DRGraph`). Les lignes partageant une
+même signature reçoivent la même position.
+
+```bash
+make drgraph                                              # build DRGraph (une fois)
+python src/python/add_metagraph_layout.py out/d3.csv -o out/d3_layout.csv
+```
+
+Le binaire `Vis` est localisé via `--vis`, `$MCSBN_VIS`, ou `tools/DRGraph/Vis`
+(reconstruit au besoin). Le métagraphe n'est dense (donc instructif) que sur une
+couverture **exhaustive** ; sur un échantillon clairsemé les voisins ne sont
+quasi jamais co-tirés (0 arête) et le script bascule sur un layout de secours.

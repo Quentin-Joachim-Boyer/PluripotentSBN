@@ -114,6 +114,6 @@ if __name__ == "__main__":
         v_full_name = ",".join(map(str, v_full))
         solve_and_export(LP_FILES, v_full,N, output_csv=f"{d}d_<" + v_full_name + ">_output.csv")
         for v in complete_decomp_vects:
-            # print(v)
+            print(v)
             v_name = ",".join(map(str, v))
             solve_and_export(LP_FILES, v,N, output_csv=f"{d}d_<0," + v_name + ">_output.csv")

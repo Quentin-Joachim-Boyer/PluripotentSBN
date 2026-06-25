@@ -5,6 +5,7 @@
 <title>SBN Métagraphe mutationnel</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
+
   :root{--bg:#0f1117;--panel:#161b27;--border:#252d3d;--accent:#4f8ef7;--accent2:#a78bfa;--text:#e2e8f0;--muted:#64748b}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -43,6 +44,10 @@
   .spinning{display:inline-block;animation:spin 1s linear infinite}
   #statbox{position:absolute;top:10px;right:10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;font-family:'JetBrains Mono',monospace;line-height:1.7;display:none;z-index:9;min-width:150px;max-height:calc(100% - 20px);overflow-y:auto;box-shadow:0 4px 20px #0008}
 </style>
+<!-- sigma.js v3 + graphology (vendorises en local -> WebGL fonctionne hors-ligne) ;
+     utilises seulement quand les colonnes metagraph_x/y sont presentes. -->
+<script src="metagraph_lib/graphology.umd.min.js"></script>
+<script src="metagraph_lib/sigma.min.js"></script>
 </head>
 <body>
 
@@ -59,7 +64,7 @@
 <div class="toolbar">
   <label>Couleur:</label>
   <select id="color-by" onchange="onColorByChange()"></select>
-  <button class="btn active" id="ebtn" onclick="toggleEdges()">Arêtes ✓</button>
+  <button class="btn" id="ebtn" onclick="toggleEdges()">Arêtes ✗</button>
   <button class="btn" onclick="resetView()">↺ Vue</button>
   <button class="btn" id="relayout-btn" onclick="startLayout()">⟲ Relayout</button>
   <label style="margin-left:8px">Recherche id:</label>
@@ -75,7 +80,9 @@
       <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv (avec f_1..f_n)</div>
     </div>
   </div>
-  <canvas id="c"></canvas>
+  <!-- Conteneur de rendu Sigma. Sigma vide son conteneur a l'init, donc on lui
+       dedie ce div (ne PAS lui donner canvas-wrap, qui contient tip/statbox). -->
+  <div id="sigma-host" style="position:absolute;inset:0;display:none"></div>
   <div class="tip" id="tip"></div>
   <div id="statbox"></div>
 </div>
@@ -89,19 +96,21 @@
 let files = [];          // {name, rows, header}
 let curFile = 0;
 let G = null;            // graphe courant: {n, N, decomp[], adj[][], edges Int32Array, stats{}, statKeys[]}
-let nodeX=null, nodeY=null;   // positions normalisées [0,1]
 let colorMode = 'decomp';     // 'decomp' | statKey | 'degré'
 const hidden = new Set();     // groupes décomp masqués
-let worker = null, layoutRunning=false;
+let worker = null;            // worker de layout force-directed (positions only)
 
-// vue
-let panX=0, panY=0, zoom=1;
-let drag=false, dx0=0, dy0=0, px0=0, py0=0;
-let hov=-1, sel=-1, showEdges=true, userInteracted=false;
+// Voile d'aretes masque par defaut (graphes denses = hairball additif en WebGL) ;
+// les aretes incidentes apparaissent au survol/clic d'un noeud.
+let hov=-1, sel=-1, showEdges=false;
+let sigmaInstance=null, sigmaGraph=null;
 
-const canvas=document.getElementById('c');
-const ctx=canvas.getContext('2d');
-let W=0,H=0;
+// ── Architecture de rendu ────────────────────────────────────────────────────
+// Backend UNIQUE : Sigma/WebGL (passe a l'echelle, vers des millions de noeuds).
+// Les positions des noeuds viennent soit des colonnes metagraph_x/y du CSV, soit
+// du worker force-directed (Barnes-Hut). Dans les deux cas le rendu (noeuds +
+// aretes), l'interaction et la camera sont geres par Sigma (cf. initSigma).
+// Le worker ne fait QUE calculer des positions ; il ne dessine rien.
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  CSV parsing (repris de sbn_scatter)
@@ -184,7 +193,8 @@ function buildGraph(rows, header){
   if(n===0) return null;
   // vecteur décomposition: v_* triés décroissant = (v_n,...,v_0)
   const vcols=header.filter(h=>/^v_\d+$/.test(h)).sort((a,b)=>+b.slice(2)-+a.slice(2));
-  const statKeys=header.filter(h=>!/^v_\d+$/.test(h)&&!/^f_\d+$/.test(h)&&!/^w_/.test(h));
+  const POSCOLS=new Set(['x','y','metagraph_x','metagraph_y']);
+  const statKeys=header.filter(h=>!/^v_\d+$/.test(h)&&!/^f_\d+$/.test(h)&&!/^w_/.test(h)&&!POSCOLS.has(h));
 
   const neighbors=sbfNeighbors(n);
 
@@ -241,13 +251,18 @@ function buildGraph(rows, header){
   }
   for(const k of statKeys) for(let i=0;i<N;i++) if(statCounts[i]>1) stats[k][i]/=statCounts[i];
 
-  // Positions pré-calculées (colonnes x/y du CSV, ex. générées par layout_sfdp.py)
+  // Positions pré-calculées : colonnes metagraph_x/metagraph_y (générées par
+  // add_metagraph_layout.py via DRGraph), avec repli sur x/y pour l'ancien format.
   let csvX=null, csvY=null;
-  if(header.includes('x') && header.includes('y')){
+  const xcol = header.includes('metagraph_x') ? 'metagraph_x'
+             : header.includes('x') ? 'x' : null;
+  const ycol = header.includes('metagraph_y') ? 'metagraph_y'
+             : header.includes('y') ? 'y' : null;
+  if(xcol && ycol){
     csvX=new Float32Array(N); csvY=new Float32Array(N);
     for(let i=0;i<N;i++){
-      csvX[i]=parseFloat(uniqueRows[i]['x'])||0;
-      csvY[i]=parseFloat(uniqueRows[i]['y'])||0;
+      csvX[i]=parseFloat(uniqueRows[i][xcol])||0;
+      csvY[i]=parseFloat(uniqueRows[i][ycol])||0;
     }
   }
 
@@ -428,76 +443,236 @@ onmessage=function(ev){
 function startLayout(){
   if(!G) return;
   if(worker){worker.terminate();worker=null;}
-  if(G.csvX){
-    applyPositions(G.csvX,G.csvY);
-    layoutRunning=false;
-    setLoading('<span style="color:var(--muted)">positions CSV</span>');
-    setTimeout(()=>setLoading(''),2000);
-    fitView(); buildEdgeBitmap(); scheduleRender(); return;
+  if(typeof Sigma==='undefined'||typeof graphology==='undefined'){
+    setLoading('<span style="color:#f87171">Sigma/WebGL indisponible (metagraph_lib manquant)</span>');
+    return;
   }
-  layoutRunning=true; userInteracted=false; edgeBitmap=null;
+  if(G.csvX){                       // positions precalculees (colonnes metagraph_x/y)
+    initSigma(G.csvX,G.csvY);        // initSigma masque relayout-btn (positions figees)
+    return;
+  }
+  // Pas de positions -> layout force-directed (worker) puis rendu Sigma au final.
+  // On laisse le navigateur peindre le spinner avant de lancer le worker (sinon,
+  // pour un layout rapide, les messages tick/done passent avant le 1er paint).
   setLoading('<span class="spinning">⟳</span> layout…');
-  const blob=new Blob([WORKER_SRC],{type:'application/javascript'});
-  worker=new Worker(URL.createObjectURL(blob));
-  worker.onmessage=ev=>{
-    const d=ev.data;
-    if(d.cmd==='tick'||d.cmd==='done'){
-      applyPositions(d.x,d.y);
+  requestAnimationFrame(()=>{
+    const blob=new Blob([WORKER_SRC],{type:'application/javascript'});
+    worker=new Worker(URL.createObjectURL(blob));
+    let started=false;
+    worker.onmessage=ev=>{
+      const d=ev.data;
       if(d.cmd==='tick'){
+        // animation live : rendu noeuds-seuls (rapide), positions mises a jour.
+        if(!started){ initSigma(d.x,d.y,false); started=true; }
+        else updateSigmaPositions(d.x,d.y);
         setLoading('<span class="spinning">⟳</span> layout '+Math.round(d.it/d.iter*100)+'%');
-        if(!userInteracted) fitView();
-        scheduleRender();
-      }else{
-        layoutRunning=false; setLoading('');
-        if(!userInteracted) fitView();
-        buildEdgeBitmap(); scheduleRender();
+      }else if(d.cmd==='done'){
+        // reconstruction finale AVEC aretes (fit recalcule a la creation).
+        setLoading('');
+        initSigma(d.x,d.y,true);
+        document.getElementById('relayout-btn').style.display='';
         worker.terminate(); worker=null;
       }
+    };
+    worker.postMessage({cmd:'init', N:G.N, edges:G.edges.slice(), iter:320},[]);
+  });
+}
+
+// Style des aretes Sigma. alpha faible : avec le blending additif de Sigma, les
+// recouvrements se cumulent ; on reste donc tres discret par defaut.
+const EDGE_COLOR='rgba(90,127,168,0.06)', EDGE_SIZE=0.4;
+
+// Construit/affiche le rendu Sigma a partir de positions (posX/posY) : soit les
+// colonnes precalculees du CSV, soit la sortie du worker force-directed.
+function initSigma(posX,posY,withEdges=true){
+  if(sigmaInstance){sigmaInstance.kill();sigmaInstance=null;sigmaGraph=null;}
+  // Backend de rendu UNIQUE : Sigma/WebGL (noeuds + aretes), dans son conteneur
+  // dedie #sigma-host (Sigma vide son conteneur, donc surtout pas canvas-wrap).
+  document.getElementById('relayout-btn').style.display='none';
+  const host=document.getElementById('sigma-host'); host.style.display='';
+
+  sigmaGraph=new graphology.Graph({multi:false,type:'undirected'});
+  for(let i=0;i<G.N;i++){
+    sigmaGraph.addNode(String(i),{
+      x:posX[i], y:posY[i],
+      size:nodeRadius[i],
+      color:nodeColorCss(i),
+      // ordre de dessin : les dynamiques les PLUS decomposees (rares, le coeur
+      // pluripotent) passent au-dessus du bulk irreductible.
+      zIndex:G.decomp[i].reduce((a,b)=>a+b,0),
+    });
+  }
+  buildPickGrid(posX,posY);   // grille de selection avec tolerance (cf. clickStage)
+  // Les aretes ne sont PAS ajoutees ici : elles sont gerees par syncEdges() selon
+  // l'etat (voile complet si showEdges, sinon incidentes du noeud selectionne).
+
+  sigmaInstance=new Sigma(sigmaGraph,host,{
+    renderLabels:false,
+    renderEdgeLabels:false,
+    zIndex:true,   // respecte l'attribut zIndex des noeuds/aretes pour l'ordre
+    // Tailles en pixels ecran, constantes au zoom -> identiques a la legende
+    // (qui dessine des cercles de rayon nodeRadius en pixels).
+    itemSizesReference:'screen',
+    zoomToSizeRatioFunction:()=>1,
+    nodeReducer:(node,data)=>{
+      const i=data.idx??parseInt(node);
+      // Le selectionne ET ses voisins restent visibles MEME si leur groupe de
+      // decomposition est masque (cf. comportement canvas) : testes AVANT le masquage.
+      if(i===sel)return{...data,highlighted:true,zIndex:1e6};
+      const na=selNeighbors();
+      if(na&&na.has(i))return{...data,highlighted:true,zIndex:1e6-2};
+      if(hidden.has(dcKey(G.decomp[i])))return{...data,hidden:true};
+      if(i===hov&&hov!==sel)return{...data,highlighted:true,zIndex:1e6-1};
+      const nh=hovNeighbors();   // voisins du noeud survole (comme le rendu canvas)
+      if(nh&&nh.has(i))return{...data,highlighted:true,zIndex:1e6-3};
+      return data;
+    },
+    // Le graphe ne contient que les aretes a montrer (cf. syncEdges) ; le reducer
+    // masque celles touchant un groupe cache, SAUF les incidentes du selectionne
+    // (ses voisins restent affiches, donc leurs aretes aussi).
+    edgeReducer:(edge,data)=>{
+      const a=parseInt(sigmaGraph.source(edge)),b=parseInt(sigmaGraph.target(edge));
+      if(a===sel||b===sel)return data;   // arete incidente au selectionne : toujours visible
+      if(hidden.has(dcKey(G.decomp[a]))||hidden.has(dcKey(G.decomp[b])))return{...data,hidden:true};
+      return data;
+    },
+  });
+
+  // Annule l'inertie post-pan : elle est lue sur le CAPTOR souris (les settings du
+  // constructeur ne l'atteignent pas), d'ou le petit decalage apres un drag.
+  const mc=sigmaInstance.getMouseCaptor();
+  // inertiaRatio:0 -> la cible d'inertie = position courante (aucun glissement).
+  // On NE met PAS inertiaDuration:0 : une animation de duree 0 provoque un
+  // clignotement (clear/redraw) ; la duree par defaut anime vers le meme point.
+  if(mc&&mc.settings) mc.setSettings({...mc.settings,inertiaRatio:0});
+
+  sigmaInstance.on('enterNode',({node,event})=>{
+    const i=parseInt(node);
+    if(i===hov)return;
+    const prev=hov; hov=i; showTip(i,event.x,event.y);
+    sigmaPartialFocus([i,prev]);
+  });
+  sigmaInstance.on('leaveNode',()=>{
+    const prev=hov; hov=-1; hideTip();
+    sigmaPartialFocus([prev]);
+  });
+  sigmaInstance.on('clickNode',({node})=>{
+    const i=parseInt(node); const prev=sel; sel=(i===sel)?-1:i;
+    onSelChange(prev);                       // feedback visuel immediat (+ aretes incidentes)
+    requestAnimationFrame(updateStatbox);    // panneau detaille (SVG+hypercube) a la frame suivante
+  });
+  sigmaInstance.on('clickStage',({event})=>{
+    // Sigma n'a touche aucun noeud au pixel : on cherche le plus proche du clic
+    // dans une tolerance de PICK_TOL_PX (permet de garder de petits points).
+    let n=-1;
+    if(event){
+      const g=sigmaInstance.viewportToGraph({x:event.x,y:event.y});
+      const g2=sigmaInstance.viewportToGraph({x:event.x+PICK_TOL_PX,y:event.y});
+      n=nearestNode(g.x,g.y,Math.hypot(g2.x-g.x,g2.y-g.y));
     }
-  };
-  worker.postMessage({cmd:'init', N:G.N, edges:G.edges.slice(), iter:320},[]);
+    const prev=sel, ph=hov;
+    if(n!==-1) sel=(n===sel)?-1:n;        // noeud proche -> (de)selection
+    else if(sel!==-1||hov!==-1) sel=-1;   // vide -> deselection
+    else return;
+    hov=-1; hideTip(); onSelChange(prev,ph); requestAnimationFrame(updateStatbox);
+  });
+
+  if(withEdges) syncEdges();   // aretes selon l'etat (voile complet OU incidentes)
+  setLoadingTimed('<span style="color:var(--muted)">sigma.js · positions CSV</span>',2500);
 }
 
-function applyPositions(x,y){
+// Refresh PARTIEL autour des noeuds dont la surbrillance change (survol/clic) :
+// on ne ree-value que ces noeuds, leurs voisins, et leurs aretes incidentes, au
+// lieu de rejouer les reducers sur tout le graphe (sinon lag a 80k+).
+function sigmaPartialFocus(focusIds){
+  if(!sigmaInstance)return;
+  const nodes=new Set(), edges=new Set();
+  for(const fi of focusIds){
+    if(fi==null||fi<0)continue;
+    nodes.add(String(fi));
+    for(const j of (G.adj[fi]||[])) nodes.add(String(j));
+    for(const ek of sigmaGraph.edges(String(fi))) edges.add(ek);
+  }
+  sigmaInstance.refresh({partialGraph:{nodes:[...nodes],edges:[...edges]},skipIndexation:true});
+}
+
+// Met a jour TOUTES les positions (animation live du layout force-directed).
+function updateSigmaPositions(x,y){
+  if(!sigmaInstance)return;
+  sigmaGraph.updateEachNodeAttributes((node,attr)=>{
+    const i=+node; attr.x=x[i]; attr.y=y[i]; return attr;
+  },{attributes:['x','y']});
+  sigmaInstance.refresh({skipIndexation:true});
+}
+
+// Synchronise les aretes presentes dans le graphe Sigma : le voile complet si
+// showEdges, sinon UNIQUEMENT les aretes incidentes du noeud selectionne. Ne pas
+// laisser les centaines de milliers d'aretes (masquees) dans le graphe evite que
+// le edgeReducer / le rendu les traite a chaque refresh ou fin de pan-zoom
+// (source de stutter et de latence entre deux actions camera).
+function syncEdges(){
+  if(!sigmaInstance||!sigmaGraph)return;
+  sigmaGraph.clearEdges();
+  if(showEdges){
+    const e=G.edges;
+    for(let t=0;t<e.length;t+=2){
+      try{ sigmaGraph.addEdge(String(e[t]),String(e[t+1]),{color:EDGE_COLOR,size:EDGE_SIZE}); }catch(_){}
+    }
+  }else if(sel!==-1){
+    for(const j of G.adj[sel]){
+      try{ sigmaGraph.addEdge(String(sel),String(j),{color:accentCol,size:1.3}); }catch(_){}
+    }
+  }
+  sigmaInstance.refresh();
+}
+// Apres un changement de selection : surbrillance noeuds + aretes incidentes.
+// `prevs` = anciens noeuds focalises (selection et/ou survol) a rafraichir.
+function onSelChange(...prevs){
+  if(showEdges) sigmaPartialFocus([sel,...prevs]); // voile present : refresh partiel des noeuds
+  else syncEdges();                                // voile absent : (re)construit les incidentes
+}
+
+// ── Tolerance de selection ───────────────────────────────────────────────────
+// Sigma fait du picking au pixel (zone cliquable = taille rendue). Pour pouvoir
+// garder de petits points tout en les selectionnant facilement, on cherche le
+// noeud le plus proche du clic dans un rayon (PICK_TOL_PX), via une grille
+// spatiale sur les positions du graphe.
+const PICK_TOL_PX=9;
+let _pX=null,_pY=null,_pGrid=null,_pMinX=0,_pMinY=0,_pCell=1;
+function buildPickGrid(posX,posY){
+  _pX=posX;_pY=posY;_pGrid=new Map();
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-  for(let i=0;i<G.N;i++){if(x[i]<x0)x0=x[i];if(y[i]<y0)y0=y[i];if(x[i]>x1)x1=x[i];if(y[i]>y1)y1=y[i];}
-  const sp=Math.max(x1-x0,y1-y0)||1, mg=0.04*sp;
-  if(!nodeX){nodeX=new Float32Array(G.N);nodeY=new Float32Array(G.N);}
+  for(let i=0;i<G.N;i++){const x=posX[i],y=posY[i];if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;}
+  _pMinX=x0;_pMinY=y0;
+  _pCell=(Math.max(x1-x0,y1-y0)||1)/256;
   for(let i=0;i<G.N;i++){
-    nodeX[i]=(x[i]-x0+mg)/(sp+2*mg);
-    nodeY[i]=(y[i]-y0+mg)/(sp+2*mg);
+    const gx=Math.floor((posX[i]-x0)/_pCell),gy=Math.floor((posY[i]-y0)/_pCell),k=gx+','+gy;
+    let a=_pGrid.get(k); if(!a){a=[];_pGrid.set(k,a);} a.push(i);
   }
-  buildHoverGrid();
+}
+// Noeud le plus proche du point-graphe (gx,gy) dans le rayon tol (unites graphe).
+function nearestNode(gx,gy,tol){
+  if(!_pGrid)return -1;
+  const na=selNeighbors();   // les voisins du selectionne restent cliquables meme masques
+  const c0x=Math.floor((gx-tol-_pMinX)/_pCell),c1x=Math.floor((gx+tol-_pMinX)/_pCell);
+  const c0y=Math.floor((gy-tol-_pMinY)/_pCell),c1y=Math.floor((gy+tol-_pMinY)/_pCell);
+  let best=-1,bd2=tol*tol;
+  for(let cx=c0x;cx<=c1x;cx++)for(let cy=c0y;cy<=c1y;cy++){
+    const a=_pGrid.get(cx+','+cy);if(!a)continue;
+    for(const i of a){
+      // ignore les noeuds masques, sauf le selectionne et ses voisins (affiches)
+      if(i!==sel && !(na&&na.has(i)) && hidden.has(dcKey(G.decomp[i])))continue;
+      const dx=_pX[i]-gx,dy=_pY[i]-gy,d2=dx*dx+dy*dy;
+      if(d2<bd2){bd2=d2;best=i;}
+    }
+  }
+  return best;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Rendu
+//  Couleurs / tailles des noeuds (le rendu effectif est fait par Sigma)
 // ═══════════════════════════════════════════════════════════════════════════
-// Cache de rendu : reconstruit après chargement ou changement de couleur
-let nodeKeyCache=null;   // string[N] — dcKey(decomp) pré-calculé par nœud
-let groupNodes=null;     // Map<key, Int32Array> — indices de nœuds par groupe
-let dcRenderOrder=null;  // tableau trié de DECOMPS pour le rendu
-let accentCol='#4f8ef7', accent2Col='#a78bfa';
-function buildRenderCache(){
-  if(!G)return;
-  nodeKeyCache=new Array(G.N);
-  const tmp=new Map();
-  for(let i=0;i<G.N;i++){
-    const k=dcKey(G.decomp[i]);
-    nodeKeyCache[i]=k;
-    if(!tmp.has(k))tmp.set(k,[]);
-    tmp.get(k).push(i);
-  }
-  groupNodes=new Map();
-  for(const[k,arr]of tmp)groupNodes.set(k,new Int32Array(arr));
-  dcRenderOrder=[...DECOMPS].sort((a,b)=>(dcCount.get(dcKey(b))||0)-(dcCount.get(dcKey(a))||0));
-  const s=getComputedStyle(document.documentElement);
-  accentCol=s.getPropertyValue('--accent').trim()||'#4f8ef7';
-  accent2Col=s.getPropertyValue('--accent2').trim()||'#a78bfa';
-}
-function resize(){const r=document.getElementById('canvas-wrap');const DPR=window.devicePixelRatio||1;W=canvas.width=r.clientWidth*DPR;H=canvas.height=r.clientHeight*DPR;}
-const wx=x=>panX+x*zoom, wy=y=>panY+(1-y)*zoom;
-const sx=px=>(px-panX)/zoom, sy=py=>1-(py-panY)/zoom;
+const accentCol='#4f8ef7';
 // rayons précalculés, liés à GenotypeCount (linéaire, comme sbn_scatter)
 let nodeRadius=null;
 let sizeLegend=null; // {attr, min, max, minR, maxR} ou null si taille = degré
@@ -523,96 +698,6 @@ function computeRadii(){
   for(let i=0;i<G.N;i++)nodeRadius[i]=minR+(gc[i]/maxC)*(maxR-minR);
   sizeLegend={attr:'GenotypeCount',min:1,max:maxC,minR,maxR};
 }
-function nodeR(i){return nodeRadius?nodeRadius[i]:4;}
-
-const BS=3000; let edgeBitmap=null;
-function buildEdgeBitmap(){
-  if(!nodeX) return;
-  const oc=new OffscreenCanvas(BS,BS), bc=oc.getContext('2d');
-  bc.strokeStyle='#5a7fa8'; bc.globalAlpha=0.16; bc.lineWidth=0.7; bc.beginPath();
-  const e=G.edges;
-  for(let t=0;t<e.length;t+=2){
-    const a=e[t],b=e[t+1];
-    if(hidden.has(dcKey(G.decomp[a]))||hidden.has(dcKey(G.decomp[b])))continue;
-    bc.moveTo(nodeX[a]*BS,(1-nodeY[a])*BS);
-    bc.lineTo(nodeX[b]*BS,(1-nodeY[b])*BS);
-  }
-  bc.stroke(); edgeBitmap=oc;
-}
-
-let _rafPending=false;
-function scheduleRender(){if(_rafPending)return;_rafPending=true;requestAnimationFrame(()=>{_rafPending=false;render();});}
-function render(){
-  if(!G||!nodeX||!nodeKeyCache)return;
-  ctx.clearRect(0,0,W,H);
-  if(showEdges && edgeBitmap && !layoutRunning){
-    ctx.drawImage(edgeBitmap,0,0,BS,BS,panX,panY,zoom,zoom);
-  }
-  const focus=sel!==-1?sel:hov; // nœud principal (arêtes + voisins)
-  ctx.globalAlpha=0.9;
-  if(colorMode==='decomp'){
-    // Un beginPath+fill par groupe de couleur (au lieu d'un par nœud)
-    for(const d of dcRenderOrder){
-      const key=dcKey(d); if(hidden.has(key))continue;
-      const nodes=groupNodes.get(key); if(!nodes)continue;
-      ctx.fillStyle=dcColorMap.get(key)||'#888';
-      ctx.beginPath();
-      for(let ni=0;ni<nodes.length;ni++){
-        const i=nodes[ni],cx=wx(nodeX[i]),cy=wy(nodeY[i]),r=nodeRadius[i];
-        if(cx+r<0||cx-r>W||cy+r<0||cy-r>H)continue;
-        ctx.moveTo(cx+r,cy);ctx.arc(cx,cy,r,0,6.283);
-      }
-      ctx.fill();
-    }
-  }else{
-    for(let i=0;i<G.N;i++){
-      if(hidden.has(nodeKeyCache[i]))continue;
-      const cx=wx(nodeX[i]),cy=wy(nodeY[i]),r=nodeRadius[i];
-      if(cx+r<0||cx-r>W||cy+r<0||cy-r>H)continue;
-      ctx.fillStyle=nodeColorCss(i);
-      ctx.beginPath();ctx.moveTo(cx+r,cy);ctx.arc(cx,cy,r,0,6.283);ctx.fill();
-    }
-  }
-  ctx.globalAlpha=1;
-  if(focus!==-1){
-    if(showEdges){
-      ctx.save();ctx.strokeStyle=accentCol;
-      ctx.globalAlpha=0.6;ctx.lineWidth=1.3;ctx.beginPath();
-      for(const j of G.adj[focus]){ctx.moveTo(wx(nodeX[focus]),wy(nodeY[focus]));ctx.lineTo(wx(nodeX[j]),wy(nodeY[j]));}
-      ctx.stroke();ctx.restore();
-    }
-    ctx.globalAlpha=1;
-    for(const j of G.adj[focus]){
-      ctx.fillStyle=nodeColorCss(j);
-      ctx.beginPath();ctx.arc(wx(nodeX[j]),wy(nodeY[j]),nodeRadius[j],0,6.283);ctx.fill();
-    }
-    ctx.lineWidth=1.5;
-    for(const j of G.adj[focus]){
-      ctx.strokeStyle='rgba(255,255,255,0.6)';
-      ctx.beginPath();ctx.arc(wx(nodeX[j]),wy(nodeY[j]),nodeRadius[j]+2.5,0,6.283);ctx.stroke();
-    }
-    // anneau du nœud sélectionné (blanc)
-    if(sel!==-1){
-      ctx.strokeStyle='#ffffff';ctx.lineWidth=2.5;
-      ctx.beginPath();ctx.arc(wx(nodeX[sel]),wy(nodeY[sel]),nodeRadius[sel]+3.5,0,6.283);ctx.stroke();
-    }
-    // anneau du nœud hover (accent2), toujours affiché même si sel actif
-    if(hov!==-1&&hov!==sel){
-      ctx.strokeStyle=accent2Col;ctx.lineWidth=2;
-      ctx.beginPath();ctx.arc(wx(nodeX[hov]),wy(nodeY[hov]),nodeRadius[hov]+3,0,6.283);ctx.stroke();
-    }
-  }
-}
-
-// ── grille de hover ──────────────────────────────────────────────────────────
-const GS=80; let grid=new Map();
-function buildHoverGrid(){
-  grid=new Map();
-  for(let i=0;i<G.N;i++){
-    const gx=Math.floor(nodeX[i]*GS),gy=Math.floor(nodeY[i]*GS),k=gx+','+gy;
-    if(!grid.has(k))grid.set(k,[]);grid.get(k).push(i);
-  }
-}
 // Un nœud est sélectionnable s'il est visible, ou s'il est le nœud sélectionné,
 // ou un voisin de celui-ci (les voisins du point sélectionné restent toujours
 // accessibles, même si leur vecteur de décomposition est masqué).
@@ -621,27 +706,11 @@ function selNeighbors(){
   if(_selAdjFor!==sel){_selAdjFor=sel;_selAdj=sel===-1?null:new Set(G.adj[sel]);}
   return _selAdj;
 }
-function isPickable(i){
-  if(!hidden.has(dcKey(G.decomp[i])))return true;
-  if(i===sel)return true;
-  const na=selNeighbors();
-  return na!==null && na.has(i);
+let _hovAdj=null, _hovAdjFor=-2;
+function hovNeighbors(){
+  if(_hovAdjFor!==hov){_hovAdjFor=hov;_hovAdj=hov===-1?null:new Set(G.adj[hov]);}
+  return _hovAdj;
 }
-function nearest(px,py){
-  const wx_=sx(px),wy_=sy(py),r=Math.min(18/zoom,0.4);
-  let best=-1,bd2=r*r;
-  const g0x=Math.floor((wx_-r)*GS),g1x=Math.floor((wx_+r)*GS),g0y=Math.floor((wy_-r)*GS),g1y=Math.floor((wy_+r)*GS);
-  for(let gx=g0x;gx<=g1x;gx++)for(let gy=g0y;gy<=g1y;gy++){
-    const c=grid.get(gx+','+gy);if(!c)continue;
-    for(const i of c){
-      if(!isPickable(i))continue;
-      const dx=nodeX[i]-wx_,dy=nodeY[i]-wy_,d2=dx*dx+dy*dy;
-      if(d2<bd2){bd2=d2;best=i;}
-    }
-  }
-  return best;
-}
-
 // ── tooltip ──────────────────────────────────────────────────────────────────
 function trow(k,v){return `<div class="tip-row"><span class="tip-k">${k}</span><span class="tip-v">${v}</span></div>`;}
 // Bloc stats + mini-dynamique, partagé entre tooltip (hover) et statbox (clic).
@@ -672,59 +741,27 @@ function showTip(i,ex,ey){
 const hideTip=()=>document.getElementById('tip').style.display='none';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Interaction
+//  Vue / contrôles (interaction, pan/zoom et caméra gérés par Sigma)
 // ═══════════════════════════════════════════════════════════════════════════
-const wrap=document.getElementById('canvas-wrap');
-let dragMoved=false;
-let wrapRect=wrap.getBoundingClientRect();
-function toPx(ex,ey){const r=canvas.getBoundingClientRect(),DPR=window.devicePixelRatio||1;return[(ex-r.left)*DPR,(ey-r.top)*DPR];}
-wrap.addEventListener('mousedown',e=>{drag=true;dragMoved=false;dx0=e.clientX;dy0=e.clientY;px0=panX;py0=panY;wrap.classList.add('drag');});
-window.addEventListener('mouseup',()=>{drag=false;wrap.classList.remove('drag');});
-window.addEventListener('mousemove',e=>{
-  if(!G||!nodeX)return;
-  const DPR=window.devicePixelRatio||1;
-  const[cpx,cpy]=toPx(e.clientX,e.clientY);
-  if(drag){
-    if(Math.abs(e.clientX-dx0)+Math.abs(e.clientY-dy0)>3){dragMoved=true;userInteracted=true;}
-    panX=px0+(e.clientX-dx0)*DPR;panY=py0+(e.clientY-dy0)*DPR;scheduleRender();return;
-  }
-  const n=nearest(cpx,cpy);
-  if(n!==hov){hov=n;if(n!==-1)showTip(n,e.clientX-wrapRect.left,e.clientY-wrapRect.top);else hideTip();scheduleRender();}
-});
-wrap.addEventListener('click',e=>{
-  if(!G||!nodeX)return;
-  if(dragMoved)return;
-  const[cpx,cpy]=toPx(e.clientX,e.clientY);
-  const n=nearest(cpx,cpy);
-  sel=(n===sel)?-1:n; updateStatbox(); render();
-});
-wrap.addEventListener('wheel',e=>{
-  e.preventDefault();userInteracted=true;
-  const[cpx,cpy]=toPx(e.clientX,e.clientY);
-  const f=e.deltaY<0?1.15:1/1.15;
-  panX=cpx-(cpx-panX)*f;panY=cpy-(cpy-panY)*f;zoom*=f;scheduleRender();
-},{passive:false});
-window.addEventListener('resize',()=>{resize();wrapRect=wrap.getBoundingClientRect();render();});
-
-function fitView(){zoom=Math.min(W,H)*0.92;panX=(W-zoom)/2;panY=(H-zoom)/2;}
-function resetView(){userInteracted=true;fitView();render();}
+function fitView(){ if(sigmaInstance) sigmaInstance.getCamera().reset(); }
+function resetView(){ fitView(); }
 function toggleEdges(){
   showEdges=!showEdges;const b=document.getElementById('ebtn');
   b.textContent=showEdges?'Arêtes ✓':'Arêtes ✗';b.classList.toggle('active',showEdges);
-  if(showEdges&&!edgeBitmap&&!layoutRunning)buildEdgeBitmap();
-  render();
+  syncEdges();   // ajoute/retire le voile complet dans le graphe Sigma
 }
 
 // ── recherche / statbox ──────────────────────────────────────────────────────
 function onSearch(){
+  if(!G||!sigmaInstance)return;
   const v=document.getElementById('search').value.trim();
-  if(v===''){if(sel!==-1){sel=-1;updateStatbox();render();}return;}
+  if(v===''){ if(sel!==-1){const p=sel;sel=-1;onSelChange(p);requestAnimationFrame(updateStatbox);} return; }
   const id=parseInt(v);
-  if(!isNaN(id)&&id>=0&&id<G.N){sel=id;userInteracted=true;
-    // recentrer sur le nœud
-    const tx=nodeX[id],ty=nodeY[id];
-    panX=W/2-tx*zoom;panY=H/2-(1-ty)*zoom;
-    updateStatbox();render();
+  if(!isNaN(id)&&id>=0&&id<G.N){
+    const prev=sel; sel=id;
+    const{x,y}=sigmaGraph.getNodeAttributes(String(id));
+    sigmaInstance.getCamera().animate({x,y,ratio:0.05},{duration:500});
+    onSelChange(prev); requestAnimationFrame(updateStatbox);
   }
 }
 // ── Réseau SBN avec poids (SVG, porté de sbn_viz) ────────────────────────────
@@ -792,11 +829,8 @@ function networkBlockHTML(i,cssW,cssH){
 // ── Décomposition en sous-faces (porté de sbn_viz) ───────────────────────────
 function popcount(x){let c=0;while(x){c+=x&1;x>>=1;}return c;}
 function groupColor(groupKey){
-  const idx=parseInt(groupKey), hue=(220+idx*34)%360, sat=(68+(idx%3)*4)/100, light=(52+(idx%2)*12)/100;
-  const c=(1-Math.abs(2*light-1))*sat, x=c*(1-Math.abs((hue/60)%2-1)), m=light-c/2;let r,g,b;
-  if(hue<60){r=c;g=x;b=0;}else if(hue<120){r=x;g=c;b=0;}else if(hue<180){r=0;g=c;b=x;}
-  else if(hue<240){r=0;g=x;b=c;}else if(hue<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
-  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
+  const idx=parseInt(groupKey);
+  return hslToHex((220+idx*34)%360, (68+(idx%3)*4)/100, (52+(idx%2)*12)/100);
 }
 function hexA(hex,a){return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;}
 function buildDecompTree(vec,T,n){
@@ -965,7 +999,12 @@ function populateColorBy(){
 }
 function onColorByChange(){
   colorMode=document.getElementById('color-by').value;
-  computeContRange();buildLegend();render();
+  computeContRange();
+  if(sigmaInstance){
+    for(let i=0;i<G.N;i++) sigmaGraph.setNodeAttribute(String(i),'color',nodeColorCss(i));
+    sigmaInstance.refresh();
+  }
+  buildLegend();
 }
 
 function radiusForValue(v){
@@ -1058,7 +1097,7 @@ function toggleVec(key){
     if(hidden.size===DECOMPS.length)hidden.clear();
   }
   _updateLegendOpacity();
-  buildEdgeBitmap();render();
+  if(sigmaInstance)sigmaInstance.refresh();   // reducers relisent `hidden`
 }
 function toggleLegGroup(dim){
   const g=document.querySelector(`.leg-group[data-dim="${dim}"]`);
@@ -1067,7 +1106,7 @@ function toggleLegGroup(dim){
   const allVisible=keys.every(k=>!hidden.has(k));
   keys.forEach(k=>allVisible?hidden.add(k):hidden.delete(k));
   _updateLegendOpacity();
-  buildEdgeBitmap();render();
+  if(sigmaInstance)sigmaInstance.refresh();   // reducers relisent `hidden`
 }
 function toggleLegGroupOpen(dim){
   const body=document.getElementById(`legbody-${dim}`);
@@ -1080,10 +1119,23 @@ function toggleLegGroupOpen(dim){
 // ═══════════════════════════════════════════════════════════════════════════
 //  Chargement fichier
 // ═══════════════════════════════════════════════════════════════════════════
-function setLoading(html){document.getElementById('loading-indicator').innerHTML=html;}
+let _loadingTimer=null;
+function setLoading(html){
+  if(_loadingTimer){clearTimeout(_loadingTimer);_loadingTimer=null;}
+  document.getElementById('loading-indicator').innerHTML=html;
+}
+// Affiche un message puis l'efface apres `ms`, en annulant tout effacement
+// precedent : sinon le timer d'effacement d'un chargement anterieur (ex. fichier
+// x/y, efface a +2.5s) efface l'indicateur du chargement courant (ex. layout
+// d'un fichier sans x/y charge juste apres).
+function setLoadingTimed(html,ms){
+  setLoading(html);
+  _loadingTimer=setTimeout(()=>{_loadingTimer=null;document.getElementById('loading-indicator').innerHTML='';},ms);
+}
 
 document.getElementById('file-input').addEventListener('change',async e=>{
   const list=Array.from(e.target.files);
+  let lastLoaded=null;   // entree du dernier CSV reellement charge
   for(const file of list){
     document.getElementById('row-count').textContent='Loading '+file.name+'…';
     setLoading('<span class="spinning">⟳</span> parsing…');
@@ -1094,13 +1146,16 @@ document.getElementById('file-input').addEventListener('change',async e=>{
         alert('Le fichier '+file.name+' ne contient pas de colonnes f_* : graphe de mutation impossible.');
         continue;
       }
-      files.push({name:file.name,rows,header});
+      const entry={name:file.name,rows,header};
+      files.push(entry); lastLoaded=entry;
       files.sort((a,b)=>a.name.localeCompare(b.name));
     }catch(err){console.error('Erreur',file.name,err);}
   }
   setLoading('');
   if(files.length){
-    curFile=files.length-1;
+    // selectionner le fichier qu'on vient de charger (les files sont tries par
+    // nom, donc son index n'est pas forcement le dernier du tableau).
+    curFile=lastLoaded?files.indexOf(lastLoaded):files.length-1;
     populateFileSelect();
     document.getElementById('empty-state').style.display='none';
     loadCurrent();
@@ -1115,18 +1170,25 @@ function populateFileSelect(){
 document.getElementById('file-select').addEventListener('change',e=>{curFile=+e.target.value;loadCurrent();});
 
 function loadCurrent(){
+  // Kill any previous sigma instance before rebuilding. Defensif : kill() ne doit
+  // jamais pouvoir avorter loadCurrent (sinon le nouveau fichier ne charge pas et
+  // l'indicateur reste fige), et sigmaInstance doit finir a null quoi qu'il arrive.
+  if(sigmaInstance){
+    try{ sigmaInstance.kill(); }catch(err){ console.warn('sigma.kill():',err); }
+    sigmaInstance=null; sigmaGraph=null;
+  }
+  document.getElementById('sigma-host').style.display='none';
+  document.getElementById('relayout-btn').style.display='';
   const f=files[curFile];
   document.getElementById('row-count').textContent=f.rows.length.toLocaleString()+' rows';
   setLoading('<span class="spinning">⟳</span> graphe…');
   setTimeout(()=>{
     try{
       G=buildGraph(f.rows,f.header);
-      nodeX=null;nodeY=null;hidden.clear();dcCount=new Map();sel=-1;hov=-1;
+      hidden.clear();dcCount=new Map();sel=-1;hov=-1;
       document.getElementById('statbox').style.display='none';
       document.getElementById('search').value='';
-      resize();
       setupColors();
-      buildRenderCache();
       computeRadii();
       computeColorableStats();
       colorMode='decomp';populateColorBy();computeContRange();buildLegend();
@@ -1141,8 +1203,6 @@ function loadCurrent(){
     }
   },10);
 }
-
-resize();
 </script>
 </body>
 </html>
