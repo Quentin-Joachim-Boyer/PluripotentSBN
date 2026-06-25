@@ -1,17 +1,18 @@
 %%%%%%%%%%%%%%%
 % 1-03
 % d(1).
-% d(2).
-d(3).
+d(2).
+% d(3).
 % d(4).
 
 %%%%%%%%%%%
+:- not dec_cont1(2,nil,c(0,c(1,c(1,nil)))).
 % :- not dec_cont1(2,nil,c(0,c(0,c(1,nil)))).
 % :- not dec_cont1(2,nil,c(0,c(0,c(4,nil)))).% insatisf.
  
 % :- not dec_cont1(3,nil,c(0,c(2,c(0, c(0,nil))))).
 
- :- not dec_cont1(3,nil,c(0,c(1,c(2, c(0,nil))))).
+%  :- not dec_cont1(3,nil,c(0,c(1,c(2, c(0,nil))))).
  
 % :- not dec_cont1(3,nil,c(0,c(0,c(4, c(0,nil))))).
 % :- not dec_cont1(3,nil,c(0,c(1,c(1, c(0,nil))))).

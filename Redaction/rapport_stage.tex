@@ -107,9 +107,9 @@ Answer Set Programming, calcul parallèle.
 
 Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (SBN et variations) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
 
-La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter des comportements distincts (potentiellement voisins ou pas). Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
+La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent à d'autres systèmes, on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
 
-Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation du réseau comme une STRUCTURE (n nœuds) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE dans l'espace du graphe de transition de ces états (hypercube à n dimensions). [Insérer illustration]. La pluripotence prend donc sens dans le formalisme des SBN comme la présence de sous-dynamiques (au sens général : bassin d'attractions) disjointes dans la dynamique globale, et cela peut se faire de manière organisée (les supports des bassins disjoints sont des hyper-faces par exemple, et donc la sous-dynamique correspond peut-être elle aussi à un SBN) ou non (supports imbriqués).
+Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation des n nœuds du réseau comme une STRUCTURE possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE dans l'espace du graphe de transition de ces états (hypercube à n dimensions). [Insérer illustration]. La pluripotence prend donc sens dans le formalisme des SBN comme la présence de sous-dynamiques stables sur des supports de dimension inférieure [Cf. Quel paysage explore-t-on ?].
 
 
 
@@ -134,7 +134,7 @@ Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin
 
 \subsection{Contributions de ce stage}
 
-L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 6 noeuds [Cf table des échelles]. Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
+L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 5 noeuds [Cf table des échelles]. Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
 
 Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques, mais aussi pour vérifier la justesse de nos programmes. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
 
@@ -155,93 +155,98 @@ Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une l
 
 \subsection{Structure et dynamique}
 
-\begin{definition}[Réseau Booléen à Signe]
-Un SBN est un graphe orienté pondéré $G = (V, W)$ où $V = \{v_1, \ldots, v_n\}$ est un
-ensemble de $n$ nœuds, et $W \in \mathbb{Z}^{n \times n}$ est la
-matrice de poids. 
-\end{definition}
+[Cf. rapport Ailing]
 
-% Fonction booléenne de seuil (SBF), graphe de transition, attracteurs, bassins d'attraction.
 
-\lipsum[4] % à remplacer
+\subsection{Fonctions booléennes de seuil (SBF)}
 
-\subsection{Distances et classes d'équivalence}
+[Cf. rapport Ailing]
 
-% Distance structurelle de Hamming (HSTR)
-% Distance dynamique (HDYN)
-% Distance sur les cycles (CYCL)
-% Classes d'équivalence dynamique
++ Table des échelles (Dimension, SBF, produit de SBF, SBN, PSBN, Poids, vecteurs, arbres)
 
-\begin{definition}[Distance structurelle HSTR]
-Pour deux SBN $g, g'$ de même dimension $d$ :
-\[
-    HSTR(g, g') = \sum_{i=1}^{d} \sum_{j=1}^{d} |g_{ij} - g'_{ij}|
-\]
-\end{definition}
+\subsection{Distances, règles de mutation}
 
-\lipsum[5] % à remplacer
+Une approche proposée par Rémi (et poursuivie par Rémy et Ailing) a été de construire des méta-graphes dans lesquels deux dynamiques sont reliées si elles sont voisines en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
 
-\subsection{Le paysage des réseaux}
+Il a été essayé de reproduire les mêmes méta-graphes en réutilisant les définitions de distances, en particulier la distance DA agrégeant les changements des cycles limites. Mais comme le calcul exhaustif de ces distances tel quels ne pouvait être mis à l'échelle pour la dimension 3 qu'aux prix d'efforts conséquents (de l'ordre de 1e10 paires), et est difficilement concevable en dimension 4 (de l'ordre de 4e20 paires). Il est sans doute possible de trouver des manières de contourner cette difficulté qui n'est que technique, et de construire des méta-graphes similaires sémantiquement. En tout cas cette piste (qui existe) n'a pas été exploré plus avant ici.
 
-% Métagraphe : SBNs comme sommets, arêtes = voisinage structural (epsilon)
-% Robustesse et évolutivité dans ce paysage
-% Référence : figure du métagraphe dim 2 d'Ai-Ling
+Cependant l'idée de construire des méta-graphes Force-directed n'a pas été totalement mise de côté, nous nous sommes juste plus modestement limités à des méta-graphes structurels (ou les dynamiques sont liées si elles possèdent des structures voisines). Cela nous permet notamment de faire un lien direct avec les simulations de Corentin Lacaze, car les règles de mutations qui dirige l'évolution des agents dans ce contexte sont des relations de voisinages entre structures. L'exploration contrainte par l'évolution des agents se traduit alors par un chemin (avec de potentiels embranchements, donc un arbre) dans le méta-graphe, et cela permet de poser des questions du type "Est-ce que certaines propriétés des dynamiques favorise le passage des chemins", "Certaines zones sont-elles plus viables que d'autres ? C'est-à-dire est-ce que les chemins préfèrent certaines zones ?" "Pour arriver à un phénotype cible, est-ce que plusieurs chemins sont possibles, si oui en quoi sont-ils différents ?" . 
 
-\lipsum[6] % à remplacer
+La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toute les dynamiques) sur un seul arc du réseau. [Insérer équation "Mathématiques"]
+{Pour favoriser la réutilisation du code, j'aimerais faire en sorte qu'un utilisateur extérieur puisse facilement modifier ces règles de mutations à l'envie, et régénérer les csv.}
+
+\subsection{Quel paysage des réseaux explore-t-on ?}
+
+- Les différents aspects de la pluripotence : [À illustrer à chaque fois]
+
+  - Noeuds de contrôle -> vecteurs de décomposition complet -> fichiers undercontrol.
+
+  - Formalisme des sous réseaux -> fichiers PSBN/PTBN.
+
+  - Contrainte suplémentaire -> fichiers PSBNI (pour inhibiteurs).
+
+  - La partialité -> vecteurs de décomposition partiel -> non explorée.
+
+  - Noeuds contrôlés -> offuscation -> non explorée.
+
 
 % ============================================================
-\section{Exploration du paysage des réseaux}
+\section{Développement : Méthodes et outils}
 % ============================================================
 
-\subsection{Méthodologie et périmètre d'exploration}
+Comme pour tout programme informatique, les enjeux des phases de développement ont toujours été dans un premier temps la correction (l'exactitude) puis la terminaison (idéalement rapide). Mais comme la rectitude nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'observation se sont succédé en cycles. Les sections suivantes ne reflètent donc pas fidèlement la chronologie du développement.
 
 
+\subsection{Rectitude}
+
+L'objectif originel du stage était de prendre en main le language Answer Set Programming (ASP) pour parvenir à comprendre et améliorer les programmes existant [Cf. Programmes Laurent dans le git].
+
+Explication/Promo ASP
+- Clingo
+- Clingcon 
+- ApproxAsp
+
+Explication du programme de Laurent [Cf. un papier pas vraiment fini] 
+
+- travail sur la dynamique
+
+- Visualisation sbn\_viz pour apprécier. [Cf. fichier du git]
+
+- Génération des réseaux pluripotents à 1 noeud de contrôle, de sous-réseau SBN, d'arbre de décomposition complet fixé, avec hyper-faces distinctes. Calcul lourd et peu scalable (utilisable en temps et ressources raisonnables que jusqu'en dimension 3).
+
+Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille de réseaux en ne travaillant que sur les poids, c'est dans cette direction que nous sommes partis, aboutissant au fichiers :
+
+- \texttt{PTBN\_undercontrol.lp} permettant de générer des réseaux pluripotents à 1 nœud de contrôle, et d'arbre de décomposition fixé. (Et de sous-réseaux quelconques, donc TBN à cause du contrôle).
+- \texttt{PSBN\_undercontrol.lp} extension du fichier précédent permettant de préciser que les sous-réseaux sont bien des SBN.
+
+La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [préciser] au regard des rendus que l'on voulait afficher par la suite et a donc été laissée de côté. (\texttt{PSBN\_distinct\_faces\_HS.lp} a quand même été développé dans l'idée de confirmer que nos résultats correspondaient à ceux des programmes initiaux, ce qui a été le cas pour certaines configurations : les 189 $\langle 0,2,0,0\rangle$ en $d=3$ notamment).
 
 
-\subsection{Robustesse et évolutivité}
+- \texttt{PSBN\_undercontrol_undecomposable_beyond.lp} et \texttt{PSBN\_undercontrol_undecomposablePBN_beyond.lp} [Question de décomposition fines]
+[Cf. la table des échelles pour pourquoi ce n'est pas si important]
 
-% Rappel des définitions opérationnelles (formules)
-% Résultats obtenus : distribution dans le paysage, corrélations observées
-% Comparaison avec les dimensions inférieures (Ai-Ling, dim 2-3)
+- \texttt{PTBN_undercontrol_treeinsolver.lp} prenant en compte n'importe quel arbre de décomposition à vecteur de décomposition fixé.
 
-\lipsum[8] % à remplacer
+- \texttt{PSBN_undercontrol_treeinsolver.lp} de la même manière, extension du fichier précédent permettant de préciser que les sous-réseaux sont bien des SBN.
 
-\subsection{Complexité}
+\subsection{Efficacité}
 
-% [À définir précisément selon l'avancement du stage]
-% Piste : complexité du graphe de transition ? entropie des attracteurs ?
+- Base ASP : contraintes sur les poids plus efficaces que les contraintes sur la structure.
 
-\lipsum[9] % à remplacer
+- JPPipeline
 
-\subsection{Résultats et limites}
-
-Dans un premier temps, il est rassurant d'observer que nos graphiques confirment les résultats de [Wagner]. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. [Insérer graphique scatter EP/RP en plusieurs dimensions]
+- Utilisation machine HPC
 
 
+\subsection{Observation}
 
-Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication semblent pouvoir se généraliser aux dimensions supérieures.
+Beaucoup de questions de Front.
 
-- La décomposition d'un SBN en sous-dynamiques distinctes est déterminante dans le calcul de ses autres propriétés.
+% sbn\_viz(7).html : exploration détaillée d'un réseau (structure, graphe de transition, attracteurs)
+% sbn\_scatter(5).html : nuage de réseaux placés selon différentes métriques (robustesse, évolutivité...)
+% metagraphe.html : position relative des réseaux par règles de mutation (métagraphe, layout DRGraph)
+% Chargement de CSV générés indépendamment par la pipeline ASP ou MCSBN
 
-- Les propriétés d'un PSBN semblent être très liés à la dimension de sa plus grande hyper-face non décomposable. Notamment la variance de la robustesse génotypique pour chaque phénotype (Robustness\_std)
-
-Dans le contexte de mutations sur les poids [Cf. règles de mutations] :
-
-- Les PSBN sont plutôt proches les uns des autres, notamment au sein d'une même orientation (élément d'une orbite de permutation). Les PSBN les plus décomposés (que les permutations affectent moins[illustration]) font en quelque sortent le lien entre ces différentes orientations.
-
-Ces conclusions résument les observations sur les visualisations générées, tentent d'en trouver des explications qui nous permettent d'oser une généralisation, mais peuvent difficilement dépasser en précision les visualisations elles-mêmes. C'est pourquoi le lecteur est fortement invité à les tester par lui-même (et qui sait, peut-être trouver de tendances que l'on aurait manquée).   
-
-% ============================================================
-\section{Aspects techniques}
-% ============================================================
-
-\subsection{Génération des SBN : ASP et pipeline parallèle Java}
-
-% Answer Set Programming : pourquoi ASP pour énumérer/contraindre les SBN
-% Java Parallel Pipeline : architecture, gains obtenus
-% Lien avec les travaux d'Ai-Ling déjà implémentés
-
-\lipsum[11] % à remplacer
 
 \subsection{Usage des grands modèles de langage en recherche}
 
@@ -250,17 +255,55 @@ Ces conclusions résument les observations sur les visualisations générées, t
 % Limites constatées (hallucinations, confiance aveugle, dépendance)
 % Réflexion sur la place de ces outils dans un workflow de recherche
 
-\lipsum[12] % à remplacer
+\subsection{Exploration Monte-Carlo : MCSBN}
+
+% Limite de l'exhaustif au-delà de d=3 : explosion combinatoire (#dynamiques = SBF_n^n)
+% Idée : indépendance des colonnes -> tirage uniforme sur les dynamiques distinctes
+% Mesure « variety » (uniforme sur les dynamiques) vs « genotype » (proportionnel au GenotypeCount)
+% Implémentation C (production) et Python (référence) ; performances comparées
+% Validation croisée contre la pipeline ASP (décomposition SBN exacte en d=3)
+
+\lipsum[14] % à remplacer
+
+% ============================================================
+\section{Résultats}
+% ============================================================
+
+\subsection{Méthodologie et périmètre d'exploration}
+
+% Pourquoi une approche naïve ne passe pas à l'échelle
+% (explosion combinatoire du nombre de SBN avec la dimension)
+% Choix des dimensions explorées, paramètres epsilon et delta
+% Table des échelles : dimensions accessibles exhaustivement vs par échantillonnage
+
+\subsection{Robustesse et évolutivité}
+
+% Rappel des définitions opérationnelles (formules)
+% Résultats obtenus : distribution dans le paysage, corrélations observées
+% Comparaison avec les dimensions inférieures (Ai-Ling, dim 2-3)
+
+
+\subsection{Observations et limites}
+
+Dans un premier temps, il est rassurant d'observer que nos graphiques confirment les résultats de [Wagner]. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. [Insérer graphique scatter EP/RP en plusieurs dimensions]
+
+
+
+Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication pourrait éventuellement permettre de généraliser aux dimensions supérieures. [Inserer des graphiques avec des jolies flèche paint pour chaque assertion]
+
+- La décomposition d'un SBN en sous-dynamiques distinctes est déterminante dans le calcul de ses autres propriétés. (La pluripotence n'est pas décorrélée de tout)
+
+- Les propriétés d'un PSBN semblent être très liés à la dimension de sa plus grande hyper-face non décomposable. Notamment la variance de la robustesse génotypique pour chaque phénotype (Robustness\_std)
+
+Dans le contexte de mutations sur les poids [Cf. règles de mutations] :
+
+- Les PSBN sont plutôt proches les uns des autres, notamment au sein d'une même orientation (élément d'une orbite de permutation). Les PSBN les plus décomposés (que les permutations affectent moins[illustration]) font en quelque sortent le lien entre ces différentes orientations.
+
+Ces conclusions résument les observations sur les visualisations générées, tentent d'en trouver des explications qui nous permettent d'oser une généralisation, mais peuvent difficilement dépasser en précision les visualisations elles-mêmes. C'est pourquoi le lecteur est fortement invité à les tester par lui-même (et qui sait, peut-être trouver de tendances que l'on aurait manquée).
 
 % ============================================================
 \section{Conclusion}
 % ============================================================
-
-% Rappel des contributions
-% Ce que ça ouvre pour la suite (dimensions supérieures, contraintes de viabilité,
-% lien avec des systèmes biologiques réels)
-
-\lipsum[13] % à remplacer
 
 % ============================================================
 \newpage

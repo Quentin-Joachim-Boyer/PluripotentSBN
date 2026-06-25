@@ -19,5 +19,6 @@
     },
     "[latex]": {
         "editor.wordWrap": "on"
-    }
+    },
+    "cmake.sourceDirectory": "/home/boyerque/Bureau/asp/PSBN/MCSBN/tools/DRGraph"
 }

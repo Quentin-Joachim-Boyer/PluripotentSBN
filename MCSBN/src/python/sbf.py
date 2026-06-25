@@ -193,6 +193,61 @@ def get_table(n):
     return table
 
 
+_NEIGHBOR_CACHE = {}
+
+
+def get_neighbor_map(n):
+    """Carte des voisins SBF en dimension n : {tt: frozenset(tt voisins)}.
+
+    Deux SBF f, g sont voisines s'il existe une colonne de poids realisant f et
+    une colonne realisant g qui ne different que d'UN poids (mutation unique dans
+    [-wb(n), wb(n)]). La relation est symetrique (la paire de colonnes temoin
+    vaut dans les deux sens). C'est exactement le voisinage qui definit les
+    aretes du metagraphe (cf. sbfNeighbors() de metagraphe.html) : deux
+    dynamiques sont reliees ssi elles ne different que sur une colonne f_k, le
+    changement allant vers un SBF voisin.
+
+    Mise en cache disque (partagee avec les autres tables SBF de ce module).
+    """
+    if n in _NEIGHBOR_CACHE:
+        return _NEIGHBOR_CACHE[n]
+    path = os.path.join(CACHE_DIR, "sbf_neighbors_%dd.pkl" % n)
+    if os.path.exists(path):
+        with open(path, "rb") as fh:
+            nbr = pickle.load(fh)
+        _NEIGHBOR_CACHE[n] = nbr
+        return nbr
+
+    wb = wbound(n)
+    domain = range(-wb, wb + 1)
+    diffs = {}
+    col = [0] * n
+    for col_tuple in product(domain, repeat=n):
+        for i in range(n):
+            col[i] = col_tuple[i]
+        f = threshold_tt(col, n)
+        dset = diffs.get(f)
+        if dset is None:
+            dset = diffs[f] = set()
+        for i in range(n):
+            old = col[i]
+            for cand in domain:
+                if cand == old:
+                    continue
+                col[i] = cand
+                f2 = threshold_tt(col, n)
+                if f2 != f:
+                    dset.add(f2)
+            col[i] = old
+
+    nbr = {f: frozenset(s) for f, s in diffs.items()}
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(path, "wb") as fh:
+        pickle.dump(nbr, fh)
+    _NEIGHBOR_CACHE[n] = nbr
+    return nbr
+
+
 _KEYSET_CACHE = {}
 
 

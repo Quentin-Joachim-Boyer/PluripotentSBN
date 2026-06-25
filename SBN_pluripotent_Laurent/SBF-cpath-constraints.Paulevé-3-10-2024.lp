@@ -1,5 +1,14 @@
+ 
 % 12-06-2024. Contraintes que doivent satisfaire les expressions booleennes pour être des SBF (Sign Boolean Functions) en fonction d de la dimension du réseau enchassé.
-% 25-06. Dernières mises au point en rajoutant un paramètre à edge/2, à weight/2, à pos_weight_sum_cp/é
+% 25-06. Dernières mises au point en rajoutant un paramètre à edge/2, à weight/2, à pos_weight_sum_cp/2
+
+% 19-12-2024 : contraintes d'integrité entre sBf et representation à la Paulevé
+% 19-12-2024 : 
+% 2 changements dans les contraintes d'intégrité SBF / DNF
+% un changement a voir dans dif_faces(Cont_path, Cont_pathp). Voir aussi si on ne peut pas casser de la symétrie au regard des deux paramètres.
+%25-02-2025 : reprise, etude des representations partielles pour dif_faces
+% 26-02-2025 : 2 changements dans les contraintes d'intégrité SBF / DNF : Faits
+% A faire : dif_fb/2.
 
 %%% edge/2, weight/2, edge/3, weight_cp/3, dec_emb/2, dec_emb/1%%%%%%%%%%%%%%%
 
@@ -7,7 +16,7 @@
 edge(N1,N) :- node(N), node(N1).
 
 % weight(N1,N) : weight of the edge N1 -> N. Domain TO BE REVISED.
-&dom{(-D)..(D)} = weight(N,N) :- d(D), edge(N, N).
+&dom{-(D)..D} = weight(N1,N) :- d(D), edge(N1, N).
 
 &sum{weight(N1,N)} = weight_cp(N1, N, nil) :- edge(N1, N).
 
@@ -87,66 +96,58 @@ dec_emb(Cont_path) :- d(D), K= 0..D, cont_path(K, Cont_path),
 	 edge_cont(J, N, Cont_path), 
 	E = 0..(2**J)-1, E >= 2**(J-1), dec_emb(Cont_path).
 		
-%%%%% Integrity constraints between pos_weight_sum(E, N, Cont_path) and bit(N, E) 
-%%%%%%%%%% for embedded netxworks%%%%%
+%%%%% Integrity constraints providing equality between pos_weight_sum(E, N, Cont_path) and V such that  eval(E, N, V)  for embedded netxworks%%%%%
 
 % To insure that the only acceptable Boolean functions defining the global network and the embedded networks are SBF functions : value of  pos_weight_sum_cp(E_var, N, Cont_path) must be equal to bit(N, E) where E have as prefix E_var and suffix Cont_path, for all Cont_path leading to an embedded network. That is, a set of weights associated to Boolean functions of each node for each embedded network must exist which satifies the required inequalities.
 
 % case where node(N).
- &sum{pos_weight_sum_cp(E_var, N, Cont_path)} = bit(N, E) :- 
+ &sum{pos_weight_sum_cp(E_var, N, Cont_path)}
+  = V :- eval(E, N, V), % remplace = bit(N, E) 
  	node(N), N <= D-K, d(D), K = 0..D, 
  	dec_emb(D-K, Cont_path),
  	entry_cont(Cont_path, E, E_var).
  	
 % case constant network where N = 0, K = D, /Cont_path/ = D
-&sum{pos_weight_sum_cp(E_var, N, Cont_path)} = bit(1, E) :-
+&sum{pos_weight_sum_cp(E_var, N, Cont_path)} 
+ = V :- eval(E, 1, V), % remplace = bit(1, E) 
 	N = 0, d(D), K = D, 
  	dec_emb(D-K, Cont_path),
  	entry_cont(Cont_path, E, E_var).
- 	
 
  
- %%%  Checking the inequality between an embedded network and any other embedded network of same dimension %%%%%%
+%%%%  Checking the inequality between an embedded network and any other embedded network of same dimension : Predicates : dif_faces/2, dif_fb/3 %%%%%%
  
-% dif_faces(Cont_path, Cont_pathp)) : the embedded network on the face reached by Cont_path is different from that one reached by Cont_pathp different of Cont_path. It means that there exists at least one node N with a different boolean equation for these networks. Note that N = 1..D-K.
- 
+% Must be done by using bool function representation bcause that one is unique.
+
+% dif_faces(Cont_path, Cont_pathp) : the embedded network on the face reached by Cont_path is different from an embedded network reached by Cont_pathp different of Cont_path and of same size. It means that there exists at least one node N with a different boolean equation for these networks. Note that N = 1..D-K.
  dif_faces(Cont_path, Cont_pathp) :- N = 1..D-K, d(D), K = 1..D, 
  	dec_emb(D-K, Cont_path), cont_path(K, Cont_path),
  	dec_emb(D-K, Cont_pathp), cont_path(K, Cont_pathp),
- 	&sum{bf_node(N, Cont_path)} !=  bf_node(N, Cont_pathp).
+ 	&sum{bf_node(N, Cont_path)} !=  bf_node(N, Cont_pathp). 
+ 	% à remplacer par dif_fb(N, Cont_path, Cont_pathp). 
  	
-% :- not dif_faces(Cont_path, Cont_pathp), 
-% 	d(D), K = 1..D, 
-% 	dec_emb(D-K, Cont_path), cont_path(K, Cont_path),
-%  	dec_emb(D-K, Cont_pathp), cont_path(K, Cont_pathp),
-%  	Cont_pathp != Cont_path.
- 	
- 	
-%* A l'etude
- 	
-%%%  Checking (03-2026) the inequality between an embedded network and any other embedded network of same dimension %%%%%%
- 
-% eq_faces(Cont_path, Cont_pathp)) : the embedded network on the face reached by Cont_path is different from that one reached by Cont_pathp different of Cont_path. It means that there exists at least one node N with a different boolean equation for these networks. Note that N = 1..D-K.
- 
-% eq_faces(Cont_path, Cont_pathp) :- N = 1..D-K, d(D), K = 1..D, 
-% 	dec_emb(D-K, Cont_path), cont_path(K, Cont_path),
-% 	dec_emb(D-K, Cont_pathp), cont_path(K, Cont_pathp);
-% 	clause(N,C, L_pp, S, Cont_path)
-%	&sum{bf_node(N, Cont_path)} !=  bf_node(N, Cont_pathp).
- 	
-:-	clause(N,C, L, S, Cont_path) : clause(N,C, L, S, Cont_pathp);
-	clause(N,C, L, S, Cont_pathp) : clause(N,C, L, S, Cont_path);
-	N = 1..D-K,
+:- not dif_faces(Cont_path, Cont_pathp), 
 	d(D), K = 1..D, 
 	dec_emb(D-K, Cont_path), cont_path(K, Cont_path),
  	dec_emb(D-K, Cont_pathp), cont_path(K, Cont_pathp),
- 	Cont_pathp != Cont_path;
- 	clause(N,C, L, S, Cont_path) : clause(N,C, L, S, Cont_pathp);
-	clause(N,C, L, S, Cont_pathp) : clause(N,C, L, S, Cont_path);
-	constant(N, V, Cont_path) : constant(N, V, Cont_pathp);
-	constant(N, V, Cont_pathp) : constant(N, V, Cont_path).
+ 	Cont_pathp != Cont_path.
+ 
+% A VOIR	
+% dif_fb(N, Cont_path, Cont_pathp) : the Boolean functions of N for networks reachable by Cont_path and by Cont_pathp != Cont_path are different. 
+% Non testé 20-03-2026 
+% dif_fb(N, Cont_path, Cont_pathp) :- cont_path(K, Cont_path), cont_path(K, Cont_pathp), 
+%				N = 1..D-K, d(D), 
+% 				1{ not clause(N, C, L, V, Cont_pathp) : clause(N, C, L, V, Cont_path);
+%				not clause(N, C, L, V, Cont_path), clause(N, C, L, V, Cont_pathp)}.
+% 				
 
- *%%%Fin etude
+% dif_fb(N, Cont_path, Cont_pathp) :- cont_path(K, Cont_path), cont_path(K, Cont_pathp), 
+%				N = 1..D-K, d(D), 
+% 				not clause(N, C, L, V, Cont_path), clause(N, C, L, V, Cont_pathp).
+
+
+% <il existe une clause ou une constante différente dans les deux cas> . BIEN VOIR SI REPRESENTATION  Unique avec constantes !
+ 
 	
 %%%% A VOIR : minimisation des SBF obtenues et  aussi 1 seule solution SBF par fonction booleenne (à faire en Python ?). Avec show sur bf_node ca devrait marcher même si c'est couteux  ! Voir cautious ?
 %%%%% A VOIR : tabuler les valeurs entières des SBFs de niveau bas (1, 2) et faire les contraintes d'intégrité correspondantes pour les functions booleenes partielles de ces niveaux.

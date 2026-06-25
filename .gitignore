@@ -15,6 +15,15 @@ JPPipeline/archive/*output.csv
 # MCSBN compiled binary
 MCSBN/bin/
 
+# MCSBN cache (tables SBF / voisins, partage C/Python)
+MCSBN/.cache/
+
+# DRGraph vendorise : on versionne les sources, pas les artefacts de build
+# (binaires lies en dur au prefixe conda local -> reconstruits par build.sh)
+MCSBN/tools/DRGraph/build/
+MCSBN/tools/DRGraph/Vis
+MCSBN/tools/DRGraph/Evaluation
+
 # MCSBN output
 MCSBN/out/**
 
