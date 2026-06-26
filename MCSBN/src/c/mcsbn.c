@@ -629,6 +629,157 @@ static void progress_exhaustive(u64 done, u64 space) {
     fflush(stderr);
 }
 
+/* ===================================================================== *
+ *  Mode --core-trees : port C de core_tree_enum.py. Enumere les ARBRES DE
+ *  CONTROLE (un noeud de controle force invariant SUR SA FACE), ce qui couvre
+ *  le coeur COMPLET des plus decomposees, classes "en epine"/asymetriques
+ *  incluses (que le forcage de projections globales manquait). On garde les M
+ *  a plus grand decompSum.
+ * ===================================================================== */
+
+/* decompSum (somme des feuilles) d'un idx-tuple, mode TBN. */
+static int decompsum_of(const u32 *idx) {
+    for (int j = 0; j < n; j++) curf[j] = sbf_tt[idx[j]];
+    for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) curW[i][j] = repr_col[idx[j] * n + i];
+    int vec[9];
+    decomp_tbn = 1;
+    memset(memo_status, 0, sizeof(signed char) * (size_t)N * N);
+    decompose(0, 0, vec);
+    int s = 0; for (int t = 0; t <= n; t++) s += vec[t];
+    return s;
+}
+
+/* invariant_set(fn,fv,c) : indices SBF dont la restriction a la face vaut
+ * proj_c (c invariant sur la face). Trie croissant. Cache lazy. */
+#define INVKEY(fn, fv, c) (((fn) * N + (fv)) * n + (c))
+static int  **inv_set;   /* [N*N*n] */
+static int   *inv_cnt;
+static char  *inv_done;
+static int *invariant_set(int fn, int fv, int c, int *cnt) {
+    int key = INVKEY(fn, fv, c);
+    if (!inv_done[key]) {
+        int free_mask = (~fn) & (N - 1);
+        int ns = 1 << __builtin_popcount(free_mask);
+        int *buf = malloc(sizeof(int) * M), m = 0;
+        for (int i = 0; i < M; i++) {
+            u64 tt = sbf_tt[i];
+            int ok = 1;
+            for (int cc = 0; cc < ns; cc++) {
+                int s = fv | (int)_pdep_u64((u64)cc, (u64)free_mask);
+                if (((tt >> s) & 1) != ((s >> c) & 1)) { ok = 0; break; }
+            }
+            if (ok) buf[m++] = i;
+        }
+        inv_set[key] = buf; inv_cnt[key] = m; inv_done[key] = 1;
+    }
+    *cnt = inv_cnt[key];
+    return inv_set[key];
+}
+
+typedef struct { int node, fn, fv; } Split;
+static Split tree_buf[70];
+static int   tree_len;
+static int   open_fn[70], open_fv[70];
+
+typedef struct { int dsum; u32 idx[8]; } Cand;
+static Cand *cands; static long ncand, cap_cand;
+static int  g_min_leaves, g_max_free;
+static int *ct_scratch[8];   /* intersections par noeud */
+
+static void emit_candidate(const u32 *idx) {
+    if (!dd_add(idx)) return;                 /* deja vu (toutes arbres confondus) */
+    int d = decompsum_of(idx);
+    if (d < 2) return;
+    if (ncand == cap_cand) {
+        cap_cand = cap_cand ? cap_cand * 2 : (1 << 16);
+        cands = realloc(cands, sizeof(Cand) * cap_cand);
+    }
+    cands[ncand].dsum = d;
+    for (int j = 0; j < n; j++) cands[ncand].idx[j] = idx[j];
+    ncand++;
+}
+
+static void process_tree(void) {
+    if (tree_len + 1 < g_min_leaves) return;          /* #feuilles = #splits + 1 */
+    int is_ctrl[8] = {0};
+    for (int t = 0; t < tree_len; t++) is_ctrl[tree_buf[t].node] = 1;
+    int nfree = 0; for (int c = 0; c < n; c++) if (!is_ctrl[c]) nfree++;
+    if (g_max_free >= 0 && nfree > g_max_free) return;
+
+    int *list[8], lsz[8];
+    for (int c = 0; c < n; c++) {
+        if (!is_ctrl[c]) { list[c] = NULL; lsz[c] = M; continue; }   /* libre */
+        int sz = 0, first = 1;
+        for (int t = 0; t < tree_len && (first || sz); t++) {
+            if (tree_buf[t].node != c) continue;
+            int cnt; int *iv = invariant_set(tree_buf[t].fn, tree_buf[t].fv, c, &cnt);
+            if (first) { memcpy(ct_scratch[c], iv, sizeof(int) * cnt); sz = cnt; first = 0; }
+            else {  /* intersection de deux listes triees, en place */
+                int a = 0, b = 0, w = 0;
+                while (a < sz && b < cnt) {
+                    if (ct_scratch[c][a] == iv[b]) { ct_scratch[c][w++] = ct_scratch[c][a]; a++; b++; }
+                    else if (ct_scratch[c][a] < iv[b]) a++; else b++;
+                }
+                sz = w;
+            }
+        }
+        if (sz == 0) return;            /* aucun idx valide pour ce controle */
+        list[c] = ct_scratch[c]; lsz[c] = sz;
+    }
+    /* produit cartesien (odometre) */
+    u32 idx[8]; int pos[8];
+    for (int c = 0; c < n; c++) pos[c] = 0;
+    for (;;) {
+        for (int c = 0; c < n; c++) idx[c] = list[c] ? (u32)list[c][pos[c]] : (u32)pos[c];
+        emit_candidate(idx);
+        int c = 0;
+        for (; c < n; c++) { if (++pos[c] < lsz[c]) break; pos[c] = 0; }
+        if (c == n) break;
+    }
+}
+
+/* enumere tous les arbres de controle : pile de faces ouvertes. */
+static void enum_trees(int n_open) {
+    if (n_open == 0) { process_tree(); return; }
+    int fn = open_fn[n_open - 1], fv = open_fv[n_open - 1];
+    int free_mask = (~fn) & (N - 1);
+    enum_trees(n_open - 1);                          /* cette face = feuille */
+    for (int c = 0; c < n; c++) if ((free_mask >> c) & 1) {   /* sinon, split sur c */
+        tree_buf[tree_len].node = c; tree_buf[tree_len].fn = fn; tree_buf[tree_len].fv = fv;
+        tree_len++;
+        open_fn[n_open - 1] = fn | (1 << c); open_fv[n_open - 1] = fv;
+        open_fn[n_open]     = fn | (1 << c); open_fv[n_open]     = fv | (1 << c);
+        enum_trees(n_open + 1);
+        tree_len--;
+    }
+    open_fn[n_open - 1] = fn; open_fv[n_open - 1] = fv;        /* restaure */
+}
+
+static int cmp_cand_desc(const void *a, const void *b) {
+    return ((const Cand *)b)->dsum - ((const Cand *)a)->dsum;
+}
+
+static void run_core_trees(long core_M, int min_leaves, int max_free) {
+    g_min_leaves = min_leaves; g_max_free = max_free;
+    int nkey = N * N * n;
+    inv_set = calloc(nkey, sizeof(int *));
+    inv_cnt = calloc(nkey, sizeof(int));
+    inv_done = calloc(nkey, 1);
+    for (int c = 0; c < n; c++) ct_scratch[c] = malloc(sizeof(int) * M);
+    dd_init(1 << 20);
+
+    open_fn[0] = 0; open_fv[0] = 0; tree_len = 0;
+    enum_trees(1);
+
+    qsort(cands, ncand, sizeof(Cand), cmp_cand_desc);
+    long keep = (core_M > 0 && ncand > core_M) ? core_M : ncand;
+    for (long i = 0; i < keep; i++) emit_row(cands[i].idx);
+    oflush();
+    fprintf(stderr, "[core-trees] min_leaves=%d max_free=%d : %ld decomposables, "
+            "coeur garde=%ld (decompSum %d..%d)\n", min_leaves, max_free, ncand, keep,
+            keep ? cands[keep - 1].dsum : 0, ncand ? cands[0].dsum : 0);
+}
+
 /* ------------------------------------------------------------------- main */
 static const char *cache_path(void) {
     static char p[512];
@@ -638,8 +789,9 @@ static const char *cache_path(void) {
 }
 
 int main(int argc, char **argv) {
-    long target = 100000, max_draws = 0;
+    long target = 100000, max_draws = 0, core_M = 20000;
     int seed = 0, exhaustive = 0, genotype = 0, progress = -1;  /* -1 = auto (isatty) */
+    int core_trees = 0, min_leaves = -1, max_free = -2;         /* mode --core-trees */
     const char *opath = "-";
     n = 0;
     for (int i = 1; i < argc; i++) {
@@ -648,6 +800,10 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-o")) opath = argv[++i];
         else if (!strcmp(argv[i], "--seed")) seed = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--max-draws")) max_draws = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--core-trees")) core_trees = 1;
+        else if (!strcmp(argv[i], "-M")) core_M = atol(argv[++i]);
+        else if (!strcmp(argv[i], "--min-leaves")) min_leaves = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--max-free")) max_free = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--exhaustive")) exhaustive = 1;
         else if (!strcmp(argv[i], "--measure")) genotype = !strcmp(argv[++i], "genotype");
         else if (!strcmp(argv[i], "--no-weights")) include_weights = 0;
@@ -695,7 +851,11 @@ int main(int argc, char **argv) {
 
     u32 *idx = malloc(sizeof(u32) * n);
 
-    if (exhaustive) {
+    if (core_trees) {
+        if (min_leaves < 0) min_leaves = (n <= 3) ? 2 : 8;
+        if (max_free == -2) max_free = (n <= 3) ? -1 : 0;   /* -1 = illimite */
+        run_core_trees(core_M, min_leaves, max_free);
+    } else if (exhaustive) {
         u64 space = 1; for (int i = 0; i < n; i++) space *= M;
         if (space > 50000000ULL) { fprintf(stderr, "espace exhaustif trop grand (%llu)\n", (unsigned long long)space); return 1; }
         for (int i = 0; i < n; i++) idx[i] = 0;

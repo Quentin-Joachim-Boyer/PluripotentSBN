@@ -14,32 +14,75 @@ couvrir entierement (dense). Le reste du paysage se decouvre par marche, ce qui
 donne les liens PAR CONSTRUCTION (cf. explore_metagraph.py). On obtient donc un
 coeur pluripotent complet, immerge dans un voisinage connexe et representatif.
 
-Phase 1, methode. Une dynamique decomposable a >=1 noeud invariant (f_c = proj_c).
-Plus elle est decomposee, plus elle a de structure de controle. On enumere donc
-par nombre de noeuds FORCES invariants k decroissant (n, n-1, ... >= min_force) :
-forcer k projections + balayer les n-k colonnes libres sur toutes les SBF, puis
-calculer le vecteur EXACT (Decomposer) et dedupliquer. Les niveaux a k eleve sont
-peu nombreux et donnent les dynamiques les plus profondes en premier. On garde
-les M a plus grand decompSum.
-
-  Limite : forcer k projections globales ne produit que des arbres "equilibres"
-  (controles globaux). Les classes profondes "en epine" (1 seul invariant global,
-  ex. <0,1,1,1,2>) n'apparaissent qu'a min_force=1 — cher en d>=4. En d<=3,
-  min_force=1 est trivial et l'enumeration est exacte/complete.
+Phase 1, methode (cf. core_tree_enum.py). On enumere les ARBRES DE CONTROLE : a
+chaque face on force un noeud de controle a etre invariant SUR CETTE FACE (pas
+seulement globalement). Au niveau dynamique tout n-uplet de SBF est valide (les
+colonnes sont independantes), donc cette construction est libre de tout couplage.
+Avantage decisif sur l'ancien forcage de projections GLOBALES : on couvre AUSSI
+les classes profondes "en epine"/asymetriques (controles non-globaux) — ~47% du
+coeur profond en d=4 que l'ancien manquait. Les dynamiques tres decomposees ont
+peu de noeuds libres, donc l'enumeration du coeur profond est bon marche
+(max_free=0 suffit a etre complet en haut ; verifie : identique a max_free=1 pour
+dsum>=9 en d=4).
 
 Sortie : meme format CSV que mcsbn.py -> add_metagraph_layout -> metagraph.html.
 
 Usage :
   python core_then_walk.py -d 3 -M 3000 -n 30000 -o out.csv
-  python core_then_walk.py -d 4 -M 20000 -n 80000 --min-force 2 -o out.csv
+  python core_then_walk.py -d 4 -M 20000 -n 80000 --min-leaves 8 -o out.csv
 """
 
 import argparse
+import os
+import subprocess
 import sys
-from itertools import combinations, product
 
 from mcsbn import Generator, open_out
 from sbf import get_neighbor_map
+from core_tree_enum import enumerate_core
+
+
+def _locate_core_bin(opt):
+    """Chemin du binaire C pour la phase 1, ou None pour l'enumerateur Python."""
+    if opt == "none":
+        return None
+    if opt != "auto":
+        if not os.path.exists(opt):
+            sys.exit("--core-bin introuvable : " + opt)
+        return opt
+    here = os.path.dirname(os.path.abspath(__file__))
+    cand = os.path.normpath(os.path.join(here, "..", "..", "bin", "mcsbn"))
+    return cand if os.path.exists(cand) else None
+
+
+def _phase1_via_c(core_bin, n, min_leaves, max_free, M, no_weights, tt_to_idx):
+    """Lance `mcsbn --core-trees`, lit le coeur, et renvoie une liste triee
+    (decompSum, idx_tuple, csv_row). On force les poids cote C (pour reconstruire
+    les indices via f_*), et on retaille la ligne selon no_weights."""
+    mf = -1 if max_free is None else max_free
+    cmd = [core_bin, "-d", str(n), "--core-trees", "--min-leaves", str(min_leaves),
+           "--max-free", str(mf), "-M", str(M), "-o", "-"]
+    env = os.environ.copy()
+    env["MCSBN_DIR"] = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    proc = subprocess.run(cmd, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True)
+    if proc.returncode != 0:
+        sys.exit("[phase 1] binaire C en echec :\n" + proc.stderr)
+    sys.stderr.write(proc.stderr)        # resume [core-trees]
+    nw = n * n
+    ordered = []
+    for line in proc.stdout.splitlines()[1:]:       # saute l'entete
+        if not line:
+            continue
+        f = line.split(",")
+        # ordre des colonnes : v_n..v_0 (n+1), f_1..f_n (n), w_* (n*n), stats (6)
+        idx = tuple(tt_to_idx[int(f[n + 1 + j][::-1], 2)] for j in range(n))
+        dsum = sum(int(f[i]) for i in range(n + 1))
+        row = (",".join(f[:n + 1] + f[n + 1 + n + nw:])  # v_* + stats (sans f_/w_)
+               if no_weights else line)
+        ordered.append((dsum, idx, row))
+    return ordered
 
 
 def main():
@@ -52,9 +95,18 @@ def main():
                     help="total de dynamiques distinctes voulu (def 30000)")
     ap.add_argument("-o", "--output", default="-")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--min-force", type=int, default=-1,
-                    help="niveau min de noeuds forces invariants en phase 1 "
-                         "(def: 1 si n<=3, sinon 2)")
+    ap.add_argument("--min-leaves", type=int, default=-1,
+                    help="phase 1 : nb min de feuilles de l'arbre de controle "
+                         "(plus haut = coeur plus petit/profond ; def: 2 si n<=3, sinon 8)")
+    ap.add_argument("--max-free", type=int, default=-1,
+                    help="phase 1 : nb max de noeuds libres par arbre (borne le "
+                         "cout ; def: illimite si n<=3, sinon 0 = complet pour le "
+                         "coeur profond). Augmenter pour inclure des classes moins "
+                         "decomposees (plus lent).")
+    ap.add_argument("--core-bin", default="auto",
+                    help="phase 1 via le binaire C (mode --core-trees, ~45x plus "
+                         "rapide) : 'auto' = bin/mcsbn s'il existe, sinon Python ; "
+                         "'none' force l'enumerateur Python ; ou un chemin explicite")
     ap.add_argument("--fanout", type=int, default=4,
                     help="voisins nouveaux pris par noeud a chaque couche de "
                          "l'expansion de frontiere (def 4 ; petit = pourtour fin)")
@@ -67,57 +119,36 @@ def main():
     rng = gen.rng
     M_idx = gen.M
 
-    # Graphe des SBF en indices (pour la marche) + projections (pour le coeur).
+    # Graphe des SBF en indices (pour la marche de la phase 2).
     tt_to_idx = {tt: i for i, tt in enumerate(gen.sbf_tt)}
     nmap = get_neighbor_map(n)
     nbr_idx = [[tt_to_idx[t] for t in nmap.get(gen.sbf_tt[i], ())] for i in range(M_idx)]
     deg_sbf = [len(x) for x in nbr_idx]
-    proj = []
-    for c in range(n):
-        tt = 0
-        for s in range(gen.N):
-            if (s >> c) & 1:
-                tt |= (1 << s)
-        proj.append(tt_to_idx[tt])
 
-    min_force = args.min_force if args.min_force >= 0 else (1 if n <= 3 else 2)
-    irr = ["1"] + ["0"] * n
+    min_leaves = args.min_leaves if args.min_leaves >= 0 else (2 if n <= 3 else 8)
+    max_free = None if args.max_free < 0 and n <= 3 else (
+        args.max_free if args.max_free >= 0 else 0)
 
-    # ── Phase 1 : coeur exhaustif des plus decomposes ──────────────────────────
-    sys.stderr.write("[phase 1] coeur exhaustif (min_force=%d) ...\n" % min_force)
-    core = {}   # signature f -> (decompSum, idx_tuple, csv_row)
+    # ── Phase 1 : coeur COMPLET des plus decomposes (arbres de controle) ───────
+    # Enumeration des arbres de controle (un controle force invariant par face),
+    # qui couvre AUSSI les classes profondes "en epine"/asymetriques que le
+    # forcage de projections GLOBALES manquait (~47% du coeur profond en d=4).
+    # Le binaire C (mode --core-trees) fait la meme chose ~45x plus vite.
+    sys.stderr.write("[phase 1] coeur exhaustif (arbres ; min_leaves=%d, max_free=%s) ...\n"
+                     % (min_leaves, max_free))
 
-    def consider(idx):
-        csv_row, f = gen.row(idx)
-        if f in core:
-            return
-        vec = csv_row.split(",", n + 1)[:n + 1]
-        if vec == irr:
-            return
-        dsum = sum(int(x) for x in vec)
-        core[f] = (dsum, tuple(idx), csv_row)
-
-    for k in range(n, min_force - 1, -1):
-        for S in combinations(range(n), k):
-            free = [j for j in range(n) if j not in S]
-            base = [0] * n
-            for c in S:
-                base[c] = proj[c]
-            for combo in product(range(M_idx), repeat=len(free)):
-                idx = base[:]
-                for pos, j in enumerate(free):
-                    idx[j] = combo[pos]
-                consider(idx)
-
-    # garder les M a plus grand decompSum
-    ordered = sorted(core.values(), key=lambda t: -t[0])
-    if len(ordered) > args.core:
-        ordered = ordered[:args.core]
-    sys.stderr.write("      decomposables trouves=%d  coeur garde=%d  "
-                     "(decompSum %d..%d)\n"
-                     % (len(core), len(ordered),
-                        ordered[-1][0] if ordered else 0,
-                        ordered[0][0] if ordered else 0))
+    core_bin = _locate_core_bin(args.core_bin)
+    if core_bin:
+        ordered = _phase1_via_c(core_bin, n, min_leaves, max_free, args.core,
+                                args.no_weights, tt_to_idx)
+    else:
+        core = enumerate_core(gen, min_leaves, max_free=max_free)   # idx -> decompSum
+        top = sorted(core.items(), key=lambda kv: -kv[1])[:args.core]
+        ordered = [(dsum, idx, gen.row(list(idx))[0]) for idx, dsum in top]
+        sys.stderr.write("      (python) decomposables=%d  coeur garde=%d  (decompSum %d..%d)\n"
+                         % (len(core), len(ordered),
+                            ordered[-1][0] if ordered else 0,
+                            ordered[0][0] if ordered else 0))
 
     out = open_out(args.output)
     out.write(gen.header() + "\n")

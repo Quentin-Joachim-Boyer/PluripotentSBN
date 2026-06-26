@@ -326,7 +326,7 @@ function computeContRange(){
 }
 function nodeColorRGB(i){
   if(colorMode==='decomp'){
-    const c=dcColorMap.get(dcKey(G.decomp[i]))||'#888';
+    const c=dcColorMap.get(nodeKeyCache[i])||'#888';
     const n=parseInt(c.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255];
   }
   let v=nodeValue(i);
@@ -478,10 +478,6 @@ function startLayout(){
   });
 }
 
-// Style des aretes Sigma. alpha faible : avec le blending additif de Sigma, les
-// recouvrements se cumulent ; on reste donc tres discret par defaut.
-const EDGE_COLOR='rgba(90,127,168,0.06)', EDGE_SIZE=0.4;
-
 // Construit/affiche le rendu Sigma a partir de positions (posX/posY) : soit les
 // colonnes precalculees du CSV, soit la sortie du worker force-directed.
 function initSigma(posX,posY,withEdges=true){
@@ -497,8 +493,7 @@ function initSigma(posX,posY,withEdges=true){
       x:posX[i], y:posY[i],
       size:nodeRadius[i],
       color:nodeColorCss(i),
-      // ordre de dessin : les dynamiques les PLUS decomposees (rares, le coeur
-      // pluripotent) passent au-dessus du bulk irreductible.
+      idx:i,
       zIndex:G.decomp[i].reduce((a,b)=>a+b,0),
     });
   }
@@ -509,31 +504,24 @@ function initSigma(posX,posY,withEdges=true){
   sigmaInstance=new Sigma(sigmaGraph,host,{
     renderLabels:false,
     renderEdgeLabels:false,
-    zIndex:true,   // respecte l'attribut zIndex des noeuds/aretes pour l'ordre
-    // Tailles en pixels ecran, constantes au zoom -> identiques a la legende
-    // (qui dessine des cercles de rayon nodeRadius en pixels).
+    zIndex:true,
     itemSizesReference:'screen',
     zoomToSizeRatioFunction:()=>1,
+    defaultDrawNodeHover:()=>{}, // desactive le halo de survol integre (redondant avec l'overlay)
+    // Les noeuds gardent TOUJOURS leur taille et leur couleur d'origine.
+    // La mise en valeur (anneaux + aretes, sel=blanc / hov=violet) est dessinee
+    // sur l'overlay canvas 2D (_drawOverlay), seule source de verite.
     nodeReducer:(node,data)=>{
       const i=data.idx??parseInt(node);
-      // Le selectionne ET ses voisins restent visibles MEME si leur groupe de
-      // decomposition est masque (cf. comportement canvas) : testes AVANT le masquage.
-      if(i===sel)return{...data,highlighted:true,zIndex:1e6};
+      if(i===sel)return data;                       // selectionne : visible meme si filtre
       const na=selNeighbors();
-      if(na&&na.has(i))return{...data,highlighted:true,zIndex:1e6-2};
-      if(hidden.has(dcKey(G.decomp[i])))return{...data,hidden:true};
-      if(i===hov&&hov!==sel)return{...data,highlighted:true,zIndex:1e6-1};
-      const nh=hovNeighbors();   // voisins du noeud survole (comme le rendu canvas)
-      if(nh&&nh.has(i))return{...data,highlighted:true,zIndex:1e6-3};
+      if(na&&na.has(i))return data;                 // voisin du selectionne : idem
+      if(hidden.has(nodeKeyCache[i]))return{...data,hidden:true};
       return data;
     },
-    // Le graphe ne contient que les aretes a montrer (cf. syncEdges) ; le reducer
-    // masque celles touchant un groupe cache, SAUF les incidentes du selectionne
-    // (ses voisins restent affiches, donc leurs aretes aussi).
     edgeReducer:(edge,data)=>{
       const a=parseInt(sigmaGraph.source(edge)),b=parseInt(sigmaGraph.target(edge));
-      if(a===sel||b===sel)return data;   // arete incidente au selectionne : toujours visible
-      if(hidden.has(dcKey(G.decomp[a]))||hidden.has(dcKey(G.decomp[b])))return{...data,hidden:true};
+      if(hidden.has(nodeKeyCache[a])||hidden.has(nodeKeyCache[b]))return{...data,hidden:true};
       return data;
     },
   });
@@ -546,55 +534,58 @@ function initSigma(posX,posY,withEdges=true){
   // clignotement (clear/redraw) ; la duree par defaut anime vers le meme point.
   if(mc&&mc.settings) mc.setSettings({...mc.settings,inertiaRatio:0});
 
-  sigmaInstance.on('enterNode',({node,event})=>{
-    const i=parseInt(node);
+  // Survol : le nodeReducer ne depend PAS de hov (mise en valeur sur overlay).
+  // On redessine donc juste l'overlay, sans refresh Sigma (gratuit a 380k noeuds).
+  function setHover(i,ex,ey){
     if(i===hov)return;
-    const prev=hov; hov=i; showTip(i,event.x,event.y);
-    sigmaPartialFocus([i,prev]);
-  });
-  sigmaInstance.on('leaveNode',()=>{
-    const prev=hov; hov=-1; hideTip();
-    sigmaPartialFocus([prev]);
-  });
+    hov=i;
+    if(i===-1){ hideTip(); } else { showTip(i,ex,ey); }
+    _drawOverlay();
+  }
+  sigmaInstance.on('enterNode',({node,event})=>setHover(parseInt(node),event.x,event.y));
+  sigmaInstance.on('leaveNode',()=>setHover(-1));
   sigmaInstance.on('clickNode',({node})=>{
-    const i=parseInt(node); const prev=sel; sel=(i===sel)?-1:i;
-    onSelChange(prev);                       // feedback visuel immediat (+ aretes incidentes)
-    requestAnimationFrame(updateStatbox);    // panneau detaille (SVG+hypercube) a la frame suivante
+    const i=parseInt(node);
+    sel=(i===sel)?-1:i; hov=-1; hideTip();
+    sigmaInstance.refresh({skipIndexation:true}); // sel change la visibilite (noeuds filtres)
+    requestAnimationFrame(updateStatbox);
   });
   sigmaInstance.on('clickStage',({event})=>{
-    // Sigma n'a touche aucun noeud au pixel : on cherche le plus proche du clic
-    // dans une tolerance de PICK_TOL_PX (permet de garder de petits points).
     let n=-1;
     if(event){
       const g=sigmaInstance.viewportToGraph({x:event.x,y:event.y});
       const g2=sigmaInstance.viewportToGraph({x:event.x+PICK_TOL_PX,y:event.y});
       n=nearestNode(g.x,g.y,Math.hypot(g2.x-g.x,g2.y-g.y));
     }
-    const prev=sel, ph=hov;
-    if(n!==-1) sel=(n===sel)?-1:n;        // noeud proche -> (de)selection
-    else if(sel!==-1||hov!==-1) sel=-1;   // vide -> deselection
-    else return;
-    hov=-1; hideTip(); onSelChange(prev,ph); requestAnimationFrame(updateStatbox);
+    if(n!==-1) sel=(n===sel)?-1:n;
+    else if(sel!==-1) sel=-1;
+    else { setHover(-1); return; }
+    setHover(-1);
+    sigmaInstance.refresh({skipIndexation:true});
+    requestAnimationFrame(updateStatbox);
   });
 
-  if(withEdges) syncEdges();   // aretes selon l'etat (voile complet OU incidentes)
+  // Filet de securite : Sigma rate parfois leaveNode (mouvement rapide).
+  // Si le curseur s'eloigne du noeud survole, on l'efface nous-memes.
+  if(_hostMoveHandler) host.removeEventListener('mousemove',_hostMoveHandler);
+  _hostMoveHandler=e=>{
+    if(hov===-1)return;
+    const r=host.getBoundingClientRect();
+    const vp=sigmaInstance.graphToViewport(sigmaGraph.getNodeAttributes(String(hov)));
+    const d=Math.hypot(e.clientX-r.left-vp.x, e.clientY-r.top-vp.y);
+    if(d>nodeRadius[hov]+6) setHover(-1);
+  };
+  host.addEventListener('mousemove',_hostMoveHandler);
+
+  // Couche d'aretes globales (sous les noeuds) + overlay de mise en valeur (au-dessus).
+  _initEdgeLayer(host);
+  _initOverlay(host);
+  sigmaInstance.on('afterRender', ()=>{ _scheduleEdges(); _drawOverlay(); });
+
+  if(withEdges) syncEdges();
   setLoadingTimed('<span style="color:var(--muted)">sigma.js · positions CSV</span>',2500);
 }
 
-// Refresh PARTIEL autour des noeuds dont la surbrillance change (survol/clic) :
-// on ne ree-value que ces noeuds, leurs voisins, et leurs aretes incidentes, au
-// lieu de rejouer les reducers sur tout le graphe (sinon lag a 80k+).
-function sigmaPartialFocus(focusIds){
-  if(!sigmaInstance)return;
-  const nodes=new Set(), edges=new Set();
-  for(const fi of focusIds){
-    if(fi==null||fi<0)continue;
-    nodes.add(String(fi));
-    for(const j of (G.adj[fi]||[])) nodes.add(String(j));
-    for(const ek of sigmaGraph.edges(String(fi))) edges.add(ek);
-  }
-  sigmaInstance.refresh({partialGraph:{nodes:[...nodes],edges:[...edges]},skipIndexation:true});
-}
 
 // Met a jour TOUTES les positions (animation live du layout force-directed).
 function updateSigmaPositions(x,y){
@@ -605,31 +596,127 @@ function updateSigmaPositions(x,y){
   sigmaInstance.refresh({skipIndexation:true});
 }
 
-// Synchronise les aretes presentes dans le graphe Sigma : le voile complet si
-// showEdges, sinon UNIQUEMENT les aretes incidentes du noeud selectionne. Ne pas
-// laisser les centaines de milliers d'aretes (masquees) dans le graphe evite que
-// le edgeReducer / le rendu les traite a chaque refresh ou fin de pan-zoom
-// (source de stutter et de latence entre deux actions camera).
-function syncEdges(){
-  if(!sigmaInstance||!sigmaGraph)return;
-  sigmaGraph.clearEdges();
-  if(showEdges){
-    const e=G.edges;
-    for(let t=0;t<e.length;t+=2){
-      try{ sigmaGraph.addEdge(String(e[t]),String(e[t+1]),{color:EDGE_COLOR,size:EDGE_SIZE}); }catch(_){}
-    }
-  }else if(sel!==-1){
-    for(const j of G.adj[sel]){
-      try{ sigmaGraph.addEdge(String(sel),String(j),{color:accentCol,size:1.3}); }catch(_){}
-    }
-  }
-  sigmaInstance.refresh();
+
+// ── Couche d'aretes globales en canvas 2D (sous les noeuds) ──────────────────
+// Rendu 2D = aretes fines et lisibles (vs le blending additif WebGL). Couteux a
+// 451k+ aretes : on les masque pendant le deplacement camera et on les redessine
+// une fois immobile (l'utilisateur garde un pan/zoom fluide ; il desactive le
+// voile s'il ne veut pas l'attente au repos). Insere AVANT la couche .sigma-nodes
+// (WebGL transparent) -> les aretes apparaissent sous les noeuds.
+let _edgeCanvas=null,_edgeCtx=null,_edgeTimer=null,_evx=null,_evy=null;
+const CANVAS_EDGE_COLOR='rgba(130,165,215,0.16)', CANVAS_EDGE_W=0.7;
+function _initEdgeLayer(host){
+  clearTimeout(_edgeTimer);
+  if(_edgeCanvas) _edgeCanvas.remove();
+  _edgeCanvas=document.createElement('canvas');
+  _edgeCanvas.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+  const nodesLayer=host.querySelector('.sigma-nodes');
+  if(nodesLayer) host.insertBefore(_edgeCanvas,nodesLayer); else host.appendChild(_edgeCanvas);
+  _edgeCtx=_edgeCanvas.getContext('2d');
 }
-// Apres un changement de selection : surbrillance noeuds + aretes incidentes.
-// `prevs` = anciens noeuds focalises (selection et/ou survol) a rafraichir.
-function onSelChange(...prevs){
-  if(showEdges) sigmaPartialFocus([sel,...prevs]); // voile present : refresh partiel des noeuds
-  else syncEdges();                                // voile absent : (re)construit les incidentes
+// Programme un redessin differe : efface tout de suite (deplacement) puis redessine
+// ~150ms apres la derniere frame (camera immobile).
+function _scheduleEdges(){
+  if(!_edgeCanvas)return;
+  if(!showEdges){ _clearEdgeCanvas(); return; }
+  _clearEdgeCanvas();
+  clearTimeout(_edgeTimer);
+  _edgeTimer=setTimeout(_drawEdgesNow,150);
+}
+function _clearEdgeCanvas(){
+  if(!_edgeCtx)return;
+  const DPR=window.devicePixelRatio||1;
+  _edgeCtx.setTransform(1,0,0,1,0,0);
+  _edgeCtx.clearRect(0,0,_edgeCanvas.width,_edgeCanvas.height);
+  _edgeCtx.setTransform(DPR,0,0,DPR,0,0);
+}
+function _drawEdgesNow(){
+  if(!_edgeCanvas||!sigmaInstance||!sigmaGraph||!showEdges||!G)return;
+  const host=_edgeCanvas.parentElement;
+  const w=host.clientWidth, h=host.clientHeight, DPR=window.devicePixelRatio||1;
+  if(_edgeCanvas.width!==w*DPR||_edgeCanvas.height!==h*DPR){_edgeCanvas.width=w*DPR;_edgeCanvas.height=h*DPR;}
+  const ctx=_edgeCtx;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // Positions ecran precalculees une fois (graphology = source du rendu WebGL).
+  const N=G.N;
+  if(!_evx||_evx.length!==N){_evx=new Float32Array(N);_evy=new Float32Array(N);}
+  for(let i=0;i<N;i++){
+    const p=sigmaInstance.graphToViewport(sigmaGraph.getNodeAttributes(String(i)));
+    _evx[i]=p.x; _evy[i]=p.y;
+  }
+  // Trace toutes les aretes en un seul path (rapide), filtre par groupes masques.
+  const e=G.edges, kc=nodeKeyCache;
+  ctx.strokeStyle=CANVAS_EDGE_COLOR; ctx.lineWidth=CANVAS_EDGE_W; ctx.beginPath();
+  for(let t=0;t<e.length;t+=2){
+    const a=e[t], b=e[t+1];
+    if(kc&&(hidden.has(kc[a])||hidden.has(kc[b])))continue;
+    ctx.moveTo(_evx[a],_evy[a]); ctx.lineTo(_evx[b],_evy[b]);
+  }
+  ctx.stroke();
+}
+
+// ── Overlay canvas 2D : mise en valeur (anneaux + aretes) ────────────────────
+// Toute la mise en valeur est dessinee ici, au-dessus du WebGL, a partir de
+// l'etat courant (sel/hov). Source de verite unique -> pas de residus possibles.
+let _overlayCanvas=null,_overlayCtx=null,_hostMoveHandler=null;
+function _initOverlay(host){
+  if(_overlayCanvas) _overlayCanvas.remove();
+  _overlayCanvas=document.createElement('canvas');
+  _overlayCanvas.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10';
+  host.appendChild(_overlayCanvas);
+  _overlayCtx=_overlayCanvas.getContext('2d');
+}
+function _drawOverlay(){
+  if(!_overlayCanvas||!sigmaInstance||!sigmaGraph)return;
+  const host=_overlayCanvas.parentElement;
+  const w=host.clientWidth, h=host.clientHeight, DPR=window.devicePixelRatio||1;
+  if(_overlayCanvas.width!==w*DPR||_overlayCanvas.height!==h*DPR){_overlayCanvas.width=w*DPR;_overlayCanvas.height=h*DPR;}
+  const ctx=_overlayCtx;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // Positions lues depuis graphology (= source exacte du rendu WebGL) -> alignement
+  // garanti meme pendant l'animation du layout (ou _pX/_pY seraient encore figes).
+  const vp=i=>sigmaInstance.graphToViewport({
+    x:sigmaGraph.getNodeAttribute(String(i),'x'),
+    y:sigmaGraph.getNodeAttribute(String(i),'y'),
+  });
+  // Pour un noeud central : aretes d'abord, puis on RECOUVRE les points (fond +
+  // anneau) -> les aretes passent visuellement sous les points mis en valeur.
+  function highlight(c,color){
+    if(c===-1)return;
+    const cp=vp(c);
+    // 1) Aretes (fines, au-dessus des autres points mais sous ceux mis en valeur)
+    ctx.strokeStyle=color; ctx.globalAlpha=0.8; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(const j of G.adj[c]){
+      const jp=vp(j);
+      ctx.moveTo(cp.x,cp.y); ctx.lineTo(jp.x,jp.y);
+    }
+    ctx.stroke();
+    // 2) Points mis en valeur : redessine le disque (couleur d'origine) puis l'anneau.
+    // Anneau de largeur constante, colle au bord du noeud (rayon = taille du noeud).
+    ctx.globalAlpha=1; ctx.lineWidth=2; ctx.strokeStyle=color;
+    function dot(i,p){
+      const r=nodeRadius[i];
+      ctx.fillStyle=sigmaGraph.getNodeAttribute(String(i),'color');
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.fill();    // recouvre l'arete
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.stroke();  // anneau colle au bord
+    }
+    for(const j of G.adj[c]) dot(j,vp(j));
+    dot(c,cp);
+  }
+  // hov d'abord, sel par-dessus (priorite visuelle au selectionne)
+  if(hov!==-1&&hov!==sel) highlight(hov,'#a78bfa');
+  if(sel!==-1) highlight(sel,'#ffffff');
+}
+
+// Voile complet d'aretes : rendu sur la couche canvas 2D (_edgeCanvas), pas dans
+// graphology. On (re)dessine immediatement a l'activation, on efface a l'arret.
+function syncEdges(){
+  if(showEdges) _drawEdgesNow(); else _clearEdgeCanvas();
 }
 
 // ── Tolerance de selection ───────────────────────────────────────────────────
@@ -661,7 +748,7 @@ function nearestNode(gx,gy,tol){
     const a=_pGrid.get(cx+','+cy);if(!a)continue;
     for(const i of a){
       // ignore les noeuds masques, sauf le selectionne et ses voisins (affiches)
-      if(i!==sel && !(na&&na.has(i)) && hidden.has(dcKey(G.decomp[i])))continue;
+      if(i!==sel && !(na&&na.has(i)) && hidden.has(nodeKeyCache[i]))continue;
       const dx=_pX[i]-gx,dy=_pY[i]-gy,d2=dx*dx+dy*dy;
       if(d2<bd2){bd2=d2;best=i;}
     }
@@ -673,6 +760,13 @@ function nearestNode(gx,gy,tol){
 //  Couleurs / tailles des noeuds (le rendu effectif est fait par Sigma)
 // ═══════════════════════════════════════════════════════════════════════════
 const accentCol='#4f8ef7';
+// Clés de décomposition pré-calculées — évite dcKey(G.decomp[i]) dans les hot paths
+// (nodeReducer, edgeReducer, nearestNode : appelés 380k× par refresh).
+let nodeKeyCache=null;
+function buildNodeKeyCache(){
+  nodeKeyCache=new Array(G.N);
+  for(let i=0;i<G.N;i++) nodeKeyCache[i]=dcKey(G.decomp[i]);
+}
 // rayons précalculés, liés à GenotypeCount (linéaire, comme sbn_scatter)
 let nodeRadius=null;
 let sizeLegend=null; // {attr, min, max, minR, maxR} ou null si taille = degré
@@ -706,11 +800,6 @@ function selNeighbors(){
   if(_selAdjFor!==sel){_selAdjFor=sel;_selAdj=sel===-1?null:new Set(G.adj[sel]);}
   return _selAdj;
 }
-let _hovAdj=null, _hovAdjFor=-2;
-function hovNeighbors(){
-  if(_hovAdjFor!==hov){_hovAdjFor=hov;_hovAdj=hov===-1?null:new Set(G.adj[hov]);}
-  return _hovAdj;
-}
 // ── tooltip ──────────────────────────────────────────────────────────────────
 function trow(k,v){return `<div class="tip-row"><span class="tip-k">${k}</span><span class="tip-v">${v}</span></div>`;}
 // Bloc stats + mini-dynamique, partagé entre tooltip (hover) et statbox (clic).
@@ -743,25 +832,25 @@ const hideTip=()=>document.getElementById('tip').style.display='none';
 // ═══════════════════════════════════════════════════════════════════════════
 //  Vue / contrôles (interaction, pan/zoom et caméra gérés par Sigma)
 // ═══════════════════════════════════════════════════════════════════════════
-function fitView(){ if(sigmaInstance) sigmaInstance.getCamera().reset(); }
+function fitView(){ if(sigmaInstance) sigmaInstance.getCamera().animatedReset({duration:300}); }
 function resetView(){ fitView(); }
 function toggleEdges(){
   showEdges=!showEdges;const b=document.getElementById('ebtn');
   b.textContent=showEdges?'Arêtes ✓':'Arêtes ✗';b.classList.toggle('active',showEdges);
-  syncEdges();   // ajoute/retire le voile complet dans le graphe Sigma
+  syncEdges();   // dessine/efface le voile complet sur la couche canvas 2D
 }
 
 // ── recherche / statbox ──────────────────────────────────────────────────────
 function onSearch(){
   if(!G||!sigmaInstance)return;
   const v=document.getElementById('search').value.trim();
-  if(v===''){ if(sel!==-1){const p=sel;sel=-1;onSelChange(p);requestAnimationFrame(updateStatbox);} return; }
+  if(v===''){ if(sel!==-1){sel=-1;sigmaInstance.refresh({skipIndexation:true});requestAnimationFrame(updateStatbox);} return; }
   const id=parseInt(v);
   if(!isNaN(id)&&id>=0&&id<G.N){
-    const prev=sel; sel=id;
+    sel=id;
     const{x,y}=sigmaGraph.getNodeAttributes(String(id));
     sigmaInstance.getCamera().animate({x,y,ratio:0.05},{duration:500});
-    onSelChange(prev); requestAnimationFrame(updateStatbox);
+    sigmaInstance.refresh({skipIndexation:true}); requestAnimationFrame(updateStatbox);
   }
 }
 // ── Réseau SBN avec poids (SVG, porté de sbn_viz) ────────────────────────────
@@ -1002,7 +1091,7 @@ function onColorByChange(){
   computeContRange();
   if(sigmaInstance){
     for(let i=0;i<G.N;i++) sigmaGraph.setNodeAttribute(String(i),'color',nodeColorCss(i));
-    sigmaInstance.refresh();
+    sigmaInstance.refresh({skipIndexation:true});
   }
   buildLegend();
 }
@@ -1097,7 +1186,7 @@ function toggleVec(key){
     if(hidden.size===DECOMPS.length)hidden.clear();
   }
   _updateLegendOpacity();
-  if(sigmaInstance)sigmaInstance.refresh();   // reducers relisent `hidden`
+  if(sigmaInstance)sigmaInstance.refresh({skipIndexation:true});
 }
 function toggleLegGroup(dim){
   const g=document.querySelector(`.leg-group[data-dim="${dim}"]`);
@@ -1106,7 +1195,7 @@ function toggleLegGroup(dim){
   const allVisible=keys.every(k=>!hidden.has(k));
   keys.forEach(k=>allVisible?hidden.add(k):hidden.delete(k));
   _updateLegendOpacity();
-  if(sigmaInstance)sigmaInstance.refresh();   // reducers relisent `hidden`
+  if(sigmaInstance)sigmaInstance.refresh({skipIndexation:true});
 }
 function toggleLegGroupOpen(dim){
   const body=document.getElementById(`legbody-${dim}`);
@@ -1189,6 +1278,7 @@ function loadCurrent(){
       document.getElementById('statbox').style.display='none';
       document.getElementById('search').value='';
       setupColors();
+      buildNodeKeyCache();
       computeRadii();
       computeColorableStats();
       colorMode='decomp';populateColorBy();computeContRange();buildLegend();
