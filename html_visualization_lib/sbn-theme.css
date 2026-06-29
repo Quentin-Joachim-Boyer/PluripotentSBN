@@ -1,0 +1,28 @@
+/* Tokens de thème partagés (SBN viz / scatter / métagraphe).
+   DOM : ces variables pilotent tout le design system.
+   Canvas/WebGL : lues côté JS via SBN.theme (cf. sbn-theme.js). */
+:root{
+  --bg:#0f1117; --panel:#161b27; --border:#252d3d;
+  --accent:#4f8ef7; --accent2:#a78bfa; --text:#e2e8f0; --muted:#64748b;
+  /* couleurs lues côté canvas */
+  --grid:rgba(255,255,255,0.07);
+  --axis:#94a3b8;
+  --ring:#ffffff;                 /* anneau de mise en valeur */
+  --ring-halo:rgba(0,0,0,0.55);   /* halo de contraste autour de l'anneau */
+  --node-off:#1e2535;             /* nœud hors cycle (dynamique) */
+  --skeleton:rgba(100,116,139,0.22);
+  --edge:rgba(130,165,215,0.16);  /* voile d'arêtes (métagraphe) */
+  --btn-bg:#2d3748; --btn-hover:#3d4a5c;
+}
+:root[data-theme="light"]{
+  --bg:#f6f8fc; --panel:#ffffff; --border:#d6dde8;
+  --accent:#2563eb; --accent2:#7c3aed; --text:#1e293b; --muted:#64748b;
+  --grid:rgba(15,23,42,0.10);
+  --axis:#475569;
+  --ring:#0f172a;
+  --ring-halo:rgba(255,255,255,0.75);
+  --node-off:#e6ebf3;
+  --skeleton:rgba(71,85,105,0.30);
+  --edge:rgba(37,99,235,0.18);
+  --btn-bg:#e8edf4; --btn-hover:#dde4ee;
+}

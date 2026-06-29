@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>SBN Métagraphe mutationnel</title>
+<!-- tokens de thème partagés (définit :root + thème clair) -->
+<link rel="stylesheet" href="sbn-theme.css">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--panel);flex-shrink:0}
+  header h1{font-size:15px;font-weight:500}
+  .upload-btn{background:var(--accent);color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:500}
+  .upload-btn:hover{opacity:.85}
+  select,input[type=text]{background:var(--bg);color:var(--text);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:12px;font-family:'JetBrains Mono',monospace}
+  select{cursor:pointer}
+  select:focus,input:focus{outline:none;border-color:var(--accent)}
+  .controls{display:flex;align-items:center;gap:10px;margin-left:auto;font-size:12px;color:var(--muted)}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+  .toolbar label{font-size:12px;color:var(--muted)}
+  .btn{background:var(--btn-bg);color:var(--text);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--btn-hover)}
+  .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .canvas-wrap{flex:1;position:relative;overflow:hidden;cursor:grab;background:var(--bg)}
+  .canvas-wrap.drag{cursor:grabbing}
+  canvas{width:100%;height:100%;display:block}
+  .tip{position:absolute;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;pointer-events:none;display:none;min-width:190px;z-index:10;font-family:'JetBrains Mono',monospace;line-height:1.7;box-shadow:0 4px 20px #0008}
+  .tip-row{display:flex;justify-content:space-between;gap:16px}
+  .tip-k{color:var(--muted)} .tip-v{color:var(--text);font-weight:600}
+  .scatter-legend{display:flex;flex-wrap:wrap;gap:5px 16px;padding:5px 16px;background:var(--panel);border-top:1px solid var(--border);flex-shrink:0;font-size:11px;max-height:74px;overflow-y:auto;align-items:center}
+  .scatter-legend-item{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;transition:opacity .15s}
+  .scatter-legend-item:hover{opacity:.75!important}
+  .scatter-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block}
+  .leg-group{display:inline-flex;flex-direction:column}
+  .leg-group-hdr{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;transition:opacity .15s,border-color .15s}
+  .leg-group-hdr:hover{border-color:var(--muted)}
+  .leg-group-body{display:none;flex-wrap:wrap;gap:3px 10px;padding:3px 2px 1px}
+  .leg-group-body.open{display:flex}
+  .empty-state{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:14px}
+  .drop-zone{border:2px dashed var(--border);border-radius:12px;padding:24px 32px;text-align:center;cursor:pointer;transition:border-color .2s}
+  .drop-zone:hover{border-color:var(--accent);color:var(--text)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinning{display:inline-block;animation:spin 1s linear infinite}
+  #statbox{position:absolute;top:10px;right:10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;font-family:'JetBrains Mono',monospace;line-height:1.7;display:none;z-index:9;min-width:150px;max-height:calc(100% - 20px);overflow-y:auto;box-shadow:0 4px 20px #0008}
+</style>
+<!-- sigma.js v3 + graphology (vendorises en local -> WebGL fonctionne hors-ligne) ;
+     utilises seulement quand les colonnes metagraph_x/y sont presentes. -->
+<script src="metagraph_lib/graphology.umd.min.js"></script>
+<script src="metagraph_lib/sigma.min.js"></script>
+<!-- bibliothèques SBN partagées (thème, CSV columnar, cœur logique) -->
+<script src="sbn-theme.js"></script>
+<script src="sbn-csv.js"></script>
+<script src="sbn-core.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>SBN Métagraphe mutationnel</h1>
+  <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
+  <input type="file" id="file-input" accept=".csv,.gz" multiple style="display:none">
+  <div class="controls">
+    <button id="theme-btn" onclick="toggleTheme()" title="Basculer thème clair / sombre"
+            style="background:var(--border);color:var(--text);border:none;padding:3px 9px;
+                   border-radius:5px;font-size:13px;cursor:pointer;font-family:inherit">🌙</button>
+    <select id="file-select"></select>
+    <span id="row-count" style="font-family:monospace"></span>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label>Couleur:</label>
+  <select id="color-by" onchange="onColorByChange()"></select>
+  <button class="btn" id="ebtn" onclick="toggleEdges()">Arêtes ✗</button>
+  <button class="btn" onclick="resetView()">↺ Vue</button>
+  <button class="btn" id="relayout-btn" onclick="startLayout()">⟲ Relayout</button>
+  <label style="margin-left:8px">Recherche id:</label>
+  <input type="text" id="search" placeholder="ex: 1042" style="width:90px" oninput="onSearch()">
+  <span id="loading-indicator" style="margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);letter-spacing:.05em"></span>
+</div>
+
+<div class="canvas-wrap" id="canvas-wrap">
+  <div class="empty-state" id="empty-state">
+    <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div style="font-size:28px;margin-bottom:8px">🕸️</div>
+      <div>Charger un CSV avec colonnes f_* pour bâtir le métagraphe</div>
+      <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv (avec f_1..f_n)</div>
+    </div>
+  </div>
+  <!-- Conteneur de rendu Sigma. Sigma vide son conteneur a l'init, donc on lui
+       dedie ce div (ne PAS lui donner canvas-wrap, qui contient tip/statbox). -->
+  <div id="sigma-host" style="position:absolute;inset:0;display:none"></div>
+  <div class="tip" id="tip"></div>
+  <div id="statbox"></div>
+</div>
+
+<div class="scatter-legend" id="scatter-legend"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  État global
+// ═══════════════════════════════════════════════════════════════════════════
+let files = [];          // {name, rows, header}
+let curFile = 0;
+let G = null;            // graphe courant: {n, N, decomp[], adj[][], edges Int32Array, stats{}, statKeys[]}
+let colorMode = 'decomp';     // 'decomp' | statKey | 'degré'
+const hidden = new Set();     // groupes décomp masqués
+let worker = null;            // worker de layout force-directed (positions only)
+
+// Voile d'aretes masque par defaut (graphes denses = hairball additif en WebGL) ;
+// les aretes incidentes apparaissent au survol/clic d'un noeud.
+let hov=-1, sel=-1, showEdges=false;
+let sigmaInstance=null, sigmaGraph=null;
+
+// ── Thème clair / sombre (SBN.theme partagé) ──────────────────────────────────
+// TH = objet de couleurs canvas, muté en place par SBN.theme à chaque bascule.
+const TH = SBN.theme.TH;
+function toggleTheme(){ SBN.theme.toggle(); }
+SBN.theme.init({ onChange(){
+  if(sigmaInstance){
+    sigmaInstance.refresh({skipIndexation:true}); // déclenche afterRender -> overlay
+    _drawOverlay();
+    if(showEdges) _drawEdgesNow();                // voile : recolore immédiatement
+  }
+  if(sel!==-1) updateStatbox();                   // statbox ouverte : recolore mini-vues
+}});
+
+// ── Architecture de rendu ────────────────────────────────────────────────────
+// Backend UNIQUE : Sigma/WebGL (passe a l'echelle, vers des millions de noeuds).
+// Les positions des noeuds viennent soit des colonnes metagraph_x/y du CSV, soit
+// du worker force-directed (Barnes-Hut). Dans les deux cas le rendu (noeuds +
+// aretes), l'interaction et la camera sont geres par Sigma (cf. initSigma).
+// Le worker ne fait QUE calculer des positions ; il ne dessine rien.
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CSV parsing (repris de sbn_scatter)
+// ═══════════════════════════════════════════════════════════════════════════
+const parseCSVLine = SBN.csv.parseLine;   // parsing partagé (sbn-csv.js)
+
+// Cède la main au navigateur (pour que la barre de progression se repeigne entre
+// deux gros blocs de travail synchrone).
+const _nextFrame=()=>new Promise(r=>setTimeout(r,0));
+
+// Parsing CSV streaming columnar partagé (sbn-csv.js) : superset de colonnes,
+// dédup f_*/w_*, .gz, progression. Adapté à la signature locale (file, onProgress).
+const parseCSVStream = (file, onProgress) => SBN.csv.parseStream(file, onProgress);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Construction du graphe de mutation (équivalent metagraphe_mutation.py)
+// ═══════════════════════════════════════════════════════════════════════════
+function wBound(n){return n<=2?1:n===3?2:n===4?3:n;}
+function threshold(v){
+  const n=v.length, len=1<<n, b=new Array(len);
+  for(let s=0;s<len;s++){let t=0;for(let i=0;i<n;i++)if(s&(1<<i))t+=v[i];b[s]=t>0?'1':'0';}
+  return b.join('');
+}
+function sbfNeighbors(n){
+  const wb=wBound(n), lo=-wb, hi=wb, map=new Map(), v=new Array(n);
+  (function rec(idx){
+    if(idx===n){
+      const f=threshold(v);
+      if(!map.has(f))map.set(f,new Set());
+      const set=map.get(f);
+      for(let i=0;i<n;i++){
+        const old=v[i];
+        for(let c=lo;c<=hi;c++){if(c===old)continue;v[i]=c;const f2=threshold(v);if(f2!==f)set.add(f2);}
+        v[i]=old;
+      }
+      return;
+    }
+    for(let c=lo;c<=hi;c++){v[idx]=c;rec(idx+1);}
+  })(0);
+  const out=new Map(); for(const [k,s] of map) out.set(k,[...s]); return out;
+}
+
+// Construit le graphe à partir du `file` columnar (cf. parseCSVStream). Async : cède
+// la main régulièrement et rapporte la progression via onProgress(step, frac).
+async function buildGraph(file, onProgress){
+  const onP=onProgress||(()=>{});
+  const {nRows, cols, fcols, fdataRows, wdataRows, wN, colNames}=file;
+  const n=fcols.length;
+  if(n===0) return null;
+  // vecteur décomposition: v_* triés décroissant = (v_n,...,v_0)
+  const vcols=colNames.filter(h=>/^v_\d+$/.test(h)).sort((a,b)=>+b.slice(2)-+a.slice(2));
+  const POSCOLS=new Set(['x','y','metagraph_x','metagraph_y']);
+  // f_*/w_* sont déjà hors de colNames (dédupliqués en fdataRows/wdataRows)
+  const statKeys=colNames.filter(h=>!/^v_\d+$/.test(h)&&!POSCOLS.has(h));
+
+  const neighbors=sbfNeighbors(n);
+  const CHUNK=200000;
+
+  // ── Passe 1 : déduplication des nœuds par signature f_*. Les tableaux f_* étant
+  // déjà dédupliqués (référence partagée par signature), on déduplique par identité
+  // du tableau (Map sur l'objet) — aucun join de chaîne par ligne.
+  const nodeByFd=new Map();        // tableau f_* → index de nœud
+  const nodeFdata=[], nodeWdata=[]; // par nœud : tableaux f_*/w_* représentatifs
+  const decomp=[], ownDecomp=[], decompSum=[], nodeRow0=[];
+  const rowNode=new Int32Array(nRows);
+  for(let ri=0; ri<nRows; ri++){
+    if(ri%CHUNK===0){ onP('déduplication', ri/Math.max(1,nRows)*0.5); await _nextFrame(); }
+    const fd=fdataRows[ri];
+    let idx=nodeByFd.get(fd);
+    if(idx===undefined){
+      idx=nodeFdata.length;
+      nodeByFd.set(fd,idx);
+      nodeFdata.push(fd); nodeWdata.push(wdataRows[ri]); nodeRow0.push(ri);
+      const dv=vcols.map(c=>+cols[c][ri]);
+      decomp.push(dv); ownDecomp.push(dv.slice()); decompSum.push(dv.reduce((a,b)=>a+b,0));
+    } else if(vcols.length){
+      let s=0; for(const c of vcols) s+=+cols[c][ri];
+      if(s>decompSum[idx]){ decomp[idx]=vcols.map(c=>+cols[c][ri]); decompSum[idx]=s; }
+    }
+    rowNode[ri]=idx;
+  }
+  const N=nodeFdata.length;
+
+  // signature (chaîne) → index, pour la recherche de voisins SBF
+  const sigToIdx=new Map();
+  for(let i=0;i<N;i++) sigToIdx.set(nodeFdata[i].join('|'), i);
+
+  // ── Arêtes (voisins SBF). nodeFdata[i] est partagé : on le CLONE avant mutation.
+  const adj=Array.from({length:N},()=>[]);
+  const eb=[];
+  for(let i=0;i<N;i++){
+    if(i%CHUNK===0){ onP('arêtes', 0.5+i/Math.max(1,N)*0.35); await _nextFrame(); }
+    const vec=nodeFdata[i].slice();
+    for(let k=0;k<n;k++){
+      const nbrs=neighbors.get(vec[k]); if(!nbrs)continue;
+      const saved=vec[k];
+      for(const nb of nbrs){
+        vec[k]=nb;
+        const j=sigToIdx.get(vec.join('|'));
+        if(j!==undefined && j>i){adj[i].push(j);adj[j].push(i);eb.push(i,j);}
+      }
+      vec[k]=saved;
+    }
+  }
+
+  // ── Passe 2 : stats moyennées sur les doublons (via rowNode, sans rejoin)
+  const stats={}; for(const k of statKeys) stats[k]=new Float64Array(N);
+  const statCounts=new Int32Array(N);
+  for(let ri=0; ri<nRows; ri++){
+    if(ri%CHUNK===0){ onP('stats', 0.85+ri/Math.max(1,nRows)*0.13); await _nextFrame(); }
+    const i=rowNode[ri]; statCounts[i]++;
+    for(const k of statKeys){ const a=cols[k]; const x=a?parseFloat(a[ri]):NaN; if(!isNaN(x))stats[k][i]+=x; }
+  }
+  for(const k of statKeys) for(let i=0;i<N;i++) if(statCounts[i]>1) stats[k][i]/=statCounts[i];
+
+  // ── Positions pré-calculées : metagraph_x/y (DRGraph), repli sur x/y.
+  let csvX=null, csvY=null;
+  const has=k=>colNames.includes(k);
+  const xcol = has('metagraph_x')?'metagraph_x':has('x')?'x':null;
+  const ycol = has('metagraph_y')?'metagraph_y':has('y')?'y':null;
+  if(xcol && ycol){
+    csvX=new Float32Array(N); csvY=new Float32Array(N);
+    for(let i=0;i<N;i++){ const r0=nodeRow0[i]; csvX[i]=(+cols[xcol][r0])||0; csvY[i]=(+cols[ycol][r0])||0; }
+  }
+
+  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,wN:wN||n,
+          edges:new Int32Array(eb),fdata:nodeFdata,wdata:nodeWdata,csvX,csvY};
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Couleurs
+// ═══════════════════════════════════════════════════════════════════════════
+const dcKey=d=>d.join(',');
+const dcStr=d=>'<'+d.join(',')+'>';
+// Index de la première entrée non-nulle du vecteur (= position de la face de dim max)
+function vecMaxDim(vec){for(let i=0;i<vec.length;i++)if(vec[i]>0)return i;return vec.length-1;}
+function hslToHex(h,s,l){
+  const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;let r,g,b;
+  if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
+  else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
+}
+// rampe continue type viridis (stops -> lerp)
+const VIRIDIS=[[68,1,84],[59,82,139],[33,144,140],[93,201,99],[253,231,37]];
+function viridis(t){
+  t=Math.max(0,Math.min(1,t));
+  const x=t*(VIRIDIS.length-1), i=Math.floor(x), f=x-i;
+  const a=VIRIDIS[i], b=VIRIDIS[Math.min(i+1,VIRIDIS.length-1)];
+  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+}
+
+let DECOMPS=[];          // tuples uniques triés (sum,lex)
+let dcColorMap=new Map();
+let dcCount=new Map();
+let contRange=null;      // {min,max} pour colorMode continu
+
+function setupColors(){
+  // groupes de décomposition
+  const seen=new Map();
+  for(let i=0;i<G.N;i++){const k=dcKey(G.decomp[i]); if(!seen.has(k))seen.set(k,G.decomp[i]); dcCount.set(k,(dcCount.get(k)||0)+1);}
+  DECOMPS=[...seen.values()].sort((a,b)=>{
+    const sa=a.reduce((x,y)=>x+y,0), sb=b.reduce((x,y)=>x+y,0);
+    if(sa!==sb)return sa-sb;
+    return dcKey(a).localeCompare(dcKey(b));
+  });
+  dcColorMap.clear();
+  const total=DECOMPS.length;
+  DECOMPS.forEach((d,i)=>{
+    const t=total>1?Math.pow(i/(total-1),0.3):0;
+    dcColorMap.set(dcKey(d), hslToHex((220+t*300+360)%360, 0.75, 0.38+(i%5)*0.04));
+  });
+}
+
+function nodeValue(i){
+  if(colorMode==='degré') return G.adj[i].length;
+  return G.stats[colorMode] ? G.stats[colorMode][i] : NaN;
+}
+function computeContRange(){
+  if(colorMode==='decomp'){contRange=null;return;}
+  const useLog=G.logStats&&G.logStats.has(colorMode);
+  let mn=Infinity,mx=-Infinity;
+  for(let i=0;i<G.N;i++){let v=nodeValue(i);if(!isNaN(v)){if(useLog)v=Math.log(v);if(v<mn)mn=v;if(v>mx)mx=v;}}
+  contRange={min:mn,max:mx,log:useLog};
+}
+function nodeColorRGB(i){
+  if(colorMode==='decomp'){
+    const c=dcColorMap.get(nodeKeyCache[i])||'#888';
+    const n=parseInt(c.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255];
+  }
+  let v=nodeValue(i);
+  if(isNaN(v)) return [100,100,100];
+  if(contRange.log) v=Math.log(Math.max(v,1e-300));
+  const t=contRange.max>contRange.min?(v-contRange.min)/(contRange.max-contRange.min):0.5;
+  return viridis(t);
+}
+const nodeColorCss=i=>{const [r,g,b]=nodeColorRGB(i);return `rgb(${r|0},${g|0},${b|0})`;};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Layout: Web Worker (Barnes-Hut force-directed, quadtree TypedArray)
+// ═══════════════════════════════════════════════════════════════════════════
+const WORKER_SRC = `
+let posX,posY,edges,N;
+const SIZE=1000, THETA2=0.81;
+// Quadtree dans des TypedArrays pré-alloués — élimine la pression GC
+let QX,QY,QH,MASS,MX,MY,CH,BODY,nc;
+function allocTree(cap){
+  QX=new Float32Array(cap);QY=new Float32Array(cap);QH=new Float32Array(cap);
+  MASS=new Float32Array(cap);MX=new Float32Array(cap);MY=new Float32Array(cap);
+  CH=new Int32Array(cap*4);BODY=new Int32Array(cap);
+}
+function newNode(qx,qy,qh){
+  const ni=nc++;
+  QX[ni]=qx;QY[ni]=qy;QH[ni]=qh;
+  MASS[ni]=0;MX[ni]=0;MY[ni]=0;BODY[ni]=-1;
+  const b=ni*4;CH[b]=CH[b+1]=CH[b+2]=CH[b+3]=-1;
+  return ni;
+}
+function subInsert(ni,p,px,py){
+  const q=(px>=QX[ni]?1:0)+(py>=QY[ni]?2:0);
+  const b=ni*4;let ch=CH[b+q];
+  if(ch===-1){const h=QH[ni]/2;ch=newNode(QX[ni]+(q&1?h:-h),QY[ni]+(q&2?h:-h),h);CH[b+q]=ch;}
+  treeInsert(ch,p,px,py);
+}
+function treeInsert(ni,p,px,py){
+  if(BODY[ni]===-1&&MASS[ni]===0){BODY[ni]=p;MASS[ni]=1;MX[ni]=px;MY[ni]=py;return;}
+  if(BODY[ni]!==-1){const old=BODY[ni];BODY[ni]=-1;subInsert(ni,old,posX[old],posY[old]);}
+  MASS[ni]++;MX[ni]+=px;MY[ni]+=py;
+  subInsert(ni,p,px,py);
+}
+function buildTree(){
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(let i=0;i<N;i++){const x=posX[i],y=posY[i];if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;}
+  const cx=(x0+x1)/2,cy=(y0+y1)/2,half=Math.max(x1-x0,y1-y0,1e-6)/2+1e-3;
+  nc=0;newNode(cx,cy,half);
+  for(let i=0;i<N;i++)treeInsert(0,i,posX[i],posY[i]);
+}
+const _stk=new Int32Array(512);
+function step(k,temp){
+  const dispX=new Float32Array(N),dispY=new Float32Array(N);
+  buildTree();
+  const k2=k*k;
+  for(let i=0;i<N;i++){
+    const xi=posX[i],yi=posY[i];
+    let dx=0,dy=0,sp=0;
+    _stk[sp++]=0;
+    while(sp>0){
+      const ni=_stk[--sp];
+      const m=MASS[ni];if(m===0)continue;
+      const ex=xi-MX[ni]/m,ey=yi-MY[ni]/m,d2=ex*ex+ey*ey;
+      const w=QH[ni]*2,b=ni*4;
+      if((CH[b]===-1&&CH[b+1]===-1&&CH[b+2]===-1&&CH[b+3]===-1)||(w*w<THETA2*d2)){
+        if(d2<1e-9)continue;
+        const f=k2/d2*m;
+        dx+=ex*f;dy+=ey*f;
+      }else{
+        if(CH[b]  !==-1)_stk[sp++]=CH[b];
+        if(CH[b+1]!==-1)_stk[sp++]=CH[b+1];
+        if(CH[b+2]!==-1)_stk[sp++]=CH[b+2];
+        if(CH[b+3]!==-1)_stk[sp++]=CH[b+3];
+      }
+    }
+    dispX[i]=dx;dispY[i]=dy;
+  }
+  for(let e=0;e<edges.length;e+=2){
+    const a=edges[e],b=edges[e+1];
+    const ex=posX[a]-posX[b],ey=posY[a]-posY[b];
+    const d=Math.sqrt(ex*ex+ey*ey)+1e-6,f=d*d/k;
+    const fx=ex/d*f,fy=ey/d*f;
+    dispX[a]-=fx;dispY[a]-=fy;dispX[b]+=fx;dispY[b]+=fy;
+  }
+  for(let i=0;i<N;i++){
+    dispX[i]+=(SIZE/2-posX[i])*0.001*k;
+    dispY[i]+=(SIZE/2-posY[i])*0.001*k;
+    const d=Math.sqrt(dispX[i]*dispX[i]+dispY[i]*dispY[i])||1e-6;
+    const s=Math.min(d,temp)/d;
+    posX[i]+=dispX[i]*s;posY[i]+=dispY[i]*s;
+  }
+}
+onmessage=function(ev){
+  const d=ev.data;
+  if(d.cmd==='init'){
+    N=d.N;edges=d.edges;
+    posX=new Float32Array(N);posY=new Float32Array(N);
+    for(let i=0;i<N;i++){const a=Math.random()*6.283,r=Math.sqrt(Math.random())*SIZE*0.45;posX[i]=SIZE/2+Math.cos(a)*r;posY[i]=SIZE/2+Math.sin(a)*r;}
+    allocTree(N*4);
+    const k=0.9*Math.sqrt(SIZE*SIZE/Math.max(N,1));
+    const ITER=d.iter||320;
+    let temp=SIZE*0.12;
+    for(let it=0;it<ITER;it++){
+      step(k,temp);
+      temp*=0.985;if(temp<0.6)temp=0.6;
+      if(it%6===0||it===ITER-1){
+        postMessage({cmd:'tick',it,iter:ITER,x:posX.slice(),y:posY.slice()});
+      }
+    }
+    postMessage({cmd:'done',x:posX.slice(),y:posY.slice()});
+  }
+};
+`;
+
+function startLayout(){
+  if(!G) return;
+  if(worker){worker.terminate();worker=null;}
+  if(typeof Sigma==='undefined'||typeof graphology==='undefined'){
+    setLoading('<span style="color:#f87171">Sigma/WebGL indisponible (metagraph_lib manquant)</span>');
+    return;
+  }
+  if(G.csvX){                       // positions precalculees (colonnes metagraph_x/y)
+    initSigma(G.csvX,G.csvY);        // initSigma masque relayout-btn (positions figees)
+    return;
+  }
+  // Pas de positions -> layout force-directed (worker) puis rendu Sigma au final.
+  // On laisse le navigateur peindre le spinner avant de lancer le worker (sinon,
+  // pour un layout rapide, les messages tick/done passent avant le 1er paint).
+  setLoading('<span class="spinning">⟳</span> layout…');
+  requestAnimationFrame(()=>{
+    const blob=new Blob([WORKER_SRC],{type:'application/javascript'});
+    worker=new Worker(URL.createObjectURL(blob));
+    let started=false;
+    worker.onmessage=ev=>{
+      const d=ev.data;
+      if(d.cmd==='tick'){
+        // animation live : rendu noeuds-seuls (rapide), positions mises a jour.
+        if(!started){ initSigma(d.x,d.y,false); started=true; }
+        else updateSigmaPositions(d.x,d.y);
+        setLoading('<span class="spinning">⟳</span> layout '+Math.round(d.it/d.iter*100)+'%');
+      }else if(d.cmd==='done'){
+        // reconstruction finale AVEC aretes (fit recalcule a la creation).
+        setLoading('');
+        initSigma(d.x,d.y,true);
+        document.getElementById('relayout-btn').style.display='';
+        worker.terminate(); worker=null;
+      }
+    };
+    worker.postMessage({cmd:'init', N:G.N, edges:G.edges.slice(), iter:320},[]);
+  });
+}
+
+// Construit/affiche le rendu Sigma a partir de positions (posX/posY) : soit les
+// colonnes precalculees du CSV, soit la sortie du worker force-directed.
+function initSigma(posX,posY,withEdges=true){
+  if(sigmaInstance){sigmaInstance.kill();sigmaInstance=null;sigmaGraph=null;}
+  // Backend de rendu UNIQUE : Sigma/WebGL (noeuds + aretes), dans son conteneur
+  // dedie #sigma-host (Sigma vide son conteneur, donc surtout pas canvas-wrap).
+  document.getElementById('relayout-btn').style.display='none';
+  const host=document.getElementById('sigma-host'); host.style.display='';
+
+  sigmaGraph=new graphology.Graph({multi:false,type:'undirected'});
+  for(let i=0;i<G.N;i++){
+    sigmaGraph.addNode(String(i),{
+      x:posX[i], y:posY[i],
+      size:nodeRadius[i],
+      color:nodeColorCss(i),
+      idx:i,
+      zIndex:G.decomp[i].reduce((a,b)=>a+b,0),
+    });
+  }
+  buildPickGrid(posX,posY);   // grille de selection avec tolerance (cf. clickStage)
+  // Les aretes ne sont PAS ajoutees ici : elles sont gerees par syncEdges() selon
+  // l'etat (voile complet si showEdges, sinon incidentes du noeud selectionne).
+
+  sigmaInstance=new Sigma(sigmaGraph,host,{
+    renderLabels:false,
+    renderEdgeLabels:false,
+    zIndex:true,
+    itemSizesReference:'screen',
+    zoomToSizeRatioFunction:()=>1,
+    defaultDrawNodeHover:()=>{}, // desactive le halo de survol integre (redondant avec l'overlay)
+    // Les noeuds gardent TOUJOURS leur taille et leur couleur d'origine.
+    // La mise en valeur (anneaux + aretes, sel=blanc / hov=violet) est dessinee
+    // sur l'overlay canvas 2D (_drawOverlay), seule source de verite.
+    nodeReducer:(node,data)=>{
+      const i=data.idx??parseInt(node);
+      if(i===sel)return data;                       // selectionne : visible meme si filtre
+      const na=selNeighbors();
+      if(na&&na.has(i))return data;                 // voisin du selectionne : idem
+      if(hidden.has(nodeKeyCache[i]))return{...data,hidden:true};
+      return data;
+    },
+    edgeReducer:(edge,data)=>{
+      const a=parseInt(sigmaGraph.source(edge)),b=parseInt(sigmaGraph.target(edge));
+      if(hidden.has(nodeKeyCache[a])||hidden.has(nodeKeyCache[b]))return{...data,hidden:true};
+      return data;
+    },
+  });
+
+  // Annule l'inertie post-pan : elle est lue sur le CAPTOR souris (les settings du
+  // constructeur ne l'atteignent pas), d'ou le petit decalage apres un drag.
+  const mc=sigmaInstance.getMouseCaptor();
+  // inertiaRatio:0 -> la cible d'inertie = position courante (aucun glissement).
+  // On NE met PAS inertiaDuration:0 : une animation de duree 0 provoque un
+  // clignotement (clear/redraw) ; la duree par defaut anime vers le meme point.
+  if(mc&&mc.settings) mc.setSettings({...mc.settings,inertiaRatio:0});
+
+  // Survol : le nodeReducer ne depend PAS de hov (mise en valeur sur overlay).
+  // On redessine donc juste l'overlay, sans refresh Sigma (gratuit a 380k noeuds).
+  function setHover(i,ex,ey){
+    if(i===hov)return;
+    hov=i;
+    if(i===-1){ hideTip(); } else { showTip(i,ex,ey); }
+    _drawOverlay();
+  }
+  sigmaInstance.on('enterNode',({node,event})=>setHover(parseInt(node),event.x,event.y));
+  sigmaInstance.on('leaveNode',()=>setHover(-1));
+  sigmaInstance.on('clickNode',({node})=>{
+    const i=parseInt(node);
+    sel=(i===sel)?-1:i; hov=-1; hideTip();
+    sigmaInstance.refresh({skipIndexation:true}); // sel change la visibilite (noeuds filtres)
+    requestAnimationFrame(updateStatbox);
+  });
+  sigmaInstance.on('clickStage',({event})=>{
+    let n=-1;
+    if(event){
+      const g=sigmaInstance.viewportToGraph({x:event.x,y:event.y});
+      const g2=sigmaInstance.viewportToGraph({x:event.x+PICK_TOL_PX,y:event.y});
+      n=nearestNode(g.x,g.y,Math.hypot(g2.x-g.x,g2.y-g.y));
+    }
+    if(n!==-1) sel=(n===sel)?-1:n;
+    else if(sel!==-1) sel=-1;
+    else { setHover(-1); return; }
+    setHover(-1);
+    sigmaInstance.refresh({skipIndexation:true});
+    requestAnimationFrame(updateStatbox);
+  });
+
+  // Filet de securite : Sigma rate parfois leaveNode (mouvement rapide).
+  // Si le curseur s'eloigne du noeud survole, on l'efface nous-memes.
+  if(_hostMoveHandler) host.removeEventListener('mousemove',_hostMoveHandler);
+  _hostMoveHandler=e=>{
+    if(hov===-1)return;
+    const r=host.getBoundingClientRect();
+    const vp=sigmaInstance.graphToViewport(sigmaGraph.getNodeAttributes(String(hov)));
+    const d=Math.hypot(e.clientX-r.left-vp.x, e.clientY-r.top-vp.y);
+    if(d>nodeRadius[hov]+6) setHover(-1);
+  };
+  host.addEventListener('mousemove',_hostMoveHandler);
+
+  // Couche d'aretes globales (sous les noeuds) + overlay de mise en valeur (au-dessus).
+  _initEdgeLayer(host);
+  _initOverlay(host);
+  sigmaInstance.on('afterRender', ()=>{ _scheduleEdges(); _drawOverlay(); });
+
+  if(withEdges) syncEdges();
+  setLoadingTimed('<span style="color:var(--muted)">sigma.js · positions CSV</span>',2500);
+}
+
+
+// Met a jour TOUTES les positions (animation live du layout force-directed).
+function updateSigmaPositions(x,y){
+  if(!sigmaInstance)return;
+  sigmaGraph.updateEachNodeAttributes((node,attr)=>{
+    const i=+node; attr.x=x[i]; attr.y=y[i]; return attr;
+  },{attributes:['x','y']});
+  sigmaInstance.refresh({skipIndexation:true});
+}
+
+
+// ── Couche d'aretes globales en canvas 2D (sous les noeuds) ──────────────────
+// Rendu 2D = aretes fines et lisibles (vs le blending additif WebGL). Couteux a
+// 451k+ aretes : on les masque pendant le deplacement camera et on les redessine
+// une fois immobile (l'utilisateur garde un pan/zoom fluide ; il desactive le
+// voile s'il ne veut pas l'attente au repos). Insere AVANT la couche .sigma-nodes
+// (WebGL transparent) -> les aretes apparaissent sous les noeuds.
+let _edgeCanvas=null,_edgeCtx=null,_edgeTimer=null,_evx=null,_evy=null;
+const CANVAS_EDGE_W=0.7;   // couleur du voile : TH.edge (suit le thème)
+function _initEdgeLayer(host){
+  clearTimeout(_edgeTimer);
+  if(_edgeCanvas) _edgeCanvas.remove();
+  _edgeCanvas=document.createElement('canvas');
+  _edgeCanvas.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+  const nodesLayer=host.querySelector('.sigma-nodes');
+  if(nodesLayer) host.insertBefore(_edgeCanvas,nodesLayer); else host.appendChild(_edgeCanvas);
+  _edgeCtx=_edgeCanvas.getContext('2d');
+}
+// Programme un redessin differe : efface tout de suite (deplacement) puis redessine
+// ~150ms apres la derniere frame (camera immobile).
+function _scheduleEdges(){
+  if(!_edgeCanvas)return;
+  if(!showEdges){ _clearEdgeCanvas(); return; }
+  _clearEdgeCanvas();
+  clearTimeout(_edgeTimer);
+  _edgeTimer=setTimeout(_drawEdgesNow,150);
+}
+function _clearEdgeCanvas(){
+  if(!_edgeCtx)return;
+  const DPR=window.devicePixelRatio||1;
+  _edgeCtx.setTransform(1,0,0,1,0,0);
+  _edgeCtx.clearRect(0,0,_edgeCanvas.width,_edgeCanvas.height);
+  _edgeCtx.setTransform(DPR,0,0,DPR,0,0);
+}
+function _drawEdgesNow(){
+  if(!_edgeCanvas||!sigmaInstance||!sigmaGraph||!showEdges||!G)return;
+  const host=_edgeCanvas.parentElement;
+  const w=host.clientWidth, h=host.clientHeight, DPR=window.devicePixelRatio||1;
+  if(_edgeCanvas.width!==w*DPR||_edgeCanvas.height!==h*DPR){_edgeCanvas.width=w*DPR;_edgeCanvas.height=h*DPR;}
+  const ctx=_edgeCtx;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // Positions ecran precalculees une fois (graphology = source du rendu WebGL).
+  const N=G.N;
+  if(!_evx||_evx.length!==N){_evx=new Float32Array(N);_evy=new Float32Array(N);}
+  for(let i=0;i<N;i++){
+    const p=sigmaInstance.graphToViewport(sigmaGraph.getNodeAttributes(String(i)));
+    _evx[i]=p.x; _evy[i]=p.y;
+  }
+  // Trace toutes les aretes en un seul path (rapide), filtre par groupes masques.
+  const e=G.edges, kc=nodeKeyCache;
+  ctx.strokeStyle=TH.edge; ctx.lineWidth=CANVAS_EDGE_W; ctx.beginPath();
+  for(let t=0;t<e.length;t+=2){
+    const a=e[t], b=e[t+1];
+    if(kc&&(hidden.has(kc[a])||hidden.has(kc[b])))continue;
+    ctx.moveTo(_evx[a],_evy[a]); ctx.lineTo(_evx[b],_evy[b]);
+  }
+  ctx.stroke();
+}
+
+// ── Overlay canvas 2D : mise en valeur (anneaux + aretes) ────────────────────
+// Toute la mise en valeur est dessinee ici, au-dessus du WebGL, a partir de
+// l'etat courant (sel/hov). Source de verite unique -> pas de residus possibles.
+let _overlayCanvas=null,_overlayCtx=null,_hostMoveHandler=null;
+function _initOverlay(host){
+  if(_overlayCanvas) _overlayCanvas.remove();
+  _overlayCanvas=document.createElement('canvas');
+  _overlayCanvas.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:10';
+  host.appendChild(_overlayCanvas);
+  _overlayCtx=_overlayCanvas.getContext('2d');
+}
+function _drawOverlay(){
+  if(!_overlayCanvas||!sigmaInstance||!sigmaGraph)return;
+  const host=_overlayCanvas.parentElement;
+  const w=host.clientWidth, h=host.clientHeight, DPR=window.devicePixelRatio||1;
+  if(_overlayCanvas.width!==w*DPR||_overlayCanvas.height!==h*DPR){_overlayCanvas.width=w*DPR;_overlayCanvas.height=h*DPR;}
+  const ctx=_overlayCtx;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  // Positions lues depuis graphology (= source exacte du rendu WebGL) -> alignement
+  // garanti meme pendant l'animation du layout (ou _pX/_pY seraient encore figes).
+  const vp=i=>sigmaInstance.graphToViewport({
+    x:sigmaGraph.getNodeAttribute(String(i),'x'),
+    y:sigmaGraph.getNodeAttribute(String(i),'y'),
+  });
+  // Pour un noeud central : aretes d'abord, puis on RECOUVRE les points (fond +
+  // anneau) -> les aretes passent visuellement sous les points mis en valeur.
+  function highlight(c,color){
+    if(c===-1)return;
+    const cp=vp(c);
+    // 1) Aretes (fines, au-dessus des autres points mais sous ceux mis en valeur)
+    ctx.strokeStyle=color; ctx.globalAlpha=0.8; ctx.lineWidth=1;
+    ctx.beginPath();
+    for(const j of G.adj[c]){
+      const jp=vp(j);
+      ctx.moveTo(cp.x,cp.y); ctx.lineTo(jp.x,jp.y);
+    }
+    ctx.stroke();
+    // 2) Points mis en valeur : redessine le disque (couleur d'origine) puis l'anneau.
+    // Anneau de largeur constante, colle au bord du noeud (rayon = taille du noeud).
+    ctx.globalAlpha=1; ctx.lineWidth=2; ctx.strokeStyle=color;
+    function dot(i,p){
+      const r=nodeRadius[i];
+      ctx.fillStyle=sigmaGraph.getNodeAttribute(String(i),'color');
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.fill();    // recouvre l'arete
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,6.2832); ctx.stroke();  // anneau colle au bord
+    }
+    for(const j of G.adj[c]) dot(j,vp(j));
+    dot(c,cp);
+  }
+  // hov d'abord, sel par-dessus (priorite visuelle au selectionne)
+  if(hov!==-1&&hov!==sel) highlight(hov,TH.accent2);
+  if(sel!==-1) highlight(sel,TH.ring);
+}
+
+// Voile complet d'aretes : rendu sur la couche canvas 2D (_edgeCanvas), pas dans
+// graphology. On (re)dessine immediatement a l'activation, on efface a l'arret.
+function syncEdges(){
+  if(showEdges) _drawEdgesNow(); else _clearEdgeCanvas();
+}
+
+// ── Tolerance de selection ───────────────────────────────────────────────────
+// Sigma fait du picking au pixel (zone cliquable = taille rendue). Pour pouvoir
+// garder de petits points tout en les selectionnant facilement, on cherche le
+// noeud le plus proche du clic dans un rayon (PICK_TOL_PX), via une grille
+// spatiale sur les positions du graphe.
+const PICK_TOL_PX=9;
+let _pX=null,_pY=null,_pGrid=null,_pMinX=0,_pMinY=0,_pCell=1;
+function buildPickGrid(posX,posY){
+  _pX=posX;_pY=posY;_pGrid=new Map();
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(let i=0;i<G.N;i++){const x=posX[i],y=posY[i];if(x<x0)x0=x;if(y<y0)y0=y;if(x>x1)x1=x;if(y>y1)y1=y;}
+  _pMinX=x0;_pMinY=y0;
+  _pCell=(Math.max(x1-x0,y1-y0)||1)/256;
+  for(let i=0;i<G.N;i++){
+    const gx=Math.floor((posX[i]-x0)/_pCell),gy=Math.floor((posY[i]-y0)/_pCell),k=gx+','+gy;
+    let a=_pGrid.get(k); if(!a){a=[];_pGrid.set(k,a);} a.push(i);
+  }
+}
+// Noeud le plus proche du point-graphe (gx,gy) dans le rayon tol (unites graphe).
+function nearestNode(gx,gy,tol){
+  if(!_pGrid)return -1;
+  const na=selNeighbors();   // les voisins du selectionne restent cliquables meme masques
+  const c0x=Math.floor((gx-tol-_pMinX)/_pCell),c1x=Math.floor((gx+tol-_pMinX)/_pCell);
+  const c0y=Math.floor((gy-tol-_pMinY)/_pCell),c1y=Math.floor((gy+tol-_pMinY)/_pCell);
+  let best=-1,bd2=tol*tol;
+  for(let cx=c0x;cx<=c1x;cx++)for(let cy=c0y;cy<=c1y;cy++){
+    const a=_pGrid.get(cx+','+cy);if(!a)continue;
+    for(const i of a){
+      // ignore les noeuds masques, sauf le selectionne et ses voisins (affiches)
+      if(i!==sel && !(na&&na.has(i)) && hidden.has(nodeKeyCache[i]))continue;
+      const dx=_pX[i]-gx,dy=_pY[i]-gy,d2=dx*dx+dy*dy;
+      if(d2<bd2){bd2=d2;best=i;}
+    }
+  }
+  return best;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Couleurs / tailles des noeuds (le rendu effectif est fait par Sigma)
+// ═══════════════════════════════════════════════════════════════════════════
+const accentCol='#4f8ef7';
+// Clés de décomposition pré-calculées — évite dcKey(G.decomp[i]) dans les hot paths
+// (nodeReducer, edgeReducer, nearestNode : appelés 380k× par refresh).
+let nodeKeyCache=null;
+function buildNodeKeyCache(){
+  nodeKeyCache=new Array(G.N);
+  for(let i=0;i<G.N;i++) nodeKeyCache[i]=dcKey(G.decomp[i]);
+}
+// rayons précalculés, liés à GenotypeCount (linéaire, comme sbn_scatter)
+let nodeRadius=null;
+let sizeLegend=null; // {attr, min, max, minR, maxR} ou null si taille = degré
+function computeRadii(){
+  nodeRadius=new Float32Array(G.N);
+  const gc=G.stats['GenotypeCount'];
+  const minR=2.5, maxR=G.N>100000?9:G.N>10000?12:14;
+  if(!gc){ // pas de GenotypeCount : on retombe sur le degré
+    let mx=1; for(let i=0;i<G.N;i++)mx=Math.max(mx,G.adj[i].length);
+    for(let i=0;i<G.N;i++)nodeRadius[i]=2.5+Math.sqrt(Math.min(G.adj[i].length,60))*0.55;
+    sizeLegend={attr:'degré',min:0,max:mx,minR,maxR};
+    return;
+  }
+  let maxC=1;
+  for(let i=0;i<G.N;i++){
+    const v=gc[i];
+    // Un GenotypeCount <= 0 trahit un overflow d'entier dans un CSV obsolète
+    // (corrigé côté pipeline : Statifier utilise désormais BigInteger). On
+    // refuse de l'afficher silencieusement.
+    if(!(v>0)) throw new Error(`GenotypeCount invalide (${v}) au nœud ${i} : CSV obsolète, régénère-le avec la pipeline corrigée.`);
+    if(v>maxC)maxC=v;
+  }
+  for(let i=0;i<G.N;i++)nodeRadius[i]=minR+(gc[i]/maxC)*(maxR-minR);
+  sizeLegend={attr:'GenotypeCount',min:1,max:maxC,minR,maxR};
+}
+// Un nœud est sélectionnable s'il est visible, ou s'il est le nœud sélectionné,
+// ou un voisin de celui-ci (les voisins du point sélectionné restent toujours
+// accessibles, même si leur vecteur de décomposition est masqué).
+let _selAdj=null, _selAdjFor=-2;
+function selNeighbors(){
+  if(_selAdjFor!==sel){_selAdjFor=sel;_selAdj=sel===-1?null:new Set(G.adj[sel]);}
+  return _selAdj;
+}
+// ── tooltip ──────────────────────────────────────────────────────────────────
+function trow(k,v){return `<div class="tip-row"><span class="tip-k">${k}</span><span class="tip-v">${v}</span></div>`;}
+// Bloc stats + mini-dynamique, partagé entre tooltip (hover) et statbox (clic).
+function nodeStatsHTML(i){
+  let h=trow('decomp',dcStr(G.decomp[i]))+trow('degré',G.adj[i].length);
+  for(const k of G.colorableStats){
+    const v=G.stats[k][i];h+=trow(k,isNaN(v)?'—':(Number.isInteger(v)?v:v.toFixed(4)));
+  }
+  return h;
+}
+function drawNodeDynamics(canvas,i){
+  const T=phenoTransitions(i);
+  drawDynamics(canvas,T,G.n,findDecomposition(T,G.n,G.decomp[i]));
+}
+function dynamicsBlockHTML(canvasId,w,hh){
+  return `<div style="color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.08em;margin:6px 0 2px">Dynamique</div>`
+       + `<canvas id="${canvasId}" style="width:${w}px;height:${hh}px;display:block"></canvas>`;
+}
+function showTip(i,ex,ey){
+  const tip=document.getElementById('tip');
+  tip.innerHTML=dynamicsBlockHTML('tip-dyn',180,140);
+  tip.style.display='block';
+  drawNodeDynamics(document.getElementById('tip-dyn'),i);
+  const r=document.getElementById('canvas-wrap').getBoundingClientRect();
+  tip.style.left=Math.min(ex+16,r.width-210)+'px';
+  tip.style.top=Math.min(ey+16,Math.max(4,r.height-230))+'px';
+}
+const hideTip=()=>document.getElementById('tip').style.display='none';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Vue / contrôles (interaction, pan/zoom et caméra gérés par Sigma)
+// ═══════════════════════════════════════════════════════════════════════════
+function fitView(){ if(sigmaInstance) sigmaInstance.getCamera().animatedReset({duration:300}); }
+function resetView(){ fitView(); }
+function toggleEdges(){
+  showEdges=!showEdges;const b=document.getElementById('ebtn');
+  b.textContent=showEdges?'Arêtes ✓':'Arêtes ✗';b.classList.toggle('active',showEdges);
+  syncEdges();   // dessine/efface le voile complet sur la couche canvas 2D
+}
+
+// ── recherche / statbox ──────────────────────────────────────────────────────
+function onSearch(){
+  if(!G||!sigmaInstance)return;
+  const v=document.getElementById('search').value.trim();
+  if(v===''){ if(sel!==-1){sel=-1;sigmaInstance.refresh({skipIndexation:true});requestAnimationFrame(updateStatbox);} return; }
+  const id=parseInt(v);
+  if(!isNaN(id)&&id>=0&&id<G.N){
+    sel=id;
+    const{x,y}=sigmaGraph.getNodeAttributes(String(id));
+    sigmaInstance.getCamera().animate({x,y,ratio:0.05},{duration:500});
+    sigmaInstance.refresh({skipIndexation:true}); requestAnimationFrame(updateStatbox);
+  }
+}
+// ── Réseau SBN avec poids (SVG, porté de sbn_viz) ────────────────────────────
+// Convention : w_i,j = poids de l'arc DE i VERS j. Une réalisation quelconque
+// du phénotype (les w_* du CSV ne sont pas minimisés).
+function extractWeights(rowIdx){
+  // wdata = réalisation w_* dédupliquée, ordre row-major (w_1,1; w_1,2; …)
+  const wd=G.wdata[rowIdx], n=G.n, wN=G.wN||n, Wm={};
+  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)
+    Wm[i+','+j]=wd?(parseInt(wd[(i-1)*wN+(j-1)])||0):0;
+  return Wm;
+}
+function weightColor(w){
+  if(w===0)return '#64748b';
+  const t=Math.min(1,Math.abs(w)/4);
+  return w>0?`rgb(20,${Math.round(80+175*t)},80)`:`rgb(${Math.round(80+175*t)},20,20)`;
+}
+function sbnSVG(Wm,n,idp){
+  const VW=200,VH=160,cx=VW/2,cy=VH/2,R=Math.min(VW,VH)*0.34,r=Math.min(26,R*0.30);
+  const nodes=Array.from({length:n},(_,i)=>{const a=(i/n)*2*Math.PI-Math.PI/2;return{x:cx+R*Math.cos(a),y:cy+R*Math.sin(a),a};});
+  const colSet=new Set();
+  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)if(Wm[i+','+j]!==0)colSet.add(weightColor(Wm[i+','+j]));
+  let defs='<defs>';
+  for(const c of colSet){const cid=c.replace(/[^a-z0-9]/gi,'_');
+    defs+=`<marker id="arr_${idp}_${cid}" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><polygon points="0 0, 5 2.5, 0 5" fill="${c}"/></marker>`;}
+  defs+='</defs>';
+  const exists={};
+  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)if(Wm[i+','+j]!==0)exists[i+'-'+j]=1;
+  let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VW} ${VH}" style="width:100%;height:100%;display:block">`+defs;
+  let labels='';
+  const lab=(x,y,t,c)=>{labels+=`<rect x="${x-9}" y="${y-7}" width="18" height="13" rx="3" fill="rgba(15,17,23,0.85)"/><text x="${x}" y="${y+3}" text-anchor="middle" font-size="9" font-family="monospace" font-weight="600" fill="${c}">${t}</text>`;};
+  // arcs (i!=j)
+  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++){
+    if(i===j)continue;const w=Wm[i+','+j];if(w===0)continue;
+    const src=nodes[i-1],tgt=nodes[j-1],col=weightColor(w),cid=col.replace(/[^a-z0-9]/gi,'_');
+    const bi=exists[j+'-'+i],dx=tgt.x-src.x,dy=tgt.y-src.y,d=Math.hypot(dx,dy),ux=dx/d,uy=dy/d,px=-uy,py=ux,off=bi?10:0;
+    const x1=src.x+ux*r+px*off,y1=src.y+uy*r+py*off,x2=tgt.x-ux*(r+5)+px*off,y2=tgt.y-uy*(r+5)+py*off;
+    const mx=(x1+x2)/2+px*off*0.5,my=(y1+y2)/2+py*off*0.5;
+    s+=bi?`<path d="M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="2" marker-end="url(#arr_${idp}_${cid})"/>`
+         :`<path d="M ${x1} ${y1} L ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="2" marker-end="url(#arr_${idp}_${cid})"/>`;
+    const lo=bi?12:9;lab(mx+px*lo,my+py*lo,(w>0?'+':'')+w,col);
+  }
+  // self-loops
+  for(let i=1;i<=n;i++){
+    const w=Wm[i+','+i];if(w===0)continue;
+    const nd=nodes[i-1],col=weightColor(w),cid=col.replace(/[^a-z0-9]/gi,'_'),a=nd.a,lr=r*0.7,da=0.4;
+    const sx=nd.x+r*Math.cos(a-da),sy=nd.y+r*Math.sin(a-da),ex=nd.x+r*Math.cos(a+da),ey=nd.y+r*Math.sin(a+da);
+    const c1x=nd.x+(r+lr*1.4)*Math.cos(a-da*1.1),c1y=nd.y+(r+lr*1.4)*Math.sin(a-da*1.1);
+    const c2x=nd.x+(r+lr*1.4)*Math.cos(a+da*1.1),c2y=nd.y+(r+lr*1.4)*Math.sin(a+da*1.1);
+    s+=`<path d="M ${sx} ${sy} C ${c1x} ${c1y} ${c2x} ${c2y} ${ex} ${ey}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" marker-end="url(#arr_${idp}_${cid})"/>`;
+    lab(nd.x+Math.cos(a)*(r+lr*2),nd.y+Math.sin(a)*(r+lr*2),(w>0?'+':'')+w,col);
+  }
+  s+=labels;
+  // nœuds
+  for(let i=0;i<n;i++){const nd=nodes[i];
+    s+=`<circle cx="${nd.x}" cy="${nd.y}" r="${r}" fill="var(--node-off)" stroke="var(--accent)" stroke-width="1.5"/>`;
+    s+=`<text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.round(r*0.7)}" font-family="JetBrains Mono,monospace" font-weight="600" fill="var(--text)">${i+1}</text>`;
+  }
+  return s+'</svg>';
+}
+function networkBlockHTML(i,cssW,cssH){
+  return `<div style="color:var(--muted);text-transform:uppercase;font-size:9px;letter-spacing:.08em;margin:6px 0 2px">Structure</div>`
+       + `<div style="color:var(--muted);font-size:9px;font-style:italic;margin-bottom:2px">une réalisation parmi d'autres atteignant cette dynamique</div>`
+       + `<div style="width:${cssW}px;height:${cssH}px">${sbnSVG(extractWeights(i),G.n,'n'+i)}</div>`;
+}
+
+// ── Décomposition en sous-faces (porté de sbn_viz) ───────────────────────────
+const popcount = SBN.core.popcount;   // cœur partagé (sbn-core.js)
+function groupColor(groupKey){
+  const idx=parseInt(groupKey);
+  return hslToHex((220+idx*34)%360, (68+(idx%3)*4)/100, (52+(idx%2)*12)/100);
+}
+const hexA = SBN.core.hexA;   // cœur partagé
+// Arbre de décomposition dérivé de T (findSplitBit) — vec ignoré, comme avant.
+function buildDecompTree(vec,T,n){ return SBN.core.decompTree(T,n); }
+function findDecomposition(T,n,vec){if(!vec||!vec.length)return null;return buildDecompTree(vec,T,n);}
+function stateColor(s,decomp,inCycle){
+  if(!decomp)return inCycle[s]?'#ffe066':TH.nodeOff;
+  for(const g of decomp)if(g.states.includes(s)){const c=groupColor(g.groupKey);return inCycle[s]?c:hexA(c,0.55);}
+  return inCycle[s]?'#ffe066':TH.nodeOff;
+}
+
+// ── Dynamique du phénotype (graphe de transition en hypercube, à la sbn_viz) ──
+// T(s) = état successeur : bit (j-1) = f_j(s) = caractère s de la chaîne f_j.
+// T depuis les chaînes f_* du nœud courant (adapté au cœur partagé).
+function phenoTransitions(rowIdx){ return SBN.core.transitionsFromF(G.fdata[rowIdx], G.n); }
+const computeBasins = SBN.core.basins;   // {inCycle,basin,numBasins} (callers lisent inCycle)
+const hcPositions   = SBN.core.hcPositions;
+const hcEdges       = SBN.core.hcEdges;
+const rot3          = SBN.core.rot3;
+
+function drawDynamics(canvas,T,n,decomp){
+  const DPR=window.devicePixelRatio||1, w=canvas.clientWidth||200, hh=canvas.clientHeight||150;
+  canvas.width=w*DPR;canvas.height=hh*DPR;
+  const ctx=canvas.getContext('2d');ctx.scale(DPR,DPR);ctx.clearRect(0,0,w,hh);
+  const cx=w/2,cy=hh/2,scale=Math.min(w,hh)*0.28,fov=5,rx=0.4,ry=0.5;
+  const pos=hcPositions(n).map(p=>{const r=rot3(p,rx,ry);const d=fov/(fov+r[2]*0.4);return[cx+r[0]*scale*d,cy-r[1]*scale*d,r[2]];});
+  const {inCycle}=computeBasins(T,n);
+  const N=1<<n, nr=Math.max(4,Math.min(9,scale*0.13));
+  const groupOf=s=>decomp?decomp.find(g=>g.states.includes(s)):null;
+  // squelette de l'hypercube
+  ctx.strokeStyle=TH.skeleton;ctx.lineWidth=1;
+  for(const [a,b] of hcEdges(n)){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+  // contours des sous-faces de la décomposition
+  if(decomp){
+    ctx.setLineDash([4,4]);ctx.lineWidth=1.3;
+    for(const g of decomp){
+      const col=groupColor(g.groupKey);ctx.strokeStyle=hexA(col,0.5);
+      for(let i=0;i<g.states.length;i++)for(let j=i+1;j<g.states.length;j++){
+        const a=g.states[i],b=g.states[j],diff=a^b;
+        if(diff&&(diff&(diff-1))===0){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+      }
+    }
+    ctx.setLineDash([]);
+  }
+  // flèches de transition (couleur = groupe de l'état source)
+  const acc=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#4f8ef7';
+  ctx.lineWidth=1.6;
+  for(let s=0;s<N;s++){
+    const t=T[s];if(t===s)continue;
+    const [sx,sy]=pos[s],[tx,ty]=pos[t];
+    const dx=tx-sx,dy=ty-sy,dist=Math.hypot(dx,dy);if(dist<1)continue;
+    const grp=groupOf(s),col=grp?groupColor(grp.groupKey):acc;
+    ctx.strokeStyle=col;ctx.fillStyle=col;
+    const ux=dx/dist,uy=dy/dist,nx=-uy,ny=ux,curve=dist*0.18;
+    const x1=sx+ux*nr,y1=sy+uy*nr,x2=tx-ux*nr,y2=ty-uy*nr;
+    const qx=(x1+x2)/2+nx*curve,qy=(y1+y2)/2+ny*curve;
+    const edx=x2-qx,edy=y2-qy,el=Math.hypot(edx,edy)||1,ang=Math.atan2(edy,edx),hs=7;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.quadraticCurveTo(qx,qy,x2-hs*0.85*edx/el,y2-hs*0.85*edy/el);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(ang-0.38),y2-hs*Math.sin(ang-0.38));ctx.lineTo(x2-hs*Math.cos(ang+0.38),y2-hs*Math.sin(ang+0.38));ctx.closePath();ctx.fill();
+  }
+  // sommets (back-to-front), couleur = groupe ; attracteurs en surbrillance
+  const order=pos.map((_,i)=>i).sort((a,b)=>pos[a][2]-pos[b][2]);
+  for(const s of order){
+    const [px,py]=pos[s],att=inCycle[s];
+    const col=stateColor(s,decomp,inCycle);
+    ctx.save();
+    if(att){ctx.shadowColor=col;ctx.shadowBlur=8;}
+    ctx.beginPath();ctx.arc(px,py,nr,0,6.283);
+    ctx.fillStyle=att?col:TH.nodeOff;ctx.fill();
+    ctx.strokeStyle=col;ctx.lineWidth=att?2:1.3;ctx.stroke();
+    ctx.restore();
+    // self-loop (point fixe) : petite boucle radiale fine, couleur du groupe
+    if(T[s]===s){
+      const ra=Math.atan2(py-cy,px-cx)||-Math.PI/2, da=0.55, ld=nr*1.25;
+      const lsx=px+Math.cos(ra-da)*nr,lsy=py+Math.sin(ra-da)*nr;
+      const lex=px+Math.cos(ra+da)*nr,ley=py+Math.sin(ra+da)*nr;
+      const c1x=px+Math.cos(ra-da*0.6)*(nr+ld),c1y=py+Math.sin(ra-da*0.6)*(nr+ld);
+      const c2x=px+Math.cos(ra+da*0.6)*(nr+ld),c2y=py+Math.sin(ra+da*0.6)*(nr+ld);
+      ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1.4;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(lsx,lsy);ctx.bezierCurveTo(c1x,c1y,c2x,c2y,lex,ley);ctx.stroke();
+      ctx.lineCap='butt';
+      // petite tête de flèche à l'arrivée de la boucle
+      const aAng=Math.atan2(ley-c2y,lex-c2x),hs=5;
+      ctx.beginPath();ctx.moveTo(lex,ley);
+      ctx.lineTo(lex-hs*Math.cos(aAng-0.5),ley-hs*Math.sin(aAng-0.5));
+      ctx.lineTo(lex-hs*Math.cos(aAng+0.5),ley-hs*Math.sin(aAng+0.5));
+      ctx.closePath();ctx.fill();
+    }
+  }
+}
+
+function updateStatbox(){
+  const box=document.getElementById('statbox');
+  if(sel===-1){box.style.display='none';return;}
+  box.innerHTML=`<div style="color:var(--accent);font-weight:600;margin-bottom:4px">nœud ${sel}</div>`
+    +nodeStatsHTML(sel)+dynamicsBlockHTML('dyn-canvas',210,160)+networkBlockHTML(sel,210,168);
+  box.style.display='block';
+  drawNodeDynamics(document.getElementById('dyn-canvas'),sel);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Couleur (sélecteur) + légende
+// ═══════════════════════════════════════════════════════════════════════════
+function computeColorableStats(){
+  G.colorableStats=[];
+  G.logStats=new Set();
+  for(const k of G.statKeys){
+    const arr=G.stats[k]; if(!arr)continue;
+    let mn=Infinity,mx=-Infinity,allPos=true;
+    for(let i=0;i<G.N;i++){const v=arr[i];if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;if(v<=0)allPos=false;}}
+    if(!(mx>mn))continue;
+    G.colorableStats.push(k);
+    if(allPos && mx/mn>100) G.logStats.add(k);
+  }
+}
+function populateColorBy(){
+  const sel=document.getElementById('color-by');
+  const opts=['decomp','degré',...G.colorableStats];
+  sel.innerHTML=opts.map(o=>`<option value="${o}">${o==='decomp'?'décomposition':o}</option>`).join('');
+  sel.value='decomp';
+}
+function onColorByChange(){
+  colorMode=document.getElementById('color-by').value;
+  computeContRange();
+  if(sigmaInstance){
+    for(let i=0;i<G.N;i++) sigmaGraph.setNodeAttribute(String(i),'color',nodeColorCss(i));
+    sigmaInstance.refresh({skipIndexation:true});
+  }
+  buildLegend();
+}
+
+function radiusForValue(v){
+  if(!sizeLegend)return 4;
+  if(sizeLegend.attr==='degré')return 2.5+Math.sqrt(Math.min(v,60))*0.55;
+  return sizeLegend.minR+(v/sizeLegend.max)*(sizeLegend.maxR-sizeLegend.minR);
+}
+function sizeLegendHTML(){
+  if(!sizeLegend)return '';
+  const {attr,min,max,minR,maxR}=sizeLegend;
+  const fmt=v=>v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(1)+'k':String(Math.round(v));
+  const raw=[1,Math.round(max/4),Math.round(max/2),max].filter((v,i,a)=>v>=min&&a.indexOf(v)===i);
+  const pad=4, textH=12, baseline=maxR*2;
+  const H=baseline+textH+2; let x=pad, elems='';
+  for(const v of raw){
+    const r=radiusForValue(v), cx=x+r, cy=baseline-r; // alignement par le bas
+    elems+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(148,163,184,0.45)" stroke="rgba(148,163,184,0.9)" stroke-width="0.8"/>`;
+    elems+=`<text x="${cx}" y="${H-1}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="var(--axis)">${fmt(v)}</text>`;
+    x=cx+r+pad+26;
+  }
+  return `<span class="scatter-legend-item" style="cursor:default;gap:6px">
+    <span style="color:var(--muted);white-space:nowrap">taille ∝ ${attr}</span>
+    <svg width="${x}" height="${H}" style="display:block;overflow:visible">${elems}</svg></span>`;
+}
+function colorbarHTML(){
+  const stops=8; let grad='';
+  for(let i=0;i<=stops;i++){const [r,g,b]=viridis(i/stops);grad+=`rgb(${r|0},${g|0},${b|0}) ${i/stops*100}%${i<stops?',':''}`;}
+  const useLog=contRange.log;
+  const fmt=v=>{ const x=useLog?Math.exp(v):v; return x>=1000?x.toExponential(1):(Number.isInteger(x)?x:x.toFixed(2)); };
+  const mn=fmt(contRange.min), mx=fmt(contRange.max);
+  const logTag=useLog?` <span style="color:var(--muted);font-size:9px">(log)</span>`:'';
+  return `<span class="scatter-legend-item" style="cursor:default">
+    <span style="color:var(--muted)">${colorMode}${logTag}:</span>
+    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${mn}</span>
+    <span style="display:inline-block;width:180px;height:12px;border-radius:3px;background:linear-gradient(90deg,${grad})"></span>
+    <span style="font-family:'JetBrains Mono',monospace;color:var(--text)">${mx}</span></span>`;
+}
+function decompChipsHTML(){
+  // Grouper par dimension max (position 1er non-nul du vecteur)
+  const groups=new Map();
+  for(const d of DECOMPS){const g=vecMaxDim(d);if(!groups.has(g))groups.set(g,[]);groups.get(g).push(d);}
+  return [...groups.entries()].sort((a,b)=>a[0]-b[0]).map(([dim,vecs])=>{
+    const dimLabel=vecs[0].length-1-dim; // dimension réelle (n-1-idx)
+    const swatches=vecs.slice(0,5).map(d=>`<span style="width:7px;height:7px;border-radius:50%;background:${dcColorMap.get(dcKey(d))};display:inline-block;flex-shrink:0"></span>`).join('');
+    const anyActive=vecs.some(d=>!hidden.has(dcKey(d)));
+    const items=vecs.map(d=>{
+      const key=dcKey(d),col=dcColorMap.get(key),active=!hidden.has(key);
+      return `<span class="scatter-legend-item" onclick="toggleVec('${key}')" data-vec="${key}" style="opacity:${active?1:0.3}">
+        <span class="scatter-legend-dot" style="background:${col}"></span>
+        <span style="color:var(--text)">${dcStr(d)}</span></span>`;
+    }).join('');
+    return `<span class="leg-group" data-dim="${dim}">
+      <span class="leg-group-hdr" onclick="toggleLegGroup(${dim})" style="opacity:${anyActive?1:0.35}">
+        <span style="display:inline-flex;gap:2px;align-items:center">${swatches}</span>
+        <span style="font-size:10px;color:var(--muted)">d≤${dimLabel}</span>
+        <span style="font-size:10px;color:var(--border)">(${vecs.length})</span>
+        <span class="leg-arrow" onclick="event.stopPropagation();toggleLegGroupOpen(${dim})" style="font-size:8px;color:var(--muted);padding:0 2px;cursor:pointer">▶</span>
+      </span>
+      <span class="leg-group-body" id="legbody-${dim}">${items}</span>
+    </span>`;
+  }).join('');
+}
+function buildLegend(){
+  const sep='<span style="width:1px;align-self:stretch;background:var(--border);margin:0 4px"></span>';
+  const parts=[];
+  if(colorMode!=='decomp')parts.push(colorbarHTML());
+  parts.push(decompChipsHTML());
+  const sl=sizeLegendHTML();
+  if(sl)parts.push(sep+sl);
+  document.getElementById('scatter-legend').innerHTML=parts.join('');
+}
+function _updateLegendOpacity(){
+  document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el=>{
+    el.style.opacity=hidden.has(el.getAttribute('data-vec'))?'0.3':'1';
+  });
+  document.querySelectorAll('.leg-group[data-dim]').forEach(g=>{
+    const dim=parseInt(g.getAttribute('data-dim'));
+    const vecs=[...g.querySelectorAll('[data-vec]')].map(el=>el.getAttribute('data-vec'));
+    g.querySelector('.leg-group-hdr').style.opacity=vecs.some(k=>!hidden.has(k))?'1':'0.35';
+  });
+}
+function toggleVec(key){
+  if(hidden.size===0){
+    // tout visible → isoler ce vecteur
+    DECOMPS.forEach(d=>{const k=dcKey(d);if(k!==key)hidden.add(k);});
+  }else{
+    // mode filtré → toggle individuel
+    if(hidden.has(key))hidden.delete(key);else hidden.add(key);
+    // si tout redevient visible, reset propre
+    if(hidden.size===DECOMPS.length)hidden.clear();
+  }
+  _updateLegendOpacity();
+  if(sigmaInstance)sigmaInstance.refresh({skipIndexation:true});
+}
+function toggleLegGroup(dim){
+  const g=document.querySelector(`.leg-group[data-dim="${dim}"]`);
+  if(!g)return;
+  const keys=[...g.querySelectorAll('[data-vec]')].map(el=>el.getAttribute('data-vec'));
+  const allVisible=keys.every(k=>!hidden.has(k));
+  keys.forEach(k=>allVisible?hidden.add(k):hidden.delete(k));
+  _updateLegendOpacity();
+  if(sigmaInstance)sigmaInstance.refresh({skipIndexation:true});
+}
+function toggleLegGroupOpen(dim){
+  const body=document.getElementById(`legbody-${dim}`);
+  if(!body)return;
+  const open=body.classList.toggle('open');
+  const arrow=body.previousElementSibling.querySelector('.leg-arrow');
+  if(arrow)arrow.textContent=open?'▼':'▶';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Chargement fichier
+// ═══════════════════════════════════════════════════════════════════════════
+let _loadingTimer=null;
+function setLoading(html){
+  if(_loadingTimer){clearTimeout(_loadingTimer);_loadingTimer=null;}
+  document.getElementById('loading-indicator').innerHTML=html;
+}
+// Barre de progression : "<étape> … NN%". frac null → étape + spinner seul.
+function setProgress(step,frac){
+  if(_loadingTimer){clearTimeout(_loadingTimer);_loadingTimer=null;}
+  const el=document.getElementById('loading-indicator'); if(!el)return;
+  if(frac==null){ el.innerHTML=`<span class="spinning">⟳</span> ${step}…`; return; }
+  const pct=Math.round(Math.max(0,Math.min(1,frac))*100);
+  el.innerHTML=`<span class="spinning">⟳</span> ${step} … ${pct}%`;
+}
+// Affiche un message puis l'efface apres `ms`, en annulant tout effacement
+// precedent : sinon le timer d'effacement d'un chargement anterieur (ex. fichier
+// x/y, efface a +2.5s) efface l'indicateur du chargement courant (ex. layout
+// d'un fichier sans x/y charge juste apres).
+function setLoadingTimed(html,ms){
+  setLoading(html);
+  _loadingTimer=setTimeout(()=>{_loadingTimer=null;document.getElementById('loading-indicator').innerHTML='';},ms);
+}
+
+document.getElementById('file-input').addEventListener('change',async e=>{
+  const list=Array.from(e.target.files);
+  let lastLoaded=null;   // entree du dernier CSV reellement charge
+  for(const file of list){
+    document.getElementById('row-count').textContent='Loading '+file.name+'…';
+    setProgress('lecture '+file.name, 0);
+    try{
+      const data=await parseCSVStream(file, frac=>setProgress('lecture '+file.name, frac));
+      if(!data.nRows)continue;
+      if(!data.fcols.length){
+        alert('Le fichier '+file.name+' ne contient pas de colonnes f_* : graphe de mutation impossible.');
+        continue;
+      }
+      files.push(data); lastLoaded=data;          // `data` columnar contient déjà .name
+      files.sort((a,b)=>a.name.localeCompare(b.name));
+    }catch(err){console.error('Erreur',file.name,err);}
+  }
+  setLoading('');
+  if(files.length){
+    // selectionner le fichier qu'on vient de charger (les files sont tries par
+    // nom, donc son index n'est pas forcement le dernier du tableau).
+    curFile=lastLoaded?files.indexOf(lastLoaded):files.length-1;
+    populateFileSelect();
+    document.getElementById('empty-state').style.display='none';
+    await loadCurrent();
+  }
+});
+
+function populateFileSelect(){
+  const sel=document.getElementById('file-select');
+  sel.innerHTML=files.map((f,i)=>`<option value="${i}">${f.name}</option>`).join('');
+  sel.value=curFile;
+}
+document.getElementById('file-select').addEventListener('change',e=>{curFile=+e.target.value;loadCurrent();});
+
+async function loadCurrent(){
+  // Kill any previous sigma instance before rebuilding. Defensif : kill() ne doit
+  // jamais pouvoir avorter loadCurrent (sinon le nouveau fichier ne charge pas et
+  // l'indicateur reste fige), et sigmaInstance doit finir a null quoi qu'il arrive.
+  if(sigmaInstance){
+    try{ sigmaInstance.kill(); }catch(err){ console.warn('sigma.kill():',err); }
+    sigmaInstance=null; sigmaGraph=null;
+  }
+  document.getElementById('sigma-host').style.display='none';
+  document.getElementById('relayout-btn').style.display='';
+  const f=files[curFile];
+  document.getElementById('row-count').textContent=f.nRows.toLocaleString()+' rows';
+  setProgress('graphe', null);
+  await _nextFrame();   // laisse le spinner se peindre avant le gros travail
+  try{
+    G=await buildGraph(f, (step,frac)=>setProgress(step,frac));
+    hidden.clear();dcCount=new Map();sel=-1;hov=-1;
+    document.getElementById('statbox').style.display='none';
+    document.getElementById('search').value='';
+    setupColors();
+    buildNodeKeyCache();
+    computeRadii();
+    computeColorableStats();
+    colorMode='decomp';populateColorBy();computeContRange();buildLegend();
+    const nE=G.edges.length/2;
+    document.getElementById('row-count').textContent=`${G.N.toLocaleString()} nœuds · ${nE.toLocaleString()} arêtes`;
+    startLayout();
+  }catch(err){
+    G=null;setLoading('');
+    document.getElementById('row-count').textContent='erreur';
+    alert('Échec du chargement de '+f.name+' :\n'+err.message);
+    throw err;
+  }
+}
+</script>
+</body>
+</html>

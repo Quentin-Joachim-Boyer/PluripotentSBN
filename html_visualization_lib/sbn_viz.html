@@ -3,22 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <title>SBN Visualizer</title>
+<!-- tokens de thème partagés (base + thème clair) ; les extras viz restent ci-dessous -->
+<link rel="stylesheet" href="sbn-theme.css">
+<!-- bibliothèques SBN partagées (thème, CSV, cœur logique) -->
+<script src="sbn-theme.js"></script>
+<script src="sbn-csv.js"></script>
+<script src="sbn-core.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
 
   :root {
-    --bg: #0f1117;
-    --panel: #161b27;
-    --border: #252d3d;
-    --accent: #4f8ef7;
-    --accent2: #a78bfa;
-    --text: #e2e8f0;
-    --muted: #64748b;
+    /* tokens spécifiques au visualizer (les tokens de base viennent de sbn-theme.css) */
     --pos: #34d399;
     --neg: #f87171;
     --zero: #94a3b8;
-
-    /* Sub-dynamics palette by dimension */
     --dim1: #f59e0b;
     --dim2: #06b6d4;
     --dim3: #8b5cf6;
@@ -379,6 +377,9 @@
   <input type="file" id="file-input" accept=".csv" multiple>
 
   <div class="controls">
+    <button id="theme-btn" onclick="SBN.theme.toggle()" title="Basculer thème clair / sombre"
+            style="background:var(--btn-bg);color:var(--text);border:none;padding:4px 10px;
+                   border-radius:6px;font-size:13px;cursor:pointer;font-family:inherit">🌙</button>
     <select id="file-select" style="max-width:380px;flex:1"></select>
     <div style="display:flex;align-items:center;gap:6px">
       <input id="sol-input" type="number" min="1" value="1"
@@ -482,6 +483,10 @@
 </div>
 
 <script>
+// ─── Thème (SBN.theme partagé) ───────────────────────────────────────────────
+// TH = couleurs canvas/SVG, mutées en place à chaque bascule ; re-render via render().
+const TH = SBN.theme.TH;
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let files = [];       // {name, rows, dim, decomp_vec}
 let curFile = 0;
@@ -537,51 +542,10 @@ function weightColor(w) {
 }
 
 // ─── CSV Parsing ─────────────────────────────────────────────────────────────
-function parseCSVLine(line) {
-  // Proper CSV parser: handles "w_1,1" quoted fields
-  const fields = [];
-  let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') { inQ = !inQ; }
-    else if (c === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
-    else { cur += c; }
-  }
-  fields.push(cur.trim());
-  return fields;
-}
-
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  const header = parseCSVLine(lines[0]);
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = parseCSVLine(line);
-    const obj = {};
-    header.forEach((h, i) => obj[h] = vals[i] ?? '');
-    return obj;
-  });
-}
-
-function parseName(name) {
-  // Extract dimension: leading number before 'd'
-  const mDim = name.match(/^(\d+)d/);
-  if (!mDim) return { dim: null, vec: [] };
-  const dim = parseInt(mDim[1]);
-
-  // Format 1: angle brackets with commas — "4d_<0,0,3,2,0>_output"
-  const mAngle = name.match(/<([0-9,]+)>/);
-  if (mAngle) {
-    const vec = mAngle[1].split(',').map(Number);
-    return { dim, vec };
-  }
-
-  // Format 2: underscores — "4d__0_1_2_0_0__output" or "4d_0_1_2_0_0_output"
-  const rest = name.slice(mDim[0].length).replace(/^_+/, '');
-  const mVec = rest.match(/^([0-9][0-9_]*)/);
-  if (!mVec) return { dim, vec: [] };
-  const vec = mVec[1].split('_').filter(s => s !== '').map(Number);
-  return { dim, vec };
-}
+// Parsing partagé (sbn-csv.js)
+const parseCSVLine = SBN.csv.parseLine;
+const parseCSV     = SBN.csv.parse;
+const parseName    = SBN.csv.parseName;
 
 function getDim(row) {
   return Object.keys(row).filter(k => k.startsWith('f_')).length;
@@ -730,49 +694,9 @@ function extractWeights(row, n) {
 // ─── Transition ──────────────────────────────────────────────────────────────
 // Convention: w_i,j = weight of arc FROM node i TO node j
 // Node j activates iff sum_i W[i,j] * x_i > 0
-function computeTransitions(W, n) {
-  const T = {};
-  for (let s = 0; s < (1<<n); s++) {
-    const bits = Array.from({length:n}, (_,i) => (s>>i)&1);
-    const nb = Array.from({length:n}, (_,j) => {
-      const sum = bits.reduce((a, xi, i) => a + (W[`${i+1},${j+1}`]||0) * xi, 0);
-      return sum > 0 ? 1 : 0;
-    });
-    T[s] = nb.reduce((a,b,i) => a|(b<<i), 0);
-  }
-  return T;
-}
-
-// ─── Basin Detection ─────────────────────────────────────────────────────────
-function computeBasins(T, n) {
-  const N = 1<<n;
-  const inCycle = new Array(N).fill(false);
-  const cycleId = new Array(N).fill(-1);
-  let cid = 0;
-  for (let start = 0; start < N; start++) {
-    const path = [], seen = {};
-    let cur = start;
-    while (seen[cur] === undefined) { seen[cur] = path.length; path.push(cur); cur = T[cur]; }
-    if (cycleId[cur] === -1) {
-      const cs = seen[cur];
-      for (let k = cs; k < path.length; k++) {
-        inCycle[path[k]] = true;
-        cycleId[path[k]] = cid;
-      }
-      cid++;
-    }
-  }
-  const basin = new Array(N).fill(-1);
-  for (let start = 0; start < N; start++) {
-    let cur = start;
-    const path = [];
-    while (!inCycle[cur]) { path.push(cur); cur = T[cur]; }
-    const b = cycleId[cur];
-    for (const x of path) basin[x] = b;
-    basin[cur] = b;
-  }
-  return { basin, inCycle, numBasins: cid };
-}
+// Cœur partagé (sbn-core.js) : T depuis la matrice de poids W, et bassins.
+const computeTransitions = SBN.core.transitionsFromW;
+const computeBasins      = SBN.core.basins;
 
 // ─── Invariant Face Detection ────────────────────────────────────────────────
 function findInvariantFaces(T, n) {
@@ -794,7 +718,7 @@ function findInvariantFaces(T, n) {
   return faces;
 }
 
-function popcount(x) { let c=0; while(x){c+=x&1;x>>=1;} return c; }
+const popcount = SBN.core.popcount;   // cœur partagé
 
 // ─── Decomposition via vec-based binary tree ─────────────────────────────────
 // freeInvBits: find invariant bits among free (non-fixed) bits in a subset of states
@@ -988,7 +912,7 @@ function renderDecompInfo(decomp, n) {
     nd.children.forEach((cid, ci) => {
       const ch = treeNodes[cid];
       const isGrey = ch.isGrey;
-      const stroke = isGrey ? '#334155' : '#4f8ef7';
+      const stroke = isGrey ? 'var(--border)' : 'var(--accent)';
       const dash   = isGrey ? ' stroke-dasharray="3,3"' : '';
       svg += '<line x1="' + nd._x + '" y1="' + nd._y
            + '" x2="' + ch._x + '" y2="' + ch._y
@@ -997,7 +921,7 @@ function renderDecompInfo(decomp, n) {
       const mx = (nd._x + ch._x) / 2 + (ci === 0 ? -8 : 5);
       const my = (nd._y + ch._y) / 2 + 3;
       svg += '<text x="' + mx + '" y="' + my + '" font-size="9"'
-           + ' fill="' + (isGrey ? '#475569' : '#64748b') + '" font-family="monospace">'
+           + ' fill="' + (isGrey ? 'var(--muted)' : 'var(--muted)') + '" font-family="monospace">'
            + ci + '</text>';
       drawEdges(cid);
     });
@@ -1027,11 +951,11 @@ function renderDecompInfo(decomp, n) {
       nd.children.forEach(c => drawNode(c));
     } else if (topLeaf && isGrey) {
       // Grey topological leaf
-      const col = '#94a3b8';
+      const col = 'var(--muted)';
       const bw = leafW - 8, bh = nodeR * 2;
       svg += '<rect x="' + (x - bw/2) + '" y="' + (y - nodeR)
            + '" width="' + bw + '" height="' + bh
-           + '" rx="4" fill="#2d374899" stroke="' + col + '" stroke-width="1.5"'
+           + '" rx="4" fill="var(--node-off)" stroke="' + col + '" stroke-width="1.5"'
            + ' stroke-dasharray="3,3"/>';
       const label = nd.states.length <= 4
         ? nd.states.join(',')
@@ -1040,10 +964,10 @@ function renderDecompInfo(decomp, n) {
            + ' font-size="9" font-family="monospace" fill="' + col + '">' + label + '</text>';
     } else {
       // Internal circle (colored or grey)
-      const stroke   = isGrey ? '#64748b' : '#4f8ef7';
-      const fillCirc = isGrey ? '#2d3748' : '#1e2535';
-      const textCol  = isGrey ? '#94a3b8' : '#94a3b8';
-      const numCol   = isGrey ? '#cbd5e1' : '#e2e8f0';
+      const stroke   = isGrey ? 'var(--muted)' : 'var(--accent)';
+      const fillCirc = isGrey ? 'var(--border)' : 'var(--node-off)';
+      const textCol  = 'var(--axis)';
+      const numCol   = 'var(--text)';
       const dash = isGrey ? ' stroke-dasharray="3,3"' : '';
       svg += '<circle cx="' + x + '" cy="' + y + '" r="' + nodeR
            + '" fill="' + fillCirc + '" stroke="' + stroke + '" stroke-width="1.5"' + dash + '/>';
@@ -1229,8 +1153,8 @@ function renderSBN(W, n, row) {
     const circle = svgEl('circle');
     circle.setAttribute('cx', nd.x); circle.setAttribute('cy', nd.y);
     circle.setAttribute('r', r);
-    circle.setAttribute('fill','#1e2535');
-    circle.setAttribute('stroke','#4f8ef7');
+    circle.setAttribute('fill','var(--node-off)');
+    circle.setAttribute('stroke','var(--accent)');
     circle.setAttribute('stroke-width','1.5');
     g.appendChild(circle);
 
@@ -1241,7 +1165,7 @@ function renderSBN(W, n, row) {
     label.setAttribute('font-size', Math.round(r*0.72));
     label.setAttribute('font-family','JetBrains Mono, monospace');
     label.setAttribute('font-weight','600');
-    label.setAttribute('fill','#e2e8f0');
+    label.setAttribute('fill','var(--text)');
     label.textContent = nd.id;
     g.appendChild(label);
 
@@ -1271,7 +1195,7 @@ function drawLabel(svg, x, y, text, col, positions) {
   const bg = svgEl('rect');
   bg.setAttribute('x',ox-13); bg.setAttribute('y',oy-9);
   bg.setAttribute('width','26'); bg.setAttribute('height','17');
-  bg.setAttribute('rx','4'); bg.setAttribute('fill','rgba(15,17,23,0.88)');
+  bg.setAttribute('rx','4'); bg.setAttribute('fill','var(--panel)');
   svg.appendChild(bg);
 
   const t = svgEl('text');
@@ -1460,26 +1384,18 @@ function renderHypercube(T, n, decomp) {
 }
 
 function getStateColor(state, decomp, inCycle) {
-  if (!decomp) {
-    return inCycle[state] ? '#ffffff' : '#4a5568';
-  }
-  // Find which face this state belongs to
+  // Sans décomposition : attracteur en accent (vif, lisible clair/sombre), sinon muted.
+  if (!decomp) return inCycle[state] ? TH.accent : TH.muted;
   for (const group of decomp) {
     if (group.states.includes(state)) {
       const col = groupColor(group.groupKey);
       return inCycle[state] ? col : hexWithAlpha(col, 0.6);
     }
   }
-  return inCycle[state] ? '#ffffff' : '#4a5568';
+  return inCycle[state] ? TH.accent : TH.muted;
 }
 
-function hexWithAlpha(hex, alpha) {
-  // Return rgba from hex
-  const r = parseInt(hex.slice(1,3),16);
-  const g = parseInt(hex.slice(3,5),16);
-  const b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
+const hexWithAlpha = SBN.core.hexA;   // cœur partagé (= hexA)
 
 function drawHC() {
   const canvas = document.getElementById('hc-canvas');
@@ -1520,7 +1436,7 @@ function drawHC() {
   // Draw hypercube skeleton edges (faint)
   const hcEdges = hypercubeEdges(n);
   ctx.save();
-  ctx.strokeStyle = 'rgba(100,116,139,0.25)';
+  ctx.strokeStyle = TH.skeleton;
   ctx.lineWidth = 1;
   for (const [a,b] of hcEdges) {
     ctx.beginPath();
@@ -1554,7 +1470,7 @@ function drawHC() {
     const dist = Math.sqrt(dx*dx+dy*dy);
     if (dist < 1) continue;
 
-    let col = '#64748b';
+    let col = TH.muted;
     if (decomp) {
       const group = decomp.find(g => g.states.includes(s));
       if (group) col = groupColor(group.groupKey);
@@ -1613,7 +1529,7 @@ function drawHC() {
     }
     ctx.beginPath();
     ctx.arc(px_, py_, nr, 0, Math.PI*2);
-    ctx.fillStyle = isAttractor ? stateColor : '#1e2535';
+    ctx.fillStyle = isAttractor ? stateColor : TH.nodeOff;
     ctx.fill();
     ctx.strokeStyle = stateColor;
     ctx.lineWidth = isAttractor ? 2.5 : 1.5;
@@ -1658,7 +1574,8 @@ function drawHC() {
     ctx.font = `${Math.max(8, nr*0.72)}px 'JetBrains Mono', monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = isAttractor ? '#0f1117' : '#94a3b8';
+    // attracteur : texte sombre sur pastille vive ; sinon : muted sur nodeOff
+    ctx.fillStyle = isAttractor ? '#0f1117' : TH.muted;
     ctx.fillText(s.toString(2).padStart(n,'0'), px_, py_);
     ctx.restore();
   }
@@ -1775,6 +1692,9 @@ window.addEventListener('resize', () => {
     });
   }
 })();
+
+// Applique le thème enregistré (sombre par défaut) ; re-render au changement.
+SBN.theme.init({ onChange(){ if (files.length) render(); } });
 
 </script>
 

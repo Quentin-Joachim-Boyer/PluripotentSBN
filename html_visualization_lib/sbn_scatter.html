@@ -3,32 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <title>SBN Scatter Plot</title>
+<!-- tokens de thème partagés (définit :root + thème clair) -->
+<link rel="stylesheet" href="sbn-theme.css">
+<!-- bibliothèques SBN partagées (thème, CSV columnar, cœur logique) -->
+<script src="sbn-theme.js"></script>
+<script src="sbn-csv.js"></script>
+<script src="sbn-core.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
 
-  :root {
-    --bg: #0f1117; --panel: #161b27; --border: #252d3d;
-    --accent: #4f8ef7; --accent2: #a78bfa;
-    --text: #e2e8f0; --muted: #64748b;
-    /* couleurs lues côté canvas (cf. readTheme) */
-    --grid: rgba(255,255,255,0.07);
-    --axis: #94a3b8;
-    --ring: #ffffff;            /* anneau de mise en valeur */
-    --ring-halo: rgba(0,0,0,0.55);
-    --node-off: #1e2535;        /* nœud hors cycle (dynamique) */
-    --skeleton: rgba(100,116,139,0.22);
-  }
-  :root[data-theme="light"] {
-    --bg: #f6f8fc; --panel: #ffffff; --border: #d6dde8;
-    --accent: #2563eb; --accent2: #7c3aed;
-    --text: #1e293b; --muted: #64748b;
-    --grid: rgba(15,23,42,0.10);
-    --axis: #475569;
-    --ring: #0f172a;
-    --ring-halo: rgba(255,255,255,0.75);
-    --node-off: #e6ebf3;
-    --skeleton: rgba(71,85,105,0.30);
-  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
@@ -230,34 +213,11 @@
 
 <script>
 
-// ─── Thème clair / sombre ─────────────────────────────────────────────────────
-// Le DOM suit les variables CSS automatiquement ; le canvas, lui, lit ces mêmes
-// variables dans l'objet TH (rafraîchi à chaque bascule) puis on re-rend.
-let TH = {};
-function readTheme() {
-  const s = getComputedStyle(document.documentElement);
-  const g = k => s.getPropertyValue(k).trim();
-  TH = { grid:g('--grid'), axis:g('--axis'), muted:g('--muted'), text:g('--text'),
-         ring:g('--ring'), ringHalo:g('--ring-halo'), nodeOff:g('--node-off'),
-         skeleton:g('--skeleton'), accent:g('--accent') };
-}
-function applyTheme(mode) {
-  document.documentElement.setAttribute('data-theme', mode);
-  try { localStorage.setItem('sbn-theme', mode); } catch(_){}
-  readTheme();
-  const b = document.getElementById('theme-btn');
-  if (b) b.textContent = mode === 'light' ? '☀️' : '🌙';
-  if (typeof scatterCache !== 'undefined' && scatterCache) {
-    _renderScatter();
-    drawSizeLegend(scatterCache.minR, scatterCache.maxR, scatterCache.maxCount);
-    // redessine le panneau de détail / dynamique courant s'il est affiché
-    if (typeof selectedPt !== 'undefined' && selectedPt) renderSelectedDyn();
-    else if (typeof hoveredPt !== 'undefined' && hoveredPt && detailPanelVisible) updateDetailPanel(hoveredPt);
-  }
-}
-function toggleTheme() {
-  applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
-}
+// ─── Thème clair / sombre (SBN.theme partagé) ─────────────────────────────────
+// TH = objet de couleurs canvas, muté en place par SBN.theme à chaque bascule.
+const TH = SBN.theme.TH;
+function toggleTheme() { SBN.theme.toggle(); }
+// init (avec re-render) appelé en fin de script, une fois tout l'état déclaré.
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let files = [];
@@ -323,40 +283,10 @@ function scheduleRender() {
 }
 
 // ─── CSV Parsing ─────────────────────────────────────────────────────────────
-function parseCSVLine(line) {
-  const fields = []; let cur = '', inQ = false;
-  for (const c of line) {
-    if (c === '"') { inQ = !inQ; }
-    else if (c === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
-    else { cur += c; }
-  }
-  fields.push(cur.trim());
-  return fields;
-}
-
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  const header = parseCSVLine(lines[0]);
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = parseCSVLine(line);
-    const obj = {};
-    header.forEach((h, i) => obj[h] = vals[i] ?? '');
-    return obj;
-  });
-}
-
-// ─── Vec helpers ─────────────────────────────────────────────────────────────
-function parseName(name) {
-  const mDim = name.match(/^(\d+)d/);
-  if (!mDim) return { dim: null, vec: [] };
-  const dim = parseInt(mDim[1]);
-  const mAngle = name.match(/<([0-9,]+)>/);
-  if (mAngle) return { dim, vec: mAngle[1].split(',').map(Number) };
-  const rest = name.slice(mDim[0].length).replace(/^_+/, '');
-  const mVec = rest.match(/^([0-9][0-9_]*)/);
-  if (!mVec) return { dim, vec: [] };
-  return { dim, vec: mVec[1].split('_').filter(s => s).map(Number) };
-}
+// Parsing partagé (sbn-csv.js)
+const parseCSVLine = SBN.csv.parseLine;
+const parseCSV     = SBN.csv.parse;
+const parseName    = SBN.csv.parseName;
 
 function getRowVec(row, fileVec) {
   const vKeys = Object.keys(row).filter(k => /^v_[0-9]+$/.test(k));
@@ -445,141 +375,9 @@ function setLoadProgress(step, frac) {
 // Yield to the event loop so the progress text actually paints between heavy chunks
 const _nextFrame = () => new Promise(r => setTimeout(r, 0));
 
-async function parseCSVStream(file, decomp_vec = [], onProgress) {
-  const isGzip = file.name.endsWith('.gz');
-  // Count raw (compressed) bytes consumed → progress vs file.size, works for .gz and .csv
-  const total = file.size || 0;
-  let bytesRead = 0, lastPct = -1;
-  const counter = new TransformStream({
-    transform(chunk, controller) {
-      bytesRead += chunk.byteLength;
-      controller.enqueue(chunk);
-      if (onProgress && total) {
-        const pct = Math.floor(bytesRead / total * 100);
-        if (pct !== lastPct) { lastPct = pct; onProgress(bytesRead / total); }
-      }
-    }
-  });
-  let stream = file.stream().pipeThrough(counter);
-  if (isGzip) stream = stream.pipeThrough(new DecompressionStream('gzip'));
-
-  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-  let header = null;
-  let leftover = '';
-  let keptIndices = null, colNames = null, numericCols = null, colData = null;
-  let fIndices = [], wIndices = [];
-  const fdataRows = [], wdataRows = [];
-  const fdataDedup = new Map(), wdataDedup = new Map();
-
-  // Append a row's kept columns into per-column accumulators.
-  // Numeric columns grow a Float32Array directly (capacity doubling) instead of a
-  // number[] — that avoids holding every value as an 8 B JS double AND the extra
-  // Float32Array.from() conversion spike at the end (the previous approach roughly
-  // doubled peak memory, which could OOM mid-load on large files and leave the UI
-  // stuck at "100% reading"). String columns keep a plain array.
-  function pushRow(fields) {
-    if (!colData) {
-      // Classify each kept column numeric/string from the first data row
-      numericCols = keptIndices.map(i => {
-        const v = fields[i];
-        return v !== '' && v != null && Number.isFinite(parseFloat(v));
-      });
-      colData = keptIndices.map((_, j) => numericCols[j] ? { buf: new Float32Array(4096), len: 0 } : []);
-    }
-    for (let j = 0; j < keptIndices.length; j++) {
-      const v = fields[keptIndices[j]] ?? '';
-      if (numericCols[j]) {
-        const c = colData[j];
-        if (c.len === c.buf.length) { const nb = new Float32Array(c.buf.length * 2); nb.set(c.buf); c.buf = nb; }
-        c.buf[c.len++] = parseFloat(v);
-      } else {
-        colData[j].push(v);
-      }
-    }
-  }
-
-  function captureRow(fields) {
-    // fdata
-    if (!fIndices.length) { fdataRows.push(null); }
-    else {
-      const arr = fIndices.map(i => fields[i] ?? '');
-      const sig = arr.join('\x00');
-      if (!fdataDedup.has(sig)) fdataDedup.set(sig, arr);
-      fdataRows.push(fdataDedup.get(sig));
-    }
-    // wdata
-    if (!wIndices.length) { wdataRows.push(null); }
-    else {
-      const arr = wIndices.map(i => fields[i] ?? '');
-      const sig = arr.join('\x00');
-      if (!wdataDedup.has(sig)) wdataDedup.set(sig, arr);
-      wdataRows.push(wdataDedup.get(sig));
-    }
-  }
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = leftover + value;
-    const lines = chunk.split(/\r?\n/);
-    leftover = lines.pop();
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      const fields = parseCSVLine(line);
-      if (!header) {
-        header = fields;
-        keptIndices = header.map((h, i) => i).filter(i =>
-          !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i])
-        );
-        colNames = keptIndices.map(i => header[i]);
-        fIndices = header.map((h, i) => i)
-          .filter(i => /^f_\d+$/.test(header[i]))
-          .sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
-        wIndices = header.map((h, i) => i)
-          .filter(i => /^w_\d+,\d+$/.test(header[i]))
-          .sort((a, b) => {
-            const [ra, ca] = header[a].slice(2).split(',').map(Number);
-            const [rb, cb] = header[b].slice(2).split(',').map(Number);
-            return ra !== rb ? ra - rb : ca - cb;
-          });
-        continue;
-      }
-      if (fields.length < header.length) continue;
-      pushRow(fields);
-      captureRow(fields);
-    }
-  }
-  if (leftover.trim() && header) {
-    const fields = parseCSVLine(leftover);
-    if (fields.length >= header.length) {
-      pushRow(fields);
-      captureRow(fields);
-    }
-  }
-  const wN = wIndices.length ? Math.round(Math.sqrt(wIndices.length)) : 0;
-
-  // Finalise columns: numeric buffers are right-sized (slice frees the spare capacity),
-  // string columns pass through. Each source slot is nulled as we go to free memory.
-  const nRows = (colData && colData.length)
-    ? (numericCols[0] ? colData[0].len : colData[0].length) : 0;
-  const cols = {};
-  if (colData) {
-    for (let j = 0; j < colNames.length; j++) {
-      if (numericCols[j]) {
-        const c = colData[j];
-        cols[colNames[j]] = c.len === c.buf.length ? c.buf : c.buf.slice(0, c.len);
-      } else {
-        cols[colNames[j]] = colData[j];
-      }
-      colData[j] = null;
-    }
-  }
-  const vKeys = (colNames || []).filter(k => /^v_[0-9]+$/.test(k))
-    .sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
-  // nDataRows = lignes de données bien formées vues (≠ nRows, qui vaut 0 s'il n'y a
-  // aucune colonne gardée). Permet de distinguer "fichier vide" de "pas d'axe à tracer".
-  return { nRows, nDataRows: fdataRows.length, cols, colNames: colNames || [], vKeys, fdataRows, wdataRows, wN };
-}
+// Streaming columnar partagé (sbn-csv.js). Signature locale conservée (file, vec, onProgress) ;
+// `vec` n'est pas utilisé par le parseur (gardé pour compat des appels).
+const parseCSVStream = (file, _vec, onProgress) => SBN.csv.parseStream(file, onProgress);
 
 document.getElementById('file-input').addEventListener('change', async e => {
   const fileList = Array.from(e.target.files);
@@ -955,44 +753,12 @@ function toggleLegGroupSel(sum) {
 }
 
 // ─── Dynamics (ported from metagraphe) ───────────────────────────────────────
-function computeTransitions(fdata, n) {
-  const N = 1 << n, T = new Int32Array(N);
-  for (let s = 0; s < N; s++) {
-    let t = 0;
-    for (let j = 0; j < n; j++) if (fdata[j].charCodeAt(s) === 49) t |= (1 << j);
-    T[s] = t;
-  }
-  return T;
-}
-function computeBasins(T, n) {
-  const N = 1 << n, inCycle = new Uint8Array(N), cycleId = new Int32Array(N).fill(-1);
-  let cid = 0;
-  for (let start = 0; start < N; start++) {
-    const path = [], seen = {}; let cur = start;
-    while (seen[cur] === undefined) { seen[cur] = path.length; path.push(cur); cur = T[cur]; }
-    if (cycleId[cur] === -1) { for (let k = seen[cur]; k < path.length; k++) { inCycle[path[k]] = 1; cycleId[path[k]] = cid; } cid++; }
-  }
-  return { inCycle };
-}
-function hcPositions(n) {
-  const N = 1 << n, p = [];
-  for (let s = 0; s < N; s++) {
-    const x = s&1, y = (s>>1)&1, z = (s>>2)&1;
-    if (n <= 3) p.push([x*2-1, y*2-1, z*2-1]);
-    else if (n === 4) { const w=(s>>3)&1, sc=w?1:0.5; p.push([(x*2-1)*sc,(y*2-1)*sc,(z*2-1)*sc]); }
-    else { const sc=1-(s>>3)*0.15; p.push([(x*2-1)*sc,(y*2-1)*sc,(z*2-1)*sc]); }
-  }
-  return p;
-}
-function hcEdges(n) {
-  const N=1<<n, e=[];
-  for (let s=0;s<N;s++) for (let b=0;b<n;b++) if (!((s>>b)&1)) e.push([s, s|(1<<b)]);
-  return e;
-}
-function rot3(p,rx,ry) {
-  let [x,y,z]=p, y2=y*Math.cos(rx)-z*Math.sin(rx), z2=y*Math.sin(rx)+z*Math.cos(rx);
-  y=y2; z=z2; return [x*Math.cos(ry)+z*Math.sin(ry), y, -x*Math.sin(ry)+z*Math.cos(ry)];
-}
+// Cœur partagé (sbn-core.js)
+const computeTransitions = SBN.core.transitionsFromF;   // T depuis chaînes f_*
+const computeBasins      = SBN.core.basins;             // {inCycle,basin,numBasins}
+const hcPositions        = SBN.core.hcPositions;
+const hcEdges            = SBN.core.hcEdges;
+const rot3               = SBN.core.rot3;
 function dynGroupColor(idx) {
   const hue=(220+idx*34)%360, sat=(68+(idx%3)*4)/100, light=(52+(idx%2)*12)/100;
   const c=(1-Math.abs(2*light-1))*sat, x=c*(1-Math.abs((hue/60)%2-1)), m=light-c/2;
@@ -1001,29 +767,9 @@ function dynGroupColor(idx) {
   else if(hue<240){r=0;g=x;b=c;}else if(hue<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
   return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
 }
-function hexA(hex,a) { return `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`; }
-function buildDecompTree(vec, T, n) {
-  let colorIdx=0; const colorLeaves=[];
-  function findSplitBit(states,fixed) {
-    for (let b=n-1;b>=0;b--) {
-      if (fixed.has(b)) continue;
-      const L=new Set(), R=new Set();
-      for (const s of states) ((s>>b)&1)?R.add(s):L.add(s);
-      if (L.size>0&&R.size>0&&[...L].every(s=>L.has(T[s]))&&[...R].every(s=>R.has(T[s]))) return b;
-    }
-    return -1;
-  }
-  function build(states,fixed) {
-    if (!states.length) return;
-    const sb=findSplitBit(states,fixed);
-    if (sb===-1){colorLeaves.push({groupKey:String(colorIdx++),states});return;}
-    const nf=new Set(fixed); nf.add(sb);
-    const L=[],R=[]; for (const s of states) ((s>>sb)&1)?R.push(s):L.push(s);
-    build(L,nf); build(R,nf);
-  }
-  build(Array.from({length:1<<n},(_,i)=>i), new Set());
-  return colorLeaves.length>0 ? colorLeaves : null;
-}
+const hexA = SBN.core.hexA;   // cœur partagé
+// Arbre de décomposition dérivé de T (findSplitBit) — vec ignoré, comme avant.
+function buildDecompTree(vec, T, n) { return SBN.core.decompTree(T, n); }
 function drawDynamics(canvas, T, n, decomp) {
   const DPR=window.devicePixelRatio||1, w=canvas.clientWidth||170, hh=canvas.clientHeight||130;
   canvas.width=w*DPR; canvas.height=hh*DPR;
@@ -1742,9 +1488,16 @@ function resetView() {
   }
 })();
 
-// Applique le thème enregistré (ou sombre par défaut) au chargement, une fois
-// tout l'état déclaré (évite la TDZ sur scatterCache).
-applyTheme((() => { try { return localStorage.getItem('sbn-theme'); } catch(_){ return null; } })() || 'dark');
+// Applique le thème enregistré (ou sombre par défaut), une fois tout l'état déclaré
+// (évite la TDZ sur scatterCache). Le re-render passe par onChange.
+SBN.theme.init({ onChange() {
+  if (scatterCache) {
+    _renderScatter();
+    drawSizeLegend(scatterCache.minR, scatterCache.maxR, scatterCache.maxCount);
+    if (selectedPt) renderSelectedDyn();
+    else if (hoveredPt && detailPanelVisible) updateDetailPanel(hoveredPt);
+  }
+}});
 </script>
 </body>
 </html>

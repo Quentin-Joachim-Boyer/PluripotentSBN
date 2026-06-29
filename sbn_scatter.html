@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>SBN Scatter Plot</title>
+<!-- tokens de thème partagés (définit :root + thème clair) -->
+<style>
+/* inliné depuis sbn-theme.css */
+/* Tokens de thème partagés (SBN viz / scatter / métagraphe).
+   DOM : ces variables pilotent tout le design system.
+   Canvas/WebGL : lues côté JS via SBN.theme (cf. sbn-theme.js). */
+:root{
+  --bg:#0f1117; --panel:#161b27; --border:#252d3d;
+  --accent:#4f8ef7; --accent2:#a78bfa; --text:#e2e8f0; --muted:#64748b;
+  /* couleurs lues côté canvas */
+  --grid:rgba(255,255,255,0.07);
+  --axis:#94a3b8;
+  --ring:#ffffff;                 /* anneau de mise en valeur */
+  --ring-halo:rgba(0,0,0,0.55);   /* halo de contraste autour de l'anneau */
+  --node-off:#1e2535;             /* nœud hors cycle (dynamique) */
+  --skeleton:rgba(100,116,139,0.22);
+  --edge:rgba(130,165,215,0.16);  /* voile d'arêtes (métagraphe) */
+  --btn-bg:#2d3748; --btn-hover:#3d4a5c;
+}
+:root[data-theme="light"]{
+  --bg:#f6f8fc; --panel:#ffffff; --border:#d6dde8;
+  --accent:#2563eb; --accent2:#7c3aed; --text:#1e293b; --muted:#64748b;
+  --grid:rgba(15,23,42,0.10);
+  --axis:#475569;
+  --ring:#0f172a;
+  --ring-halo:rgba(255,255,255,0.75);
+  --node-off:#e6ebf3;
+  --skeleton:rgba(71,85,105,0.30);
+  --edge:rgba(37,99,235,0.18);
+  --btn-bg:#e8edf4; --btn-hover:#dde4ee;
+}
+
+</style>
+<!-- bibliothèques SBN partagées (thème, CSV columnar, cœur logique) -->
+<script>
+/* inliné depuis sbn-theme.js */
+/* Thème clair / sombre partagé (SBN viz / scatter / métagraphe).
+   Le DOM suit les variables CSS ; le canvas lit ces variables dans SBN.theme.TH
+   (rafraîchi à chaque bascule). Chargé en <script src> classique (compatible file://).
+
+   Usage app :
+     const TH = SBN.theme.TH;                 // objet stable, muté en place
+     SBN.theme.init({ onChange: reRender });   // applique le thème mémorisé
+     // bouton : onclick="SBN.theme.toggle()"
+*/
+window.SBN = window.SBN || {};
+SBN.theme = (function () {
+  const TH = {};            // objet STABLE (muté en place) -> les alias `const TH=SBN.theme.TH` restent valides
+  let onChange = null;
+
+  function read() {
+    const s = getComputedStyle(document.documentElement), g = k => s.getPropertyValue(k).trim();
+    Object.assign(TH, {
+      bg:g('--bg'), panel:g('--panel'), border:g('--border'),
+      accent:g('--accent'), accent2:g('--accent2'), text:g('--text'), muted:g('--muted'),
+      grid:g('--grid'), axis:g('--axis'), ring:g('--ring'), ringHalo:g('--ring-halo'),
+      nodeOff:g('--node-off'), skeleton:g('--skeleton'), edge:g('--edge'),
+    });
+  }
+  function apply(mode) {
+    document.documentElement.setAttribute('data-theme', mode);
+    try { localStorage.setItem('sbn-theme', mode); } catch (_) {}
+    read();
+    const b = document.getElementById('theme-btn');
+    if (b) b.textContent = mode === 'light' ? '☀️' : '🌙';
+    if (onChange) onChange();
+  }
+  function toggle() {
+    apply(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+  }
+  function init(opts) {
+    onChange = (opts && opts.onChange) || null;
+    let saved = null; try { saved = localStorage.getItem('sbn-theme'); } catch (_) {}
+    apply(saved || 'dark');
+  }
+  return { TH, read, apply, toggle, init };
+})();
+
+</script>
+<script>
+/* inliné depuis sbn-csv.js */
+/* Parsing CSV partagé (SBN viz / scatter / métagraphe). Script classique (file://).
+   - parseLine : parseur CSV gérant les champs entre guillemets ("w_1,1").
+   - parseName : extrait dimension + vecteur depuis un nom de fichier.
+   - parse     : CSV complet en mémoire -> tableau d'objets {colonne: valeur} (petits fichiers, viz).
+   - parseStream : streaming COLUMNAR + .gz, retour superset consommé par scatter & métagraphe.
+*/
+window.SBN = window.SBN || {};
+SBN.csv = (function () {
+
+  function parseLine(line) {
+    const fields = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQ = !inQ;
+      else if (c === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    fields.push(cur.trim());
+    return fields;
+  }
+
+  function parse(text) {
+    const lines = text.trim().split(/\r?\n/);
+    const header = parseLine(lines[0]);
+    return lines.slice(1).filter(l => l.trim()).map(line => {
+      const vals = parseLine(line); const obj = {};
+      header.forEach((h, i) => obj[h] = vals[i] ?? '');
+      return obj;
+    });
+  }
+
+  function parseName(name) {
+    const mDim = name.match(/^(\d+)d/);
+    if (!mDim) return { dim: null, vec: [] };
+    const dim = parseInt(mDim[1]);
+    const mAngle = name.match(/<([0-9,]+)>/);
+    if (mAngle) return { dim, vec: mAngle[1].split(',').map(Number) };
+    const rest = name.slice(mDim[0].length).replace(/^_+/, '');
+    const mVec = rest.match(/^([0-9][0-9_]*)/);
+    if (!mVec) return { dim, vec: [] };
+    return { dim, vec: mVec[1].split('_').filter(s => s !== '').map(Number) };
+  }
+
+  // Streaming columnar : ne matérialise jamais un objet par ligne. Colonnes gardées
+  // (hors f_*/w_*) en tableaux parallèles (Float32Array croissant si numérique) ;
+  // f_*/w_* dédupliqués par signature (référence partagée). onProgress(frac) = octets lus.
+  async function parseStream(file, onProgress) {
+    const gz = file.name.endsWith('.gz');
+    const total = file.size || 0;
+    let bytesRead = 0, lastPct = -1;
+    const counter = new TransformStream({
+      transform(chunk, controller) {
+        bytesRead += chunk.byteLength; controller.enqueue(chunk);
+        if (onProgress && total) {
+          const pct = Math.floor(bytesRead / total * 100);
+          if (pct !== lastPct) { lastPct = pct; onProgress(bytesRead / total); }
+        }
+      }
+    });
+    let stream = file.stream().pipeThrough(counter);
+    if (gz) stream = stream.pipeThrough(new DecompressionStream('gzip'));
+    const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+
+    let header = null, leftover = '';
+    let keptIndices = null, colNames = null, numericCols = null, colData = null;
+    let fIndices = [], wIndices = [], fcols = [];
+    const fdataRows = [], wdataRows = [];
+    const fdataDedup = new Map(), wdataDedup = new Map();
+
+    function pushRow(fields) {
+      if (!colData) {
+        numericCols = keptIndices.map(i => {
+          const v = fields[i];
+          return v !== '' && v != null && Number.isFinite(parseFloat(v));
+        });
+        colData = keptIndices.map((_, j) => numericCols[j] ? { buf: new Float32Array(4096), len: 0 } : []);
+      }
+      for (let j = 0; j < keptIndices.length; j++) {
+        const v = fields[keptIndices[j]] ?? '';
+        if (numericCols[j]) {
+          const c = colData[j];
+          if (c.len === c.buf.length) { const nb = new Float32Array(c.buf.length * 2); nb.set(c.buf); c.buf = nb; }
+          c.buf[c.len++] = parseFloat(v);
+        } else colData[j].push(v);
+      }
+    }
+    function captureRow(fields) {
+      if (!fIndices.length) fdataRows.push(null);
+      else { const arr = fIndices.map(i => fields[i] ?? ''); const sig = arr.join('\x00');
+        if (!fdataDedup.has(sig)) fdataDedup.set(sig, arr); fdataRows.push(fdataDedup.get(sig)); }
+      if (!wIndices.length) wdataRows.push(null);
+      else { const arr = wIndices.map(i => fields[i] ?? ''); const sig = arr.join('\x00');
+        if (!wdataDedup.has(sig)) wdataDedup.set(sig, arr); wdataRows.push(wdataDedup.get(sig)); }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const lines = (leftover + value).split(/\r?\n/);
+      leftover = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const fields = parseLine(line);
+        if (!header) {
+          header = fields;
+          keptIndices = header.map((h, i) => i).filter(i => !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i]));
+          colNames = keptIndices.map(i => header[i]);
+          fIndices = header.map((h, i) => i).filter(i => /^f_\d+$/.test(header[i])).sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
+          wIndices = header.map((h, i) => i).filter(i => /^w_\d+,\d+$/.test(header[i])).sort((a, b) => {
+            const [ra, ca] = header[a].slice(2).split(',').map(Number), [rb, cb] = header[b].slice(2).split(',').map(Number);
+            return ra !== rb ? ra - rb : ca - cb;
+          });
+          fcols = fIndices.map(i => header[i]);
+          continue;
+        }
+        if (fields.length < header.length) continue;
+        pushRow(fields); captureRow(fields);
+      }
+    }
+    if (leftover.trim() && header) {
+      const fields = parseLine(leftover);
+      if (fields.length >= header.length) { pushRow(fields); captureRow(fields); }
+    }
+
+    const wN = wIndices.length ? Math.round(Math.sqrt(wIndices.length)) : 0;
+    const nRows = (colData && colData.length) ? (numericCols[0] ? colData[0].len : colData[0].length) : 0;
+    const cols = {};
+    if (colData) for (let j = 0; j < colNames.length; j++) {
+      if (numericCols[j]) { const c = colData[j]; cols[colNames[j]] = c.len === c.buf.length ? c.buf : c.buf.slice(0, c.len); }
+      else cols[colNames[j]] = colData[j];
+      colData[j] = null;
+    }
+    const vKeys = (colNames || []).filter(k => /^v_[0-9]+$/.test(k)).sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
+    return { name: file.name, nRows, nDataRows: fdataRows.length, colNames: colNames || [], cols,
+             fcols, fdataRows, wdataRows, wN, vKeys, header: header || [] };
+  }
+
+  return { parseLine, parse, parseName, parseStream };
+})();
+
+</script>
+<script>
+/* inliné depuis sbn-core.js */
+/* Cœur SBN partagé : logique PURE (aucun DOM). Script classique (file://).
+   Attention aux variantes documentées :
+   - transitionsFromF : dynamique depuis les chaînes f_* (scatter, métagraphe).
+   - transitionsFromW : dynamique depuis la matrice de poids W (visualizer).
+   - decompTree       : arbre de décomposition dérivé de T (findSplitBit) — scatter & métagraphe.
+     (Le visualizer a sa propre décomposition vec-based, non incluse ici.)
+*/
+window.SBN = window.SBN || {};
+SBN.core = (function () {
+
+  const popcount = x => { let c = 0; while (x) { c += x & 1; x >>= 1; } return c; };
+  const hexA = (hex, a) => `rgba(${parseInt(hex.slice(1,3),16)},${parseInt(hex.slice(3,5),16)},${parseInt(hex.slice(5,7),16)},${a})`;
+
+  // T(s) depuis les chaînes f_* : bit (j-1) = caractère s de la chaîne f_j. -> Int32Array
+  function transitionsFromF(fstr, n) {
+    const N = 1 << n, T = new Int32Array(N);
+    for (let s = 0; s < N; s++) { let t = 0; for (let j = 0; j < n; j++) if (fstr[j].charCodeAt(s) === 49) t |= (1 << j); T[s] = t; }
+    return T;
+  }
+
+  // T(s) depuis la matrice de poids W{ "i,j" }. Convention : w_i,j = arc i->j ;
+  // le nœud j s'active ssi somme_i W[i,j]*x_i > 0. -> objet { s: succ }
+  function transitionsFromW(W, n) {
+    const T = {};
+    for (let s = 0; s < (1 << n); s++) {
+      const bits = Array.from({ length: n }, (_, i) => (s >> i) & 1);
+      const nb = Array.from({ length: n }, (_, j) => {
+        const sum = bits.reduce((a, xi, i) => a + (W[`${i+1},${j+1}`] || 0) * xi, 0);
+        return sum > 0 ? 1 : 0;
+      });
+      T[s] = nb.reduce((a, b, i) => a | (b << i), 0);
+    }
+    return T;
+  }
+
+  // Bassins + états dans un cycle. Superset : { inCycle:Uint8Array, basin:Int32Array, numBasins }.
+  function basins(T, n) {
+    const N = 1 << n;
+    const inCycle = new Uint8Array(N), cycleId = new Int32Array(N).fill(-1);
+    let cid = 0;
+    for (let start = 0; start < N; start++) {
+      const path = [], seen = {}; let cur = start;
+      while (seen[cur] === undefined) { seen[cur] = path.length; path.push(cur); cur = T[cur]; }
+      if (cycleId[cur] === -1) { for (let k = seen[cur]; k < path.length; k++) { inCycle[path[k]] = 1; cycleId[path[k]] = cid; } cid++; }
+    }
+    const basin = new Int32Array(N).fill(-1);
+    for (let start = 0; start < N; start++) {
+      let cur = start; const path = [];
+      while (!inCycle[cur]) { path.push(cur); cur = T[cur]; }
+      const b = cycleId[cur];
+      for (const x of path) basin[x] = b;
+      basin[cur] = b;
+    }
+    return { inCycle, basin, numBasins: cid };
+  }
+
+  // Arbre de décomposition dérivé de T : on cherche récursivement les bits qui
+  // partitionnent l'ensemble en deux sous-faces bit-closes. -> liste de feuilles ou null.
+  function decompTree(T, n) {
+    let colorIdx = 0; const leaves = [];
+    function findSplitBit(states, fixed) {
+      for (let b = n - 1; b >= 0; b--) {
+        if (fixed.has(b)) continue;
+        const L = new Set(), R = new Set();
+        for (const s of states) ((s >> b) & 1) ? R.add(s) : L.add(s);
+        if (L.size > 0 && R.size > 0 && [...L].every(s => L.has(T[s])) && [...R].every(s => R.has(T[s]))) return b;
+      }
+      return -1;
+    }
+    function build(states, fixed) {
+      if (!states.length) return;
+      const sb = findSplitBit(states, fixed);
+      if (sb === -1) { leaves.push({ groupKey: String(colorIdx++), states, dim: Math.round(Math.log2(states.length)) }); return; }
+      const nf = new Set(fixed); nf.add(sb);
+      const L = [], R = []; for (const s of states) ((s >> sb) & 1) ? R.push(s) : L.push(s);
+      build(L, nf); build(R, nf);
+    }
+    build(Array.from({ length: 1 << n }, (_, i) => i), new Set());
+    return leaves.length > 0 ? leaves : null;
+  }
+
+  // Géométrie de l'hypercube projeté (versions scatter/métagraphe).
+  function hcPositions(n) {
+    const N = 1 << n, p = [];
+    for (let s = 0; s < N; s++) {
+      const x = (s & 1), y = (s >> 1) & 1, z = (s >> 2) & 1;
+      if (n <= 3) p.push([x*2-1, y*2-1, z*2-1]);
+      else if (n === 4) { const w = (s >> 3) & 1, sc = w ? 1 : 0.5; p.push([(x*2-1)*sc, (y*2-1)*sc, (z*2-1)*sc]); }
+      else { const sc = 1 - (s >> 3) * 0.15; p.push([(x*2-1)*sc, (y*2-1)*sc, (z*2-1)*sc]); }
+    }
+    return p;
+  }
+  function hcEdges(n) {
+    const N = 1 << n, e = [];
+    for (let s = 0; s < N; s++) for (let b = 0; b < n; b++) if (!((s >> b) & 1)) e.push([s, s | (1 << b)]);
+    return e;
+  }
+  function rot3(p, rx, ry) {
+    let [x, y, z] = p;
+    const y2 = y*Math.cos(rx) - z*Math.sin(rx), z2 = y*Math.sin(rx) + z*Math.cos(rx);
+    y = y2; z = z2;
+    return [x*Math.cos(ry) + z*Math.sin(ry), y, -x*Math.sin(ry) + z*Math.cos(ry)];
+  }
+
+  return { popcount, hexA, transitionsFromF, transitionsFromW, basins, decompTree, hcPositions, hcEdges, rot3 };
+})();
+
+</script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    background: var(--panel); flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; font-weight: 500; }
+
+  .upload-btn {
+    background: var(--accent); color: #fff; border: none;
+    padding: 5px 12px; border-radius: 6px; font-size: 12px;
+    cursor: pointer; font-family: inherit; font-weight: 500;
+  }
+  .upload-btn:hover { opacity: 0.85; }
+
+  select {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); padding: 4px 10px;
+    border-radius: 6px; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace; cursor: pointer;
+  }
+  select:focus { outline: none; border-color: var(--accent); }
+
+  .controls {
+    display: flex; align-items: center; gap: 10px; margin-left: auto;
+    font-size: 12px; color: var(--muted);
+  }
+
+  .scatter-controls {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap;
+  }
+  .scatter-controls label { font-size: 12px; color: var(--muted); }
+
+  #main-area { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+  .canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+  canvas { width: 100%; height: 100%; display: block; }
+
+  #detail-panel {
+    width: 240px; flex-shrink: 0;
+    background: var(--panel); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+    transition: width 0.18s ease;
+  }
+  #detail-panel.hidden { width: 0; }
+  #detail-panel-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #detail-panel-hdr span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  #detail-close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  #detail-close:hover { color: var(--text); }
+  #detail-panel-body {
+    flex: 1; overflow-y: auto; padding: 10px 12px;
+    font-size: 11px; font-family: 'JetBrains Mono', monospace; line-height: 1.7;
+  }
+  #detail-panel-body .placeholder { color: var(--muted); font-size: 11px; margin-top: 8px; }
+
+  #legend-resize-handle {
+    height: 5px; flex-shrink: 0; cursor: ns-resize;
+    border-top: 1px solid var(--border);
+    background: transparent; transition: background 0.15s;
+  }
+  #legend-resize-handle:hover { background: var(--border); }
+
+  #legend-bar { display: flex; align-items: stretch; height: 80px; flex-shrink: 0; overflow: hidden; }
+
+  .scatter-legend {
+    padding: 5px 16px; background: var(--panel);
+    display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: flex-start;
+    font-size: 11px; overflow-y: auto; flex: 1;
+  }
+  .scatter-legend-item { display: flex; align-items: center; gap: 5px; }
+  .scatter-legend-item:hover { opacity: 0.75 !important; }
+  .scatter-legend-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0; display: inline-block;
+  }
+  .leg-group { display: inline-flex; flex-direction: column; }
+  .leg-group-hdr {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 5px; border-radius: 4px; border: 1px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap;
+    transition: opacity 0.15s, border-color 0.15s;
+  }
+  .leg-group-hdr:hover { border-color: var(--muted); }
+  .leg-group-body { display: none; flex-wrap: wrap; gap: 3px 10px; padding: 3px 2px 1px; }
+  .leg-group-body.open { display: flex; }
+
+  .empty-state {
+    position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; color: var(--muted); font-size: 14px;
+  }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 12px;
+    padding: 24px 32px; text-align: center; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .drop-zone:hover { border-color: var(--accent); color: var(--text); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinning { display: inline-block; animation: spin 1s linear infinite; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SBN Scatter Plot</h1>
+  <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
+  <input type="file" id="file-input" accept=".csv,.gz" multiple style="display:none">
+  <div class="controls">
+    <button id="theme-btn" onclick="toggleTheme()" title="Basculer thème clair / sombre"
+            style="background:var(--border);color:var(--text);border:none;padding:3px 9px;
+                   border-radius:5px;font-size:13px;cursor:pointer;font-family:inherit">🌙</button>
+    <select id="file-select"></select>
+    <span id="row-count" style="font-family:monospace"></span>
+  </div>
+</header>
+
+<div class="scatter-controls">
+  <label>X axis:</label>
+  <select id="scatter-x" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
+  <label style="margin-left:8px">Y axis:</label>
+  <select id="scatter-y" onchange="scatterCache=null;showLoading();setTimeout(drawScatter,0)"></select>
+  <span id="loading-indicator" style="font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em"></span>
+  <button id="reset-btn" onclick="resetView()"
+          style="display:none;background:var(--border);color:var(--text);
+                 border:none;padding:3px 10px;border-radius:5px;font-size:11px;
+                 cursor:pointer;font-family:inherit">&#8962; Reset</button>
+  <button id="detail-toggle-btn" onclick="toggleDetailPanel()"
+          style="margin-left:auto;background:var(--border);color:var(--text);
+                 border:none;padding:3px 10px;border-radius:5px;font-size:11px;
+                 cursor:pointer;font-family:inherit">⊞ Detail</button>
+</div>
+
+<div id="main-area">
+  <div class="canvas-wrap" id="canvas-wrap">
+    <div class="empty-state" id="empty-state">
+      <div class="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div style="font-size:28px;margin-bottom:8px">📂</div>
+        <div>Load a CSV file to begin</div>
+        <div style="font-size:12px;margin-top:4px;color:var(--muted)">*_output.csv format</div>
+      </div>
+    </div>
+    <canvas id="scatter-canvas"></canvas>
+    <div id="scatter-tip" style="
+      display:none; position:absolute; pointer-events:none; z-index:10;
+      background:var(--panel); border:1px solid var(--border); border-radius:6px;
+      padding:6px 8px; font-size:11px; font-family:'JetBrains Mono',monospace;
+      color:var(--text); box-shadow:0 4px 16px rgba(0,0,0,0.5);
+    "></div>
+    <div id="perf-overlay" onclick="document.getElementById('perf-overlay').style.display='none'"
+         title="render stats — click to hide" style="
+      display:none; position:absolute; left:8px; bottom:8px; z-index:9; cursor:pointer;
+      pointer-events:auto; background:rgba(22,27,39,0.82); border:1px solid var(--border);
+      border-radius:5px; padding:3px 7px; font-size:10px; font-family:'JetBrains Mono',monospace;
+      color:var(--muted); white-space:nowrap;"></div>
+  </div>
+
+  <div id="detail-panel" class="hidden">
+    <div id="detail-panel-hdr">
+      <span id="detail-panel-title">Detail</span>
+      <button id="detail-close" onclick="toggleDetailPanel()">✕</button>
+    </div>
+    <div id="detail-panel-body">
+      <div class="placeholder">Hover over a point</div>
+    </div>
+  </div>
+</div>
+
+<div id="legend-resize-handle"></div>
+<div id="legend-bar">
+  <div class="scatter-legend" id="scatter-legend"></div>
+  <div style="flex-shrink:0;padding:5px 14px;background:var(--panel);
+              border-left:1px solid var(--border);display:flex;align-items:center;gap:10px;overflow:hidden">
+    <span style="font-size:11px;color:var(--muted)">count:</span>
+    <canvas id="size-legend-canvas" height="22" style="display:block"></canvas>
+    <span id="errbar-toggle" onclick="toggleErrorBars()"
+          style="cursor:pointer;font-size:11px;color:var(--text);opacity:0.3;
+                 border:1px solid var(--border);border-radius:4px;
+                 padding:2px 8px;white-space:nowrap;user-select:none">
+      <span style="display:inline-block;width:14px;height:1.5px;background:currentColor;
+                   vertical-align:middle;margin-right:4px"></span>±1 std
+    </span>
+  </div>
+</div>
+
+<script>
+
+// ─── Thème clair / sombre (SBN.theme partagé) ─────────────────────────────────
+// TH = objet de couleurs canvas, muté en place par SBN.theme à chaque bascule.
+const TH = SBN.theme.TH;
+function toggleTheme() { SBN.theme.toggle(); }
+// init (avec re-render) appelé en fin de script, une fois tout l'état déclaré.
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let files = [];
+let curFile = 0;
+let selectedVecs = new Set(); // empty = all visible
+let scatterCache = null;
+let showErrorBars = false;
+let view = null;
+let dragging = false, dragAnchor = null, viewAtDrag = null;
+let detailPanelVisible = false;
+let hoverGrid = null, hoveredPt = null;
+// Pinned selection: a clicked point whose coordinate may host several dynamics
+let selectedPt = null, selectedDyns = null, selectedDynIdx = 0;
+// Rendering: degrade quality while panning/zooming, restore when idle
+let interacting = false, _interactTimer = null;
+// Guards against a stale async cache build (axis/file changed mid-build) winning the race
+let _buildToken = 0;
+// Cached disc sprites (one offscreen canvas per colour) — much faster than per-point arc+fill
+const SPRITE_R = 32;                  // disc radius inside the sprite (hi-res, scaled down per point)
+const SPRITE_PAD = 3;                 // room for the outline
+const spriteCache = new Map();        // "r,g,b" → HTMLCanvasElement
+// Perf instrumentation (shown in #perf-overlay, logged once per cache build)
+let _renderMs = 0, _drawnPts = 0;
+// Reusable pixel-occupancy buffer: collapse the heavy overdraw of dense clouds
+let _occ = null, _occW = 0, _occH = 0;
+
+function getDiscSprite(r, g, b) {
+  const key = r + ',' + g + ',' + b;
+  let s = spriteCache.get(key);
+  if (s) return s;
+  const size = (SPRITE_R + SPRITE_PAD) * 2;
+  s = document.createElement('canvas');
+  s.width = s.height = size;
+  const sx = s.getContext('2d');
+  const c = size / 2;
+  sx.beginPath(); sx.arc(c, c, SPRITE_R, 0, Math.PI * 2);
+  sx.fillStyle = `rgba(${r},${g},${b},0.8)`; sx.fill();
+  sx.lineWidth = SPRITE_R * 0.06;
+  sx.strokeStyle = `rgba(${r},${g},${b},1)`; sx.stroke();
+  spriteCache.set(key, s);
+  return s;
+}
+
+function markInteracting() {
+  interacting = true;
+  if (_interactTimer) clearTimeout(_interactTimer);
+  _interactTimer = setTimeout(() => { interacting = false; scheduleRender(); }, 160);
+}
+
+function updatePerfOverlay() {
+  const el = document.getElementById('perf-overlay');
+  if (!el) return;
+  const total = scatterCache ? scatterCache.allPts.length : 0;
+  el.style.display = 'block';
+  el.textContent = `${_drawnPts.toLocaleString()}/${total.toLocaleString()} pts · ${_renderMs.toFixed(1)} ms`
+    + (interacting ? ' · fast' : '');
+}
+const HOVER_GS = 60;
+let _rafId = null;
+function scheduleRender() {
+  if (_rafId) return;
+  _rafId = requestAnimationFrame(() => { _rafId = null; _renderScatter(); });
+}
+
+// ─── CSV Parsing ─────────────────────────────────────────────────────────────
+// Parsing partagé (sbn-csv.js)
+const parseCSVLine = SBN.csv.parseLine;
+const parseCSV     = SBN.csv.parse;
+const parseName    = SBN.csv.parseName;
+
+function getRowVec(row, fileVec) {
+  const vKeys = Object.keys(row).filter(k => /^v_[0-9]+$/.test(k));
+  if (!vKeys.length) return fileVec;
+  vKeys.sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
+  return vKeys.map(k => parseInt(row[k]));
+}
+
+// Columnar access: a "file" stores kept columns as parallel Float32Arrays (see parseCSVStream),
+// not 10M string objects — this is what keeps a 10M-row dataset near ~0.5 GB instead of ~10 GB.
+function rowVecOf(file, ri) {
+  const vk = file.vKeys;
+  if (!vk || !vk.length) return file.decomp_vec;
+  const out = new Array(vk.length);
+  for (let i = 0; i < vk.length; i++) out[i] = file.cols[vk[i]][ri];
+  return out;
+}
+function colNum(file, ri, key) {
+  const a = file.cols[key];
+  return a ? +a[ri] : NaN;
+}
+
+function getStatKeys(row) {
+  return Object.keys(row).filter(k =>
+    !/^v_[0-9]+$/.test(k) && !/^f_[0-9]+$/.test(k) && !/^w_[0-9]+,[0-9]+$/.test(k)
+  );
+}
+
+// ─── Color ───────────────────────────────────────────────────────────────────
+const vecColorCache = new Map();
+
+function vecStrToSum(vecStr) {
+  const m = vecStr.match(/[0-9]+/g);
+  if (!m) return 1;
+  return m.reduce((a, v) => a + parseInt(v), 0);
+}
+
+function vecToHyperface(vecStr) {
+  const m = vecStr.match(/[0-9]+/g);
+  if (!m) return 0;
+  for (let i = 0; i < m.length; i++) if (parseInt(m[i]) > 0) return i;
+  return 0;
+}
+
+function hslToHex(hue, sat, light) {
+  const h=hue, s=sat, l=light;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2;
+  let r,g,b;
+  if(h<60){r=c;g=x;b=0;}else if(h<120){r=x;g=c;b=0;}else if(h<180){r=0;g=c;b=x;}
+  else if(h<240){r=0;g=x;b=c;}else if(h<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
+}
+
+// Assign colors by rank in sorted vec list.
+// Sorted by sum asc then lex, hue spread 260°->-40° with sqrt distortion.
+function assignVecColors(vecStrs) {
+  vecColorCache.clear();
+  const sorted = Array.from(vecStrs)
+    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b) || a.localeCompare(b));
+  const total = sorted.length;
+  sorted.forEach((vs, i) => {
+    const t     = total > 1 ? Math.pow(i / (total - 1), 0.3) : 0;
+    const hue   = (220 + t * 300 + 360) % 360;
+    const light = 0.30 + (i % 5) * 0.04; // slight variation 0.30-0.46
+    vecColorCache.set(vs, hslToHex(hue, 0.75, light));
+  });
+}
+
+function vecColor(vecStr) {
+  return vecColorCache.get(vecStr) ?? '#888888';
+}
+
+
+
+
+
+// ─── File loading ─────────────────────────────────────────────────────────────
+// Show "<step> … NN%" in the top indicator. frac null → step name only (spinner).
+function setLoadProgress(step, frac) {
+  const el = document.getElementById('loading-indicator');
+  if (!el) return;
+  if (frac == null) { el.innerHTML = `<span class="spinning">⟳</span> ${step}…`; return; }
+  const pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+  el.innerHTML = `<span class="spinning">⟳</span> ${step} … ${pct}%`;
+}
+// Yield to the event loop so the progress text actually paints between heavy chunks
+const _nextFrame = () => new Promise(r => setTimeout(r, 0));
+
+// Streaming columnar partagé (sbn-csv.js). Signature locale conservée (file, vec, onProgress) ;
+// `vec` n'est pas utilisé par le parseur (gardé pour compat des appels).
+const parseCSVStream = (file, _vec, onProgress) => SBN.csv.parseStream(file, onProgress);
+
+document.getElementById('file-input').addEventListener('change', async e => {
+  const fileList = Array.from(e.target.files);
+  let loaded = 0;
+  for (let fi = 0; fi < fileList.length; fi++) {
+    const file = fileList[fi];
+    const tag = fileList.length > 1 ? `(${fi+1}/${fileList.length}) ` : '';
+    document.getElementById('row-count').textContent = `Loading ${file.name}…`;
+    setLoadProgress(`${tag}Reading ${file.name}`, 0);
+    try {
+      const { dim, vec } = parseName(file.name.replace('.csv.gz','').replace('.csv',''));
+      const parsed = await parseCSVStream(file, vec,
+        frac => setLoadProgress(`${tag}Reading ${file.name}`, frac));
+      // Validation : un scatter a besoin d'au moins une colonne de statistique
+      // (= colonne gardée hors v_*) pour les axes X/Y. Les fichiers ne contenant
+      // que f_*/w_* (ex. 2d_<0,2,0>_output.csv) sont inexploitables -> message clair
+      // au lieu d'un skip silencieux.
+      const statCols = (parsed.colNames || []).filter(k => !/^v_\d+$/.test(k));
+      if (!parsed.nDataRows) throw new Error('fichier vide ou aucune ligne de données lisible');
+      if (statCols.length < 1) throw new Error(
+        'aucune colonne de statistique à tracer — le fichier ne contient que des colonnes '
+        + 'f_*/w_*. Le scatter a besoin de colonnes numériques (GenotypeCount, Robustness_mean, '
+        + 'CycleLenMSQ, …) pour les axes X/Y.');
+      files.push({ name: file.name, ...parsed, decomp_vec: vec });
+      files.sort((a,b) => a.name.localeCompare(b.name));
+    } catch(err) {
+      // Surface the failure instead of leaving the indicator stuck at "100% reading".
+      // (Most often an out-of-memory during a very large parse.)
+      console.error('Error loading', file.name, err);
+      const msg = (err && err.message) || String(err);
+      document.getElementById('loading-indicator').innerHTML =
+        `<span style="color:#f87171">⚠ ${file.name} : ${msg}</span>`;
+      document.getElementById('row-count').textContent = 'load failed';
+    }
+    loaded++;
+  }
+  if (files.length) {
+    curFile = files.length - loaded;
+    populateFileSelect();
+    document.getElementById('empty-state').style.display = 'none';
+    scatterCache = null;
+    selectedVecs.clear();
+    vecColorCache.clear();
+    populateAxes();
+    drawScatter();   // manages its own progress (aggregating → rendering) and clears the indicator
+  }
+});
+
+function populateFileSelect() {
+  const sel = document.getElementById('file-select');
+  sel.innerHTML = '';
+  files.forEach((f, i) => {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = f.name;
+    sel.appendChild(opt);
+  });
+  sel.value = curFile;
+  document.getElementById('row-count').textContent =
+    files[curFile].nRows.toLocaleString() + ' rows';
+}
+
+document.getElementById('file-select').addEventListener('change', e => {
+  curFile = parseInt(e.target.value);
+  vecColorCache.clear();
+  selectedVecs.clear();
+  scatterCache = null;
+  populateAxes();
+  drawScatter();
+  document.getElementById('row-count').textContent =
+    files[curFile].nRows.toLocaleString() + ' rows';
+});
+
+function populateAxes() {
+  if (!files.length) return;
+  // Stat columns = kept columns minus the v_ decomposition columns (f_/w_ already excluded)
+  const stats = files[curFile].colNames.filter(k => !/^v_[0-9]+$/.test(k));
+  ['scatter-x','scatter-y'].forEach((id, i) => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = stats.map(k =>
+      `<option value="${k}"${k===cur?' selected':''}>${k}</option>`).join('');
+    // Default: last two stat columns (x = second-to-last, y = last)
+    if (!cur && stats.length > 0) {
+      sel.value = stats[stats.length - 2 + i] ?? stats[stats.length - 1];
+    }
+  });
+
+}
+
+// ─── Scatter drawing ──────────────────────────────────────────────────────────
+function drawSizeLegend(minR, maxR, maxCount) {
+  const canvas = document.getElementById('size-legend-canvas');
+  if (!canvas) return;
+  const DPR = window.devicePixelRatio || 1;
+  const steps = maxCount === 1 ? [1] : [
+    1,
+    Math.round(maxCount / 4),
+    Math.round(maxCount / 2),
+    maxCount
+  ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
+  const padding = 6;
+  let totalW = padding;
+  for (const cnt of steps) {
+    const r = minR + (cnt / maxCount) * (maxR - minR);
+    totalW += r * 2 + 40 + padding;
+  }
+  canvas.width  = totalW * DPR;
+  canvas.height = 22 * DPR;
+  canvas.style.width  = totalW + 'px';
+  canvas.style.height = '22px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(DPR, DPR);
+  ctx.clearRect(0, 0, totalW, 22);
+  let x = padding;
+  for (const cnt of steps) {
+    const r = minR + (cnt / maxCount) * (maxR - minR);
+    const cy = 11;
+    ctx.beginPath();
+    ctx.arc(x + r, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle   = 'rgba(148,163,184,0.5)';
+    ctx.strokeStyle = 'rgba(148,163,184,0.9)';
+    ctx.lineWidth   = 0.8;
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle    = TH.axis;
+    ctx.font         = '9px JetBrains Mono,monospace';
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    const label = cnt >= 1e4 ? cnt.toExponential(1) : String(Math.round(cnt));
+    ctx.fillText(label, x + r * 2 + 3, cy);
+    x += r * 2 + 40 + padding;
+  }
+}
+
+async function buildScatterCache() {
+  if (!files.length) return false;
+  clearSelection();   // old pinned point refers to a stale cache
+  const xKey = document.getElementById('scatter-x')?.value;
+  const yKey = document.getElementById('scatter-y')?.value;
+  if (!xKey || !yKey) return false;
+
+  const f = files[curFile];
+  const cols = f.cols;
+  const sizeKey = 'GenotypeCount';
+  const CHUNK = 250000;   // yield to the UI every N rows so the % can paint
+  const myToken = ++_buildToken;   // abort if a newer build starts while we yield
+
+  // Single pass: compute bounds + collect vecStrs + build pointMap simultaneously
+  let xMin=Infinity, xMax=-Infinity, yMin=Infinity, yMax=-Infinity;
+  const allVecStrs = new Set();
+  const rawPts = []; // lightweight [x, y, vecStr, weight] tuples
+
+  // Auto-detect std column: any axis whose name ends in _mean gets a matching _std
+  const xStdKey = f.nRows && xKey.endsWith('_mean') && (xKey.replace(/_mean$/, '_std') in cols)
+    ? xKey.replace(/_mean$/, '_std') : null;
+  const yStdKey = f.nRows && yKey.endsWith('_mean') && (yKey.replace(/_mean$/, '_std') in cols)
+    ? yKey.replace(/_mean$/, '_std') : null;
+  const meanAxis = xStdKey ? 'x' : yStdKey ? 'y' : null;
+  const stdKey   = xStdKey ?? yStdKey ?? null;
+
+  const fdataRows = f.fdataRows;
+  const wdataRows = f.wdataRows;
+  const xCol = cols[xKey], yCol = cols[yKey], sizeCol = cols[sizeKey], stdCol = stdKey ? cols[stdKey] : null;
+  const nR = f.nRows;
+  for (let ri = 0; ri < nR; ri++) {
+    if (ri % CHUNK === 0) {
+      setLoadProgress('Building scatter', ri / nR * 0.40);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
+    const x = xCol ? +xCol[ri] : NaN, y = yCol ? +yCol[ri] : NaN;
+    if (isNaN(x) || isNaN(y)) continue;
+    const vec = rowVecOf(f, ri);
+    const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+    const weight = (sizeCol ? sizeCol[ri] : 1) || 1;
+    const std    = stdCol ? (stdCol[ri] || 0) : 0;
+    if (x < xMin) xMin=x; if (x > xMax) xMax=x;
+    if (y < yMin) yMin=y; if (y > yMax) yMax=y;
+    allVecStrs.add(vecStr);
+    rawPts.push(x, y, vecStr, weight, std, ri); // 6 values per point
+  }
+  if (!rawPts.length) return false;
+  const nRaw = rawPts.length;
+
+  // Assign colors in deterministic order
+  assignVecColors(allVecStrs);
+
+  // Adaptive precision: pick the most significant digits whose distinct-cell count stays under a
+  // budget. nRows is a poor proxy (4d & 5d both have 10M rows but 14k vs 1.1M cells), so we measure.
+  // Coarse/small clouds (e.g. d=3) keep fine detail; huge ones coarsen to stay light & fluid.
+  const xRange0 = xMax - xMin || 1, yRange0 = yMax - yMin || 1;
+  const xMag = Math.floor(Math.log10(xRange0)), yMag = Math.floor(Math.log10(yRange0));
+  const precAt = sd => [Math.pow(10, xMag - sd), Math.pow(10, yMag - sd)];
+  const POINT_BUDGET = 1500000, MAX_SIG = 6, MIN_SIG = 3;  // MAX_SIG ≤ 6 keeps the cell key < 2^53
+  let sigDigits = MAX_SIG;
+  for (; sigDigits > MIN_SIG; sigDigits--) {
+    const [xp, yp] = precAt(sigDigits);
+    const seen = new Set();
+    let over = false;
+    for (let i = 0; i < nRaw; i += 6) {
+      if (i % (CHUNK * 6) === 0) {
+        setLoadProgress('Adapting precision', 0.42);
+        await _nextFrame();
+        if (myToken !== _buildToken) return false;
+      }
+      const bx = Math.round((rawPts[i]   - xMin) / xp);
+      const by = Math.round((rawPts[i+1] - yMin) / yp);
+      seen.add(bx * 33554432 + by);          // pack (bx,by); by < 2^25 for sd ≤ 6
+      if (seen.size > POINT_BUDGET) { over = true; break; }
+    }
+    if (!over) break;
+  }
+
+  // Aggregate into pointMap at the chosen precision
+  const [xPrec, yPrec] = precAt(sigDigits);
+  const pointMap = new Map();
+  const coordMap = new Map(); // "rx|ry" → { nDyn, vecs:Set } — all dynamics sharing a position
+  for (let i = 0; i < nRaw; i += 6) {
+    if (i % (CHUNK * 6) === 0) {
+      setLoadProgress('Building scatter', 0.45 + i / nRaw * 0.40);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
+    const rx = Math.round(rawPts[i]   / xPrec) * xPrec;
+    const ry = Math.round(rawPts[i+1] / yPrec) * yPrec;
+    const vecStr = rawPts[i+2];
+    const weight = rawPts[i+3];
+    const std    = rawPts[i+4];
+    const ri     = rawPts[i+5];
+    const ckey = `${rx}|${ry}`;
+    let co = coordMap.get(ckey);
+    if (!co) { co = { nDyn: 0, vecs: new Set(), ris: [] }; coordMap.set(ckey, co); }
+    co.nDyn++;                                     // all dynamics at this position…
+    co.vecs.add(vecStr);                           // …spread over these decompositions
+    co.ris.push(ri);                               // …keep every row so we can browse them
+
+    const key = `${rx}|${ry}|${vecStr}`;
+    let entry = pointMap.get(key);
+    if (!entry) {
+      entry = { x: rx, y: ry, vecStr, count: 0, std: 0,
+                fdata: fdataRows?.[ri] ?? null, wdata: wdataRows?.[ri] ?? null,
+                ri, nDyn: 0, _co: co };           // keep the coord entry — avoids a lookup later
+      pointMap.set(key, entry);
+    }
+    entry.nDyn++;                                  // dynamics behind this exact bubble
+    if (weight > entry.count) entry.count = weight;
+    if (std    > entry.std)   entry.std   = std;   // keep max std
+  }
+
+  const allPts = Array.from(pointMap.values());
+  const maxCount = allPts.reduce((m,p) => p.count>m ? p.count : m, 1);
+
+  const nRows = f.nRows;
+  const minR = 3.5;
+  const maxR = nRows > 500000 ? 10  : nRows > 100000 ? 12 : nRows > 10000 ? 14  : 16;
+
+  // Pre-compute colours, radii, coordinate-group counts, and a cached numeric sort key
+  const nPts = allPts.length;
+  for (let k = 0; k < nPts; k++) {
+    if (k % CHUNK === 0) {
+      setLoadProgress('Building scatter', 0.85 + (k / nPts) * 0.12);
+      await _nextFrame();
+      if (myToken !== _buildToken) return false;
+    }
+    const p = allPts[k];
+    const col = vecColor(p.vecStr);
+    const rgb = parseInt(col.slice(1), 16);
+    p.r = (rgb>>16)&255; p.g = (rgb>>8)&255; p.b = rgb&255;
+    p.radius = minR + (p.count / maxCount) * (maxR - minR);
+    const co = p._co;
+    p.coDyn  = co ? co.nDyn      : p.nDyn; // total dynamics sharing this position
+    p.coVecs = co ? co.vecs.size : 1;      // distinct decompositions stacked here
+    p._sum   = vecStrToSum(p.vecStr);      // cache once → keeps the sort comparator regex-free
+    p._co    = undefined;                  // drop the reference, no longer needed
+  }
+
+  setLoadProgress('Building scatter', 0.98);
+  await _nextFrame();
+  if (myToken !== _buildToken) return false;
+  // Sort: largest radius first (drawn behind), then more decomposed on top at equal size.
+  // Uses the cached p._sum — the old comparator ran a regex per comparison (O(n·log n) regexes).
+  allPts.sort((a, b) => b.radius - a.radius || a._sum - b._sum);
+
+  const byVec = new Map();
+  for (const p of allPts) {
+    if (!byVec.has(p.vecStr)) byVec.set(p.vecStr, []);
+    byVec.get(p.vecStr).push(p);
+  }
+
+  scatterCache = { allPts, byVec, coordMap, xMin, xMax, yMin, yMax, minR, maxR, maxCount, xKey, yKey, meanAxis, stdKey, sizeKey };
+  view = { xMin, xMax, yMin, yMax };
+
+  setLoadProgress('Building scatter', 0.99);
+  await _nextFrame();
+  if (myToken !== _buildToken) return false;
+  // Build legend and hover grid (only when cache is rebuilt)
+  drawSizeLegend(minR, maxR, maxCount);
+  buildLegend(byVec);
+  buildHoverGrid();
+  console.log(`[scatter] ${nRows.toLocaleString()} rows → ${allPts.length.toLocaleString()} points`
+    + ` (${byVec.size} decompositions, ${sigDigits} sig. digits)`);
+  return true;
+}
+
+function buildLegend(byVec) {
+  const legend = document.getElementById('scatter-legend');
+  if (!legend) return;
+  const allVecs = Array.from(byVec.keys()).sort((a,b) => vecStrToSum(a)-vecStrToSum(b)||a.localeCompare(b));
+  const groups = new Map();
+  for (const vs of allVecs) {
+    const h = vecToHyperface(vs);
+    if (!groups.has(h)) groups.set(h, []);
+    groups.get(h).push(vs);
+  }
+  legend.innerHTML = Array.from(groups.entries()).sort((a,b)=>a[0]-b[0]).map(([sum, vecs]) => {
+    const swatches = vecs.slice(0,5).map(vs=>
+      `<span style="width:7px;height:7px;border-radius:50%;background:${vecColor(vs)};display:inline-block;flex-shrink:0"></span>`
+    ).join('');
+    const anyActive = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    const items = vecs.map(vs => {
+      const active = selectedVecs.size === 0 || selectedVecs.has(vs);
+      return `<span class="scatter-legend-item" onclick="toggleVec('${vs}')"
+               style="cursor:pointer;opacity:${active?1:0.3};transition:opacity 0.15s" data-vec="${vs}">
+        <span class="scatter-legend-dot" style="background:${vecColor(vs)}"></span>
+        <span style="color:var(--text)">${vs}</span>
+      </span>`;
+    }).join('');
+    return `<span class="leg-group" data-sum="${sum}">
+      <span class="leg-group-hdr" onclick="toggleLegGroupSel(${sum})" style="opacity:${anyActive?1:0.35}">
+        <span style="display:inline-flex;gap:2px;align-items:center">${swatches}</span>
+        <span style="font-size:10px;color:var(--muted)">d=${sum}</span>
+        <span style="font-size:10px;color:var(--border)">(${vecs.length})</span>
+        <span class="leg-arrow" onclick="event.stopPropagation();toggleLegGroupOpen(${sum})"
+              style="font-size:8px;color:var(--muted);padding:0 2px;cursor:pointer;line-height:1">▶</span>
+      </span>
+      <span class="leg-group-body" id="legbody-${sum}">${items}</span>
+    </span>`;
+  }).join('');
+}
+
+function toggleLegGroupOpen(sum) {
+  const body = document.getElementById(`legbody-${sum}`);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  const arrow = body.previousElementSibling.querySelector('.leg-arrow');
+  if (arrow) arrow.textContent = open ? '▼' : '▶';
+}
+
+function toggleLegGroupSel(sum) {
+  const group = document.querySelector(`.leg-group[data-sum="${sum}"]`);
+  if (!group) return;
+  const groupVecs = Array.from(group.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+  const allDomVecs = Array.from(document.querySelectorAll('.scatter-legend-item[data-vec]')).map(el => el.getAttribute('data-vec'));
+  if (selectedVecs.size === 0) {
+    allDomVecs.forEach(v => selectedVecs.add(v));
+    groupVecs.forEach(v => selectedVecs.delete(v));
+  } else {
+    const allInGroup = groupVecs.every(v => selectedVecs.has(v));
+    if (allInGroup) groupVecs.forEach(v => selectedVecs.delete(v));
+    else groupVecs.forEach(v => selectedVecs.add(v));
+    if (selectedVecs.size >= allDomVecs.length) selectedVecs.clear();
+  }
+  document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el => {
+    const v = el.getAttribute('data-vec');
+    el.style.opacity = (selectedVecs.size === 0 || selectedVecs.has(v)) ? '1' : '0.3';
+  });
+  document.querySelectorAll('.leg-group').forEach(g => {
+    const s = parseInt(g.getAttribute('data-sum'));
+    const vecs = Array.from(g.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+    const active = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    g.querySelector('.leg-group-hdr').style.opacity = active ? '1' : '0.35';
+  });
+  drawScatter();
+}
+
+// ─── Dynamics (ported from metagraphe) ───────────────────────────────────────
+// Cœur partagé (sbn-core.js)
+const computeTransitions = SBN.core.transitionsFromF;   // T depuis chaînes f_*
+const computeBasins      = SBN.core.basins;             // {inCycle,basin,numBasins}
+const hcPositions        = SBN.core.hcPositions;
+const hcEdges            = SBN.core.hcEdges;
+const rot3               = SBN.core.rot3;
+function dynGroupColor(idx) {
+  const hue=(220+idx*34)%360, sat=(68+(idx%3)*4)/100, light=(52+(idx%2)*12)/100;
+  const c=(1-Math.abs(2*light-1))*sat, x=c*(1-Math.abs((hue/60)%2-1)), m=light-c/2;
+  let r,g,b;
+  if(hue<60){r=c;g=x;b=0;}else if(hue<120){r=x;g=c;b=0;}else if(hue<180){r=0;g=c;b=x;}
+  else if(hue<240){r=0;g=x;b=c;}else if(hue<300){r=x;g=0;b=c;}else{r=c;g=0;b=x;}
+  return '#'+[r+m,g+m,b+m].map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join('');
+}
+const hexA = SBN.core.hexA;   // cœur partagé
+// Arbre de décomposition dérivé de T (findSplitBit) — vec ignoré, comme avant.
+function buildDecompTree(vec, T, n) { return SBN.core.decompTree(T, n); }
+function drawDynamics(canvas, T, n, decomp) {
+  const DPR=window.devicePixelRatio||1, w=canvas.clientWidth||170, hh=canvas.clientHeight||130;
+  canvas.width=w*DPR; canvas.height=hh*DPR;
+  const ctx=canvas.getContext('2d'); ctx.scale(DPR,DPR);
+  ctx.clearRect(0,0,w,hh);
+  const cx=w/2, cy=hh/2, scale=Math.min(w,hh)*0.28, fov=5, rx=0.4, ry=0.5;
+  const pos=hcPositions(n).map(p=>{const r=rot3(p,rx,ry),d=fov/(fov+r[2]*0.4);return[cx+r[0]*scale*d,cy-r[1]*scale*d,r[2]];});
+  const {inCycle}=computeBasins(T,n);
+  const N=1<<n, nr=Math.max(3,Math.min(8,scale*0.13));
+  const groupOf=s=>decomp?decomp.find(g=>g.states.includes(s)):null;
+  // Hypercube skeleton
+  ctx.strokeStyle=TH.skeleton; ctx.lineWidth=1;
+  for (const [a,b] of hcEdges(n)){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+  // Decomp sub-face outlines
+  if (decomp){
+    ctx.setLineDash([4,4]); ctx.lineWidth=1.3;
+    for (const g of decomp){
+      const col=dynGroupColor(parseInt(g.groupKey)); ctx.strokeStyle=hexA(col,0.5);
+      for (let i=0;i<g.states.length;i++) for (let j=i+1;j<g.states.length;j++){
+        const a=g.states[i],b=g.states[j],diff=a^b;
+        if (diff&&(diff&(diff-1))===0){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
+      }
+    }
+    ctx.setLineDash([]);
+  }
+  // Transition arrows
+  ctx.lineWidth=1.4;
+  for (let s=0;s<N;s++){
+    const t=T[s]; if(t===s)continue;
+    const[sx,sy]=pos[s],[tx,ty]=pos[t],dx=tx-sx,dy=ty-sy,dist=Math.hypot(dx,dy); if(dist<1)continue;
+    const grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):TH.accent;
+    ctx.strokeStyle=col; ctx.fillStyle=col;
+    const ux=dx/dist,uy=dy/dist,nv=-uy,nvy=ux,curve=dist*0.18;
+    const x1=sx+ux*nr,y1=sy+uy*nr,x2=tx-ux*nr,y2=ty-uy*nr;
+    const qx=(x1+x2)/2+nv*curve,qy=(y1+y2)/2+nvy*curve;
+    const edx=x2-qx,edy=y2-qy,el=Math.hypot(edx,edy)||1,ang=Math.atan2(edy,edx),hs=6;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.quadraticCurveTo(qx,qy,x2-hs*0.85*edx/el,y2-hs*0.85*edy/el);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(ang-0.38),y2-hs*Math.sin(ang-0.38));ctx.lineTo(x2-hs*Math.cos(ang+0.38),y2-hs*Math.sin(ang+0.38));ctx.closePath();ctx.fill();
+  }
+  // Nodes back-to-front
+  for (const s of pos.map((_,i)=>i).sort((a,b)=>pos[a][2]-pos[b][2])){
+    const[px,py]=pos[s],att=inCycle[s],grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):TH.accent;
+    ctx.save(); if(att){ctx.shadowColor=col;ctx.shadowBlur=8;}
+    ctx.beginPath();ctx.arc(px,py,nr,0,Math.PI*2);ctx.fillStyle=att?col:TH.nodeOff;ctx.fill();
+    ctx.strokeStyle=att?col:hexA(col,0.7);ctx.lineWidth=att?2:1.3;ctx.stroke();ctx.restore();
+    if (T[s]===s){
+      const ra=Math.atan2(py-cy,px-cx)||-Math.PI/2,da=0.55,ld=nr*1.25;
+      const lsx=px+Math.cos(ra-da)*nr,lsy=py+Math.sin(ra-da)*nr,lex=px+Math.cos(ra+da)*nr,ley=py+Math.sin(ra+da)*nr;
+      const c1x=px+Math.cos(ra-da*0.6)*(nr+ld),c1y=py+Math.sin(ra-da*0.6)*(nr+ld),c2x=px+Math.cos(ra+da*0.6)*(nr+ld),c2y=py+Math.sin(ra+da*0.6)*(nr+ld);
+      const aAng=Math.atan2(ley-c2y,lex-c2x),hs=4;
+      ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=1.4;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(lsx,lsy);ctx.bezierCurveTo(c1x,c1y,c2x,c2y,lex,ley);ctx.stroke();
+      ctx.lineCap='butt';
+      ctx.beginPath();ctx.moveTo(lex,ley);ctx.lineTo(lex-hs*Math.cos(aAng-0.5),ley-hs*Math.sin(aAng-0.5));ctx.lineTo(lex-hs*Math.cos(aAng+0.5),ley-hs*Math.sin(aAng+0.5));ctx.closePath();ctx.fill();
+    }
+  }
+}
+
+function buildHoverGrid() {
+  hoverGrid = null;
+  if (!scatterCache) return;
+  const { allPts, xMin, xMax, yMin, yMax } = scatterCache;
+  const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+  hoverGrid = new Map();
+  for (const p of allPts) {
+    const gx = Math.floor((p.x - xMin) / xRange * HOVER_GS);
+    const gy = Math.floor((p.y - yMin) / yRange * HOVER_GS);
+    const k = `${gx},${gy}`;
+    if (!hoverGrid.has(k)) hoverGrid.set(k, []);
+    hoverGrid.get(k).push(p);
+  }
+}
+
+function findNearestPt(mouseX, mouseY) {
+  if (!hoverGrid || !scatterCache || !view) return null;
+  const canvas = document.getElementById('scatter-canvas');
+  const W = canvas.clientWidth, H = canvas.clientHeight, PAD = 52;
+  // Mouse → data coords
+  const dataX = view.xMin + (mouseX - PAD) / (W - 2*PAD) * (view.xMax - view.xMin);
+  const dataY = view.yMax - (mouseY - PAD) / (H - 2*PAD) * (view.yMax - view.yMin);
+  // 14px threshold → data units
+  const radX = 14 / (W - 2*PAD) * (view.xMax - view.xMin);
+  const radY = 14 / (H - 2*PAD) * (view.yMax - view.yMin);
+  // Grid cells to search (using cache bounds for grid indexing)
+  const { xMin, xMax, yMin, yMax } = scatterCache;
+  const xRange = xMax - xMin || 1, yRange = yMax - yMin || 1;
+  const gx0 = Math.floor((dataX - radX - xMin) / xRange * HOVER_GS) - 1;
+  const gx1 = Math.floor((dataX + radX - xMin) / xRange * HOVER_GS) + 1;
+  const gy0 = Math.floor((dataY - radY - yMin) / yRange * HOVER_GS) - 1;
+  const gy1 = Math.floor((dataY + radY - yMin) / yRange * HOVER_GS) + 1;
+  let best = null, bestPx = Infinity, bestSum = -1;
+  for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) {
+    const pts = hoverGrid.get(`${gx},${gy}`);
+    if (!pts) continue;
+    for (const p of pts) {
+      if (selectedVecs.size > 0 && !selectedVecs.has(p.vecStr)) continue;
+      const cx = PAD + (p.x - view.xMin) / (view.xMax - view.xMin) * (W - 2*PAD);
+      const cy = (H - PAD) - (p.y - view.yMin) / (view.yMax - view.yMin) * (H - 2*PAD);
+      const d = Math.hypot(mouseX - cx, mouseY - cy);
+      if (d > p.radius + 8) continue;
+      const s = vecStrToSum(p.vecStr);
+      // prefer most decomposed; use pixel distance as tiebreaker
+      if (s > bestSum || (s === bestSum && d < bestPx)) { bestPx = d; bestSum = s; best = p; }
+    }
+  }
+  return best;
+}
+
+// Same color convention as metagraphe: green for positive, red for negative, gray for zero
+function weightColor(w) {
+  if (w === 0) return '#64748b';
+  const t = Math.min(1, Math.abs(w) / 4);
+  return w > 0
+    ? `rgb(20,${Math.round(80 + 175 * t)},80)`
+    : `rgb(${Math.round(80 + 175 * t)},20,20)`;
+}
+
+function drawWeightMatrix(canvas, wdata, n) {
+  const DPR = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const W = rect.width || canvas.offsetWidth || 200;
+  const H = rect.height || W;
+  canvas.width  = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  const vals = wdata.map(v => parseInt(v) || 0);
+  const pad = 18; // gutter for axis labels
+  const cW = (W - pad) / n;
+  const cH = (H - pad) / n;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const w = vals[i * n + j];
+      const cx = pad + (j + 0.5) * cW;
+      const cy = (i + 0.5) * cH;
+
+      if (w !== 0) {
+        ctx.fillStyle = weightColor(w);
+        ctx.fillRect(pad + j * cW + 0.5, i * cH + 0.5, cW - 1, cH - 1);
+      }
+
+      if (w !== 0) {
+        const fs = Math.max(7, Math.min(11, Math.floor(cW * 0.42)));
+        ctx.font = `600 ${fs}px JetBrains Mono, monospace`;
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText(String(w), cx, cy);
+      }
+    }
+  }
+
+  // axis labels (1-based, matching metagraphe convention)
+  const lfs = Math.max(7, Math.min(10, Math.floor(cW * 0.38)));
+  ctx.font = `${lfs}px JetBrains Mono, monospace`;
+  ctx.fillStyle = TH.muted;
+  for (let k = 0; k < n; k++) {
+    ctx.fillText(String(k + 1), pad + (k + 0.5) * cW, H - pad * 0.38);
+    ctx.fillText(String(k + 1), pad * 0.42, (k + 0.5) * cH);
+  }
+}
+
+function repositionTip(ex, ey) {
+  const tip = document.getElementById('scatter-tip');
+  if (tip.style.display === 'none') return;
+  const wrap = document.getElementById('canvas-wrap');
+  const tW = tip.offsetWidth || 200, tH = tip.offsetHeight || 200;
+  tip.style.left = (ex + 16 + tW > wrap.clientWidth ? ex - tW - 8 : ex + 16) + 'px';
+  tip.style.top  = Math.max(4, Math.min(ey + 4, wrap.clientHeight - tH - 4)) + 'px';
+}
+
+function toggleDetailPanel() {
+  detailPanelVisible = !detailPanelVisible;
+  document.getElementById('detail-panel').classList.toggle('hidden', !detailPanelVisible);
+  if (!detailPanelVisible) clearSelection();
+  // canvas size changes → force re-render after transition
+  setTimeout(scheduleRender, 200);
+}
+
+// ── Pinned-point selection: click a point, then browse the dynamics it hides ──
+function setDetailTitle(txt) {
+  const el = document.getElementById('detail-panel-title');
+  if (el) el.textContent = txt;
+}
+
+// All distinct dynamics (decomposition + transition graph) at a point's coordinate
+function buildDynList(p) {
+  const f = files[curFile];
+  const co = scatterCache?.coordMap?.get(`${p.x}|${p.y}`);
+  const ris = co ? co.ris : [p.ri];
+  const seen = new Set(), list = [];
+  for (const ri of ris) {
+    const vec = rowVecOf(f, ri);
+    const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+    const fdata = f.fdataRows?.[ri] ?? null;
+    const sig = vecStr + '|' + (fdata ? fdata.join('') : '');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    list.push(ri);
+  }
+  return list;
+}
+
+// Build a display point for one dynamic, anchored at the pinned coordinate
+function makeDynPoint(ri, x, y) {
+  const f = files[curFile];
+  const { sizeKey, stdKey } = scatterCache;
+  const vec = rowVecOf(f, ri);
+  const vecStr = vec ? '<'+vec.join(',')+'>' : '?';
+  const col = vecColor(vecStr);
+  const rgb = parseInt(col.slice(1), 16);
+  return {
+    x, y, vecStr, ri,
+    r: (rgb>>16)&255, g: (rgb>>8)&255, b: rgb&255,
+    count: colNum(f, ri, sizeKey) || 1,
+    std:   stdKey ? (colNum(f, ri, stdKey) || 0) : 0,
+    fdata: f.fdataRows?.[ri] ?? null,
+    wdata: f.wdataRows?.[ri] ?? null,
+    coVecs: selectedPt ? selectedPt.coVecs : 1,
+    _pinned: true, _idx: selectedDynIdx, _total: selectedDyns ? selectedDyns.length : 1,
+  };
+}
+
+function selectPoint(p) {
+  selectedPt = p;
+  selectedDyns = buildDynList(p);
+  // Start browsing from the dynamic actually under the cursor, if present
+  const f = files[curFile];
+  const pSig = p.vecStr + '|' + (p.fdata ? p.fdata.join('') : '');
+  const idx = selectedDyns.findIndex(ri => {
+    const vec = rowVecOf(f, ri);
+    const vs = vec ? '<'+vec.join(',')+'>' : '?';
+    const fd = f.fdataRows?.[ri] ?? null;
+    return vs + '|' + (fd ? fd.join('') : '') === pSig;
+  });
+  selectedDynIdx = idx < 0 ? 0 : idx;
+  if (!detailPanelVisible) {
+    detailPanelVisible = true;
+    document.getElementById('detail-panel').classList.remove('hidden');
+    setTimeout(scheduleRender, 200);
+  }
+  renderSelectedDyn();
+  scheduleRender();
+}
+
+function clearSelection() {
+  if (!selectedPt) return;
+  stopDynRepeat();
+  selectedPt = null; selectedDyns = null; selectedDynIdx = 0;
+  setDetailTitle('Detail');
+  if (detailPanelVisible) updateDetailPanel(hoveredPt);
+  scheduleRender();
+}
+
+function renderSelectedDyn() {
+  if (!selectedPt || !selectedDyns || !selectedDyns.length) return;
+  setDetailTitle(selectedDyns.length > 1 ? '📌 Pinned · browse below' : '📌 Pinned');
+  updateDetailPanel(makeDynPoint(selectedDyns[selectedDynIdx], selectedPt.x, selectedPt.y));
+}
+
+function navigateDyn(delta) {
+  if (!selectedDyns || selectedDyns.length <= 1) return;
+  const n = selectedDyns.length;
+  selectedDynIdx = (selectedDynIdx + delta % n + n) % n;
+  renderSelectedDyn();
+}
+
+// Press-and-hold on ◀ ▶ to scroll fast. The panel (and its buttons) is rebuilt on every step,
+// so the stop must be a document-level mouseup, not a handler on the (replaced) button.
+let _dynRepeatT = null, _dynRepeatI = null;
+function startDynRepeat(delta) {
+  stopDynRepeat();
+  navigateDyn(delta);                                  // immediate first step (also covers a plain click)
+  _dynRepeatT = setTimeout(() => {                     // hold past the initial delay → fast repeat
+    _dynRepeatI = setInterval(() => navigateDyn(delta), 60);
+  }, 300);
+}
+function stopDynRepeat() {
+  if (_dynRepeatT) { clearTimeout(_dynRepeatT); _dynRepeatT = null; }
+  if (_dynRepeatI) { clearInterval(_dynRepeatI); _dynRepeatI = null; }
+}
+window.addEventListener('mouseup', stopDynRepeat);
+window.addEventListener('blur', stopDynRepeat);
+
+function updateDetailPanel(p) {
+  const body = document.getElementById('detail-panel-body');
+  if (!body) return;
+  if (!p) { body.innerHTML = '<div class="placeholder">Hover over a point</div>'; return; }
+
+  const { xKey, yKey, meanAxis, stdKey, sizeKey } = scatterCache;
+  const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;
+    background:rgb(${p.r},${p.g},${p.b});margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
+  const trow = (k, v) => `<div style="display:flex;justify-content:space-between;gap:8px;line-height:1.7;min-width:0">
+    <span style="color:var(--muted);flex-shrink:0">${k}</span>
+    <span style="text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v}</span></div>`;
+
+  let html = '';
+  if (p._pinned && p._total > 1) {
+    const btn = `cursor:pointer;background:var(--bg);color:var(--text);border:1px solid var(--border);
+      border-radius:4px;padding:1px 8px;font-size:13px;line-height:1.4;font-family:inherit`;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;
+        margin-bottom:8px;padding:4px 5px;background:var(--border);border-radius:5px">
+      <button title="Previous dynamic (← · hold to scroll)" style="${btn}"
+        onmousedown="startDynRepeat(-1)">◀</button>
+      <span style="font-size:10px;font-weight:600;color:var(--text);white-space:nowrap">
+        Dynamic ${p._idx+1} / ${p._total}</span>
+      <button title="Next dynamic (→ · hold to scroll)" style="${btn}"
+        onmousedown="startDynRepeat(1)">▶</button>
+    </div>`;
+  }
+  html += `<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px;font-weight:600;flex-wrap:wrap">${dot}${p.vecStr}</div>`;
+  html += trow(xKey, p.x.toPrecision(5));
+  html += trow(yKey, p.y.toPrecision(5));
+  html += trow('count', Math.round(p.count).toLocaleString());
+  if (meanAxis && p.std > 0) html += trow('±1σ', p.std.toPrecision(4));
+
+  const f = files[curFile];
+  if (f && p.ri != null) {
+    const shownKeys = new Set([xKey, yKey, sizeKey, stdKey].filter(Boolean));
+    for (const k of f.colNames) {
+      if (/^v_\d+$/.test(k)) continue;
+      if (shownKeys.has(k)) continue;
+      const num = colNum(f, p.ri, k);
+      if (!isNaN(num) && isFinite(num)) html += trow(k, num.toPrecision(5));
+    }
+  }
+
+  const grouped = p._pinned ? p._total : (p.coDyn || 1);
+  if (grouped > 1) {
+    const extra = p.coVecs > 1 ? ` · ${p.coVecs} decompositions` : '';
+    const hint = p._pinned ? 'use ◀ ▶ (or ← →) to browse them' : 'click the point to browse them';
+    html += `<div style="margin-top:8px;padding:5px 7px;background:var(--border);border-radius:4px;font-size:10px;line-height:1.4">
+      <span style="color:var(--accent);font-weight:600">⊕ ${grouped.toLocaleString()} dynamics at this position${extra}</span><br>
+      <span style="color:var(--muted)">${hint}</span></div>`;
+  }
+
+  if (p.fdata) {
+    const sub = p.nDyn > 1 ? ` <span style="text-transform:none;letter-spacing:0;font-style:italic;color:var(--muted)">— 1 of ${p.nDyn.toLocaleString()}</span>` : '';
+    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:4px">Dynamics${sub}</div>`;
+    html += `<canvas id="detail-dyn" style="display:block;width:100%;height:180px"></canvas>`;
+  }
+
+  const wN = files[curFile]?.wN ?? 0;
+  if (p.wdata && wN > 0) {
+    html += `<div style="color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:10px;margin-bottom:2px">Weights w<sub>i→j</sub></div>`;
+    html += `<div style="color:var(--muted);font-size:9px;font-style:italic;margin-bottom:4px">one possible realization</div>`;
+    html += `<canvas id="detail-wmat" style="display:block;width:216px;height:216px"></canvas>`;
+  }
+
+  body.innerHTML = html;
+
+  if (p.fdata) {
+    const c = document.getElementById('detail-dyn');
+    const n = p.fdata.length;
+    const T = computeTransitions(p.fdata, n);
+    const vecNums = p.vecStr.match(/[0-9]+/g)?.map(Number) ?? [];
+    const decomp = vecNums.length ? buildDecompTree(vecNums, T, n) : null;
+    drawDynamics(c, T, n, decomp);
+  }
+
+  if (p.wdata && wN > 0) {
+    drawWeightMatrix(document.getElementById('detail-wmat'), p.wdata, wN);
+  }
+}
+
+function showHoverTip(p, ex, ey) {
+  // Update side panel on hover — unless a point is pinned (it stays fixed)
+  if (detailPanelVisible && !selectedPt) updateDetailPanel(p);
+
+  // Tooltip: just the transition graph (or nothing if no fdata)
+  const tip = document.getElementById('scatter-tip');
+  if (!p.fdata) { tip.style.display = 'none'; return; }
+
+  const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:rgb(${p.r},${p.g},${p.b});margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
+  let html = `<div style="display:flex;align-items:center;margin-bottom:5px;font-size:11px;font-weight:600;color:var(--muted)">${dot}${p.vecStr}</div>`;
+  html += `<canvas id="tip-dyn" style="display:block;width:160px;height:120px"></canvas>`;
+  if (p.coDyn > 1) {
+    const extra = p.coVecs > 1 ? ` · ${p.coVecs} decomps` : '';
+    html += `<div style="margin-top:4px;font-size:9.5px;color:var(--accent);font-style:italic">1 of ${p.coDyn.toLocaleString()} dynamics here${extra} — click to browse</div>`;
+  }
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+
+  const dynCanvas = document.getElementById('tip-dyn');
+  const n = p.fdata.length;
+  const T = computeTransitions(p.fdata, n);
+  const vecNums = p.vecStr.match(/[0-9]+/g)?.map(Number) ?? [];
+  const decomp = vecNums.length ? buildDecompTree(vecNums, T, n) : null;
+  drawDynamics(dynCanvas, T, n, decomp);
+  repositionTip(ex, ey);
+}
+
+function hideHoverTip() {
+  hoveredPt = null;
+  document.getElementById('scatter-tip').style.display = 'none';
+  if (detailPanelVisible && !selectedPt) updateDetailPanel(null);
+}
+
+function toggleErrorBars() {
+  showErrorBars = !showErrorBars;
+  const btn = document.getElementById('errbar-toggle');
+  if (btn) btn.style.opacity = showErrorBars ? '1' : '0.3';
+  if (scatterCache) _renderScatter();
+}
+
+function showLoading() {
+  document.getElementById('loading-indicator').innerHTML =
+    '<span class="spinning">⟳</span> computing…';
+}
+
+function drawScatter() {
+  if (!files.length) return;
+  if (!scatterCache) {
+    showLoading();
+    buildScatterCache().then(ok => {
+      const ind = document.getElementById('loading-indicator');
+      if (!ok) { ind.textContent = ''; return; }
+      // Final step: paint the "Rendering" label, then do the (blocking) draw, then clear
+      setLoadProgress('Rendering', null);
+      requestAnimationFrame(() => { _renderScatter(); ind.textContent = ''; });
+    }).catch(err => {
+      console.error('buildScatterCache failed', err);
+      document.getElementById('loading-indicator').textContent = '';
+    });
+    return;
+  }
+  _renderScatter();
+}
+
+function _renderScatter() {
+  const canvas = document.getElementById('scatter-canvas');
+  if (!canvas) return;
+  const _t0 = performance.now();
+  const { allPts, xKey, yKey, meanAxis } = scatterCache;
+  const { xMin, xMax, yMin, yMax } = view;
+
+  const DPR = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  if (canvas.width !== Math.round(W * DPR) || canvas.height !== Math.round(H * DPR)) {
+    canvas.width  = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width  = W + 'px';
+    canvas.style.height = H + 'px';
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const pad=52, xRange=xMax-xMin||1, yRange=yMax-yMin||1;
+  const toX = v => pad + (v-xMin)/xRange*(W-2*pad);
+  const toY = v => H-pad - (v-yMin)/yRange*(H-2*pad);
+
+  // Grid
+  ctx.save();
+  const nTicks = 5;
+  for (let i=0; i<=nTicks; i++) {
+    const vx=xMin+i/nTicks*xRange, vy=yMin+i/nTicks*yRange;
+    ctx.strokeStyle=TH.grid; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(toX(vx),pad); ctx.lineTo(toX(vx),H-pad); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad,toY(vy)); ctx.lineTo(W-pad,toY(vy)); ctx.stroke();
+    ctx.fillStyle=TH.muted; ctx.font='10px JetBrains Mono,monospace';
+    ctx.textAlign='center'; ctx.fillText(fmtTick(vx,xRange),toX(vx),H-pad+14);
+    ctx.textAlign='right';  ctx.fillText(fmtTick(vy,yRange),pad-6,toY(vy)+4);
+  }
+  ctx.fillStyle=TH.axis; ctx.font='12px DM Sans,sans-serif';
+  ctx.textAlign='center'; ctx.fillText(xKey,W/2,H-4);
+  ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
+  ctx.fillText(yKey,0,0); ctx.restore();
+  ctx.restore();
+
+  // Clip points to plot area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad, pad, W - 2*pad, H - 2*pad);
+  ctx.clip();
+
+  // Draw by vec group: least decomposed first (behind), most decomposed last (on top)
+  const visiblePts = selectedVecs.size > 0
+    ? allPts.filter(p => selectedVecs.has(p.vecStr))
+    : allPts;
+  // Group by vecStr, sorted by sum ascending (less decomposed drawn first = behind)
+  const byVecOrdered = new Map();
+  for (const p of visiblePts) {
+    if (!byVecOrdered.has(p.vecStr)) byVecOrdered.set(p.vecStr, []);
+    byVecOrdered.get(p.vecStr).push(p);
+  }
+  const sortedVecs = Array.from(byVecOrdered.keys())
+    .sort((a, b) => vecStrToSum(a) - vecStrToSum(b));
+
+  // While panning/zooming a huge cloud, draw a stable subsample to keep ~60fps.
+  const FAST_LIMIT = 60000;
+  const stride = (interacting && visiblePts.length > FAST_LIMIT)
+    ? Math.ceil(visiblePts.length / FAST_LIMIT) : 1;
+  const cullLo = pad, cullHiX = W - pad, cullHiY = H - pad;
+
+  // Overdraw culling, per colour group. With one occupancy id per vec group, a disc is
+  // skipped only if a same-coloured disc already claimed its pixel — so the dominant blue
+  // blob (the source of the overdraw) is thinned, while rarer decompositions drawn on top
+  // are never hidden. Kills the cost of 1.1M discs landing on far fewer pixels.
+  const iW = Math.max(1, Math.ceil(W)), iH = Math.max(1, Math.ceil(H)), need = iW * iH;
+  if (!_occ || _occ.length < need) { _occ = new Int32Array(need); _occW = iW; _occH = iH; }
+  else _occ.fill(0, 0, need);
+
+  // Error bars: off by default, drawn only when not interacting. One bar per disc actually
+  // drawn (i.e. after pixel-dedup) — so they always match what's on screen, never a partial subset.
+  const drawBars = showErrorBars && meanAxis && !interacting;
+  let drawn = 0, groupId = 0;
+
+  for (const vs of sortedVecs) {
+    groupId++;
+    const group = byVecOrdered.get(vs);
+    for (let i = 0; i < group.length; i += stride) {
+      const p = group[i];
+      const cx = toX(p.x), cy = toY(p.y);
+      const r = p.radius;
+      // Viewport culling — skips offscreen points (big win when zoomed in)
+      if (cx < cullLo - r || cx > cullHiX + r || cy < cullLo - r || cy > cullHiY + r) continue;
+
+      // Same-colour overdraw culling — one disc per pixel per group
+      const px = cx | 0, py = cy | 0;
+      if (px >= 0 && px < iW && py >= 0 && py < iH) {
+        const idx = py * iW + px;
+        if (_occ[idx] === groupId) continue;
+        _occ[idx] = groupId;
+      }
+
+      // Cached disc sprite (fill + outline pre-rendered once per colour), scaled to radius
+      const sprite = getDiscSprite(p.r, p.g, p.b);
+      const dim = sprite.width * (r / SPRITE_R);
+      ctx.drawImage(sprite, cx - dim / 2, cy - dim / 2, dim, dim);
+      drawn++;
+
+      if (drawBars && p.std > 0) {
+        const stdPx = meanAxis === 'x'
+          ? Math.abs(toX(p.x + p.std) - toX(p.x))
+          : Math.abs(toY(p.y - p.std) - toY(p.y));
+        ctx.beginPath();
+        if (meanAxis === 'x') { ctx.moveTo(cx - stdPx, cy); ctx.lineTo(cx + stdPx, cy); }
+        else                  { ctx.moveTo(cx, cy - stdPx); ctx.lineTo(cx, cy + stdPx); }
+        ctx.strokeStyle = `rgba(${p.r},${p.g},${p.b},0.7)`;
+        ctx.lineWidth   = 1;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Highlight the pinned point so it's clear which coordinate is being browsed
+  if (selectedPt) {
+    const cx = toX(selectedPt.x), cy = toY(selectedPt.y);
+    const rr = (selectedPt.radius || 5) + 4;
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
+    ctx.strokeStyle = TH.ringHalo; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
+    ctx.strokeStyle = TH.ring; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  ctx.restore(); // end clip
+
+  _renderMs = performance.now() - _t0;
+  _drawnPts = drawn;
+  updatePerfOverlay();
+}
+
+function fmtTick(v, range) {
+  const mag = range > 0 ? Math.floor(Math.log10(range)) : 0;
+  if (mag >= 4 || mag < -3) return v.toExponential(2);
+  return v.toFixed(Math.min(Math.max(0, 2 - mag), 6));
+}
+
+function toggleVec(vecStr) {
+  if (selectedVecs.has(vecStr)) {
+    selectedVecs.delete(vecStr);
+  } else {
+    selectedVecs.add(vecStr);
+  }
+  const allDomVecs = Array.from(document.querySelectorAll('.scatter-legend-item[data-vec]')).map(el => el.getAttribute('data-vec'));
+  if (selectedVecs.size >= allDomVecs.length) selectedVecs.clear();
+  document.querySelectorAll('.scatter-legend-item[data-vec]').forEach(el => {
+    const v = el.getAttribute('data-vec');
+    el.style.opacity = (selectedVecs.size === 0 || selectedVecs.has(v)) ? '1' : '0.3';
+  });
+  document.querySelectorAll('.leg-group').forEach(g => {
+    const vecs = Array.from(g.querySelectorAll('[data-vec]')).map(el => el.getAttribute('data-vec'));
+    const active = selectedVecs.size === 0 || vecs.some(v => selectedVecs.has(v));
+    g.querySelector('.leg-group-hdr').style.opacity = active ? '1' : '0.35';
+  });
+  drawScatter();
+}
+window.addEventListener('resize', drawScatter);
+
+function resetView() {
+  if (!scatterCache) return;
+  view = { xMin: scatterCache.xMin, xMax: scatterCache.xMax,
+           yMin: scatterCache.yMin, yMax: scatterCache.yMax };
+  document.getElementById('reset-btn').style.display = 'none';
+  _renderScatter();
+}
+
+(function initZoomPan() {
+  const canvas = document.getElementById('scatter-canvas');
+  const PAD = 52;
+  canvas.style.cursor = 'crosshair';
+
+  function markDirty() {
+    document.getElementById('reset-btn').style.display = '';
+  }
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (!scatterCache || !view) return;
+    const W = canvas.clientWidth, H = canvas.clientHeight;
+    const factor = e.deltaY < 0 ? 1 / 1.2 : 1.2;
+    const dataX = view.xMin + (e.offsetX - PAD) / (W - 2*PAD) * (view.xMax - view.xMin);
+    const dataY = view.yMax - (e.offsetY - PAD) / (H - 2*PAD) * (view.yMax - view.yMin);
+    view.xMin = dataX - (dataX - view.xMin) * factor;
+    view.xMax = dataX + (view.xMax - dataX) * factor;
+    view.yMin = dataY - (dataY - view.yMin) * factor;
+    view.yMax = dataY + (view.yMax - dataY) * factor;
+    markDirty();
+    markInteracting();
+    scheduleRender();
+  }, { passive: false });
+
+  canvas.addEventListener('mousedown', e => {
+    if (!scatterCache || !view) return;
+    dragging = true;
+    dragAnchor = { x: e.offsetX, y: e.offsetY };
+    viewAtDrag = { ...view };
+    canvas.style.cursor = 'grabbing';
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (dragging) {
+      if (!viewAtDrag) return;
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      const dx = (e.offsetX - dragAnchor.x) / (W - 2*PAD) * (viewAtDrag.xMax - viewAtDrag.xMin);
+      const dy = (e.offsetY - dragAnchor.y) / (H - 2*PAD) * (viewAtDrag.yMax - viewAtDrag.yMin);
+      view.xMin = viewAtDrag.xMin - dx;
+      view.xMax = viewAtDrag.xMax - dx;
+      view.yMin = viewAtDrag.yMin + dy;
+      view.yMax = viewAtDrag.yMax + dy;
+      markDirty();
+      markInteracting();
+      scheduleRender();
+      return;
+    }
+    const p = findNearestPt(e.offsetX, e.offsetY);
+    if (p !== hoveredPt) {
+      hoveredPt = p;
+      if (p) showHoverTip(p, e.offsetX, e.offsetY);
+      else hideHoverTip();
+    } else if (p) {
+      repositionTip(e.offsetX, e.offsetY);
+    }
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    const wasDragging = dragging;
+    dragging = false;
+    canvas.style.cursor = 'crosshair';
+    if (!wasDragging || !scatterCache) return;
+    // A near-stationary press is a click → (de)select a point
+    const moved = dragAnchor ? Math.hypot(e.offsetX - dragAnchor.x, e.offsetY - dragAnchor.y) : 0;
+    if (moved < 4) {
+      const p = findNearestPt(e.offsetX, e.offsetY);
+      if (p) selectPoint(p);
+      else clearSelection();
+    } else {
+      // Drag finished → restore full quality immediately
+      interacting = false;
+      if (_interactTimer) { clearTimeout(_interactTimer); _interactTimer = null; }
+      scheduleRender();
+    }
+  });
+  canvas.addEventListener('mouseleave', () => { dragging = false; canvas.style.cursor = 'crosshair'; hideHoverTip(); });
+
+  // Arrow keys browse the dynamics of the pinned point; Esc releases it
+  window.addEventListener('keydown', e => {
+    if (!selectedPt) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { navigateDyn(1);  e.preventDefault(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { navigateDyn(-1); e.preventDefault(); }
+    else if (e.key === 'Escape') { clearSelection(); }
+  });
+})();
+
+(function initLegendResize() {
+  const handle = document.getElementById('legend-resize-handle');
+  const bar    = document.getElementById('legend-bar');
+  let startY, startH;
+
+  handle.addEventListener('mousedown', e => {
+    startY = e.clientY;
+    startH = bar.offsetHeight;
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+
+  function onMove(e) {
+    const newH = Math.max(24, Math.min(500, startH - (e.clientY - startY)));
+    bar.style.height = newH + 'px';
+    drawScatter();
+  }
+  function onUp() {
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+})();
+
+// Applique le thème enregistré (ou sombre par défaut), une fois tout l'état déclaré
+// (évite la TDZ sur scatterCache). Le re-render passe par onChange.
+SBN.theme.init({ onChange() {
+  if (scatterCache) {
+    _renderScatter();
+    drawSizeLegend(scatterCache.minR, scatterCache.maxR, scatterCache.maxCount);
+    if (selectedPt) renderSelectedDyn();
+    else if (hoveredPt && detailPanelVisible) updateDetailPanel(hoveredPt);
+  }
+}});
+</script>
+</body>
+</html>
