@@ -6,7 +6,12 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
 
-  :root{--bg:#0f1117;--panel:#161b27;--border:#252d3d;--accent:#4f8ef7;--accent2:#a78bfa;--text:#e2e8f0;--muted:#64748b}
+  :root{--bg:#0f1117;--panel:#161b27;--border:#252d3d;--accent:#4f8ef7;--accent2:#a78bfa;--text:#e2e8f0;--muted:#64748b;
+    --axis:#94a3b8;--ring:#ffffff;--node-off:#1e2535;--skeleton:rgba(100,116,139,0.22);--edge:rgba(130,165,215,0.16);
+    --btn-bg:#2d3748;--btn-hover:#3d4a5c}
+  :root[data-theme="light"]{--bg:#f6f8fc;--panel:#ffffff;--border:#d6dde8;--accent:#2563eb;--accent2:#7c3aed;--text:#1e293b;--muted:#64748b;
+    --axis:#475569;--ring:#0f172a;--node-off:#e6ebf3;--skeleton:rgba(71,85,105,0.30);--edge:rgba(37,99,235,0.18);
+    --btn-bg:#e8edf4;--btn-hover:#dde4ee}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
   header{display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--panel);flex-shrink:0}
@@ -19,8 +24,8 @@
   .controls{display:flex;align-items:center;gap:10px;margin-left:auto;font-size:12px;color:var(--muted)}
   .toolbar{display:flex;align-items:center;gap:10px;padding:6px 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
   .toolbar label{font-size:12px;color:var(--muted)}
-  .btn{background:#2d3748;color:var(--text);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
-  .btn:hover{background:#3d4a5c}
+  .btn{background:var(--btn-bg);color:var(--text);border:1px solid var(--border);padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+  .btn:hover{background:var(--btn-hover)}
   .btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .canvas-wrap{flex:1;position:relative;overflow:hidden;cursor:grab;background:var(--bg)}
   .canvas-wrap.drag{cursor:grabbing}
@@ -56,6 +61,9 @@
   <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
   <input type="file" id="file-input" accept=".csv,.gz" multiple style="display:none">
   <div class="controls">
+    <button id="theme-btn" onclick="toggleTheme()" title="Basculer thème clair / sombre"
+            style="background:var(--border);color:var(--text);border:none;padding:3px 9px;
+                   border-radius:5px;font-size:13px;cursor:pointer;font-family:inherit">🌙</button>
     <select id="file-select"></select>
     <span id="row-count" style="font-family:monospace"></span>
   </div>
@@ -105,6 +113,32 @@ let worker = null;            // worker de layout force-directed (positions only
 let hov=-1, sel=-1, showEdges=false;
 let sigmaInstance=null, sigmaGraph=null;
 
+// ── Thème clair / sombre ──────────────────────────────────────────────────────
+// Le DOM suit les variables CSS ; le canvas/overlay lit ces mêmes variables dans
+// TH (rafraîchi à chaque bascule) puis on re-rend.
+let TH={};
+function readTheme(){
+  const s=getComputedStyle(document.documentElement), g=k=>s.getPropertyValue(k).trim();
+  TH={axis:g('--axis'),ring:g('--ring'),accent2:g('--accent2'),nodeOff:g('--node-off'),
+      skeleton:g('--skeleton'),edge:g('--edge'),muted:g('--muted'),text:g('--text'),accent:g('--accent')};
+}
+function applyTheme(mode){
+  document.documentElement.setAttribute('data-theme',mode);
+  try{localStorage.setItem('sbn-theme',mode);}catch(_){}
+  readTheme();
+  const b=document.getElementById('theme-btn'); if(b)b.textContent=mode==='light'?'☀️':'🌙';
+  if(sigmaInstance){
+    sigmaInstance.refresh({skipIndexation:true}); // déclenche afterRender -> overlay
+    _drawOverlay();
+    if(showEdges) _drawEdgesNow();                // voile : recolore immédiatement
+  }
+  if(sel!==-1) updateStatbox();                   // statbox ouverte : recolore mini-vues
+}
+function toggleTheme(){ applyTheme(document.documentElement.getAttribute('data-theme')==='light'?'dark':'light'); }
+// Applique le thème enregistré au chargement (sigmaInstance null ici -> pas de rendu,
+// juste l'attribut + readTheme, donc pas de flash).
+applyTheme((()=>{ try{ return localStorage.getItem('sbn-theme'); }catch(_){ return null; } })() || 'dark');
+
 // ── Architecture de rendu ────────────────────────────────────────────────────
 // Backend UNIQUE : Sigma/WebGL (passe a l'echelle, vers des millions de noeuds).
 // Les positions des noeuds viennent soit des colonnes metagraph_x/y du CSV, soit
@@ -125,14 +159,60 @@ function parseCSVLine(line){
   f.push(cur.trim()); return f;
 }
 
-async function parseCSVStream(file){
+// Cède la main au navigateur (pour que la barre de progression se repeigne entre
+// deux gros blocs de travail synchrone).
+const _nextFrame=()=>new Promise(r=>setTimeout(r,0));
+
+// Parsing CSV COLUMNAR : on ne matérialise jamais un objet par ligne. Les colonnes
+// gardées (v_*, stats, positions) deviennent des tableaux parallèles (Float32Array
+// si numérique), et les colonnes f_*/w_* sont dédupliquées par signature — toutes
+// les lignes de même phénotype partagent le MÊME tableau (référence). Sur un CSV de
+// plusieurs millions de lignes : ~0,5 Go au lieu de ~10 Go, et bien moins de GC.
+// `onProgress(frac)` reçoit la fraction d'octets (dé)compressés lus.
+async function parseCSVStream(file, onProgress){
   const gz=file.name.endsWith('.gz');
-  let stream=file.stream();
+  const total=file.size||0;
+  let bytesRead=0, lastPct=-1;
+  const counter=new TransformStream({
+    transform(chunk,controller){
+      bytesRead+=chunk.byteLength; controller.enqueue(chunk);
+      if(onProgress&&total){
+        const pct=Math.floor(bytesRead/total*100);
+        if(pct!==lastPct){ lastPct=pct; onProgress(bytesRead/total); }
+      }
+    }
+  });
+  let stream=file.stream().pipeThrough(counter);
   if(gz) stream=stream.pipeThrough(new DecompressionStream('gzip'));
   const reader=stream.pipeThrough(new TextDecoderStream()).getReader();
-  let header=null, kept=null, leftover='';
-  const rows=[];
-  const mk=fields=>{const o={};for(const i of kept)o[header[i]]=fields[i]??'';return o;};
+
+  let header=null, leftover='';
+  let keptIndices=null, colNames=null, numericCols=null, colData=null;
+  let fIndices=[], wIndices=[], fcols=[];
+  const fdataRows=[], wdataRows=[];
+  const fdataDedup=new Map(), wdataDedup=new Map();
+
+  // Empile les colonnes gardées en accumulateurs par colonne (nombres, pas strings)
+  function pushRow(fields){
+    if(!colData){
+      numericCols=keptIndices.map(i=>{const v=fields[i];return v!==''&&v!=null&&Number.isFinite(parseFloat(v));});
+      colData=keptIndices.map(()=>[]);
+    }
+    for(let j=0;j<keptIndices.length;j++){
+      const v=fields[keptIndices[j]]??'';
+      colData[j].push(numericCols[j]?parseFloat(v):v);
+    }
+  }
+  // Déduplique f_* et w_* : une signature → un seul tableau partagé par toutes ses lignes
+  function captureRow(fields){
+    if(!fIndices.length){ fdataRows.push(null); }
+    else{ const arr=fIndices.map(i=>fields[i]??''); const sig=arr.join('\x00');
+      if(!fdataDedup.has(sig))fdataDedup.set(sig,arr); fdataRows.push(fdataDedup.get(sig)); }
+    if(!wIndices.length){ wdataRows.push(null); }
+    else{ const arr=wIndices.map(i=>fields[i]??''); const sig=arr.join('\x00');
+      if(!wdataDedup.has(sig))wdataDedup.set(sig,arr); wdataRows.push(wdataDedup.get(sig)); }
+  }
+
   while(true){
     const {done,value}=await reader.read();
     if(done)break;
@@ -143,20 +223,32 @@ async function parseCSVStream(file){
       const fields=parseCSVLine(line);
       if(!header){
         header=fields;
-        // on garde tout : v_*, f_* (graphe), stats, et w_* (une réalisation
-        // quelconque du phénotype — pas de minimisation — pour dessiner le SBN)
-        kept=header.map((h,i)=>i);
+        keptIndices=header.map((h,i)=>i).filter(i=>!/^f_\d+$/.test(header[i])&&!/^w_\d+,\d+$/.test(header[i]));
+        colNames=keptIndices.map(i=>header[i]);
+        fIndices=header.map((h,i)=>i).filter(i=>/^f_\d+$/.test(header[i])).sort((a,b)=>+header[a].slice(2)-+header[b].slice(2));
+        wIndices=header.map((h,i)=>i).filter(i=>/^w_\d+,\d+$/.test(header[i])).sort((a,b)=>{
+          const [ra,ca]=header[a].slice(2).split(',').map(Number), [rb,cb]=header[b].slice(2).split(',').map(Number);
+          return ra!==rb?ra-rb:ca-cb;});
+        fcols=fIndices.map(i=>header[i]);
         continue;
       }
       if(fields.length<header.length)continue;
-      rows.push(mk(fields));
+      pushRow(fields); captureRow(fields);
     }
   }
   if(leftover.trim()&&header){
     const fields=parseCSVLine(leftover);
-    if(fields.length>=header.length)rows.push(mk(fields));
+    if(fields.length>=header.length){ pushRow(fields); captureRow(fields); }
   }
-  return {rows, header: header.filter((h,i)=>kept.includes(i))};
+
+  const wN=wIndices.length?Math.round(Math.sqrt(wIndices.length)):0;
+  const nRows=(colData&&colData.length)?colData[0].length:0;
+  const cols={};
+  if(colData) for(let j=0;j<colNames.length;j++){
+    cols[colNames[j]]=numericCols[j]?Float32Array.from(colData[j]):colData[j];
+    colData[j]=null;   // libère le number[] transitoire au fil de l'eau
+  }
+  return {name:file.name, nRows, colNames:colNames||[], cols, fcols, fdataRows, wdataRows, wN, header:header||[]};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -187,86 +279,91 @@ function sbfNeighbors(n){
   const out=new Map(); for(const [k,s] of map) out.set(k,[...s]); return out;
 }
 
-function buildGraph(rows, header){
-  const fcols=header.filter(h=>/^f_\d+$/.test(h)).sort((a,b)=>+a.slice(2)-+b.slice(2));
+// Construit le graphe à partir du `file` columnar (cf. parseCSVStream). Async : cède
+// la main régulièrement et rapporte la progression via onProgress(step, frac).
+async function buildGraph(file, onProgress){
+  const onP=onProgress||(()=>{});
+  const {nRows, cols, fcols, fdataRows, wdataRows, wN, colNames}=file;
   const n=fcols.length;
   if(n===0) return null;
   // vecteur décomposition: v_* triés décroissant = (v_n,...,v_0)
-  const vcols=header.filter(h=>/^v_\d+$/.test(h)).sort((a,b)=>+b.slice(2)-+a.slice(2));
+  const vcols=colNames.filter(h=>/^v_\d+$/.test(h)).sort((a,b)=>+b.slice(2)-+a.slice(2));
   const POSCOLS=new Set(['x','y','metagraph_x','metagraph_y']);
-  const statKeys=header.filter(h=>!/^v_\d+$/.test(h)&&!/^f_\d+$/.test(h)&&!/^w_/.test(h)&&!POSCOLS.has(h));
+  // f_*/w_* sont déjà hors de colNames (dédupliqués en fdataRows/wdataRows)
+  const statKeys=colNames.filter(h=>!/^v_\d+$/.test(h)&&!POSCOLS.has(h));
 
   const neighbors=sbfNeighbors(n);
+  const CHUNK=200000;
 
-  // Déduplique par signature dynamique f_* : conserve le vecteur de décomposition
-  // le plus fin (somme des v_k maximale = plus de feuilles = plus décomposé).
-  const fkeyToIdx=new Map();
-  const uniqueRows=[];
-  const decomp=[];    // meilleure décomposition (pour coloration métagraphe)
-  const ownDecomp=[]; // décomposition de la ligne représentative (pour l'hypercube)
-  const decompSum=[];
-  for(const row of rows){
-    const fkey=fcols.map(c=>row[c]).join('|');
-    if(!fkeyToIdx.has(fkey)){
-      fkeyToIdx.set(fkey, uniqueRows.length);
-      uniqueRows.push(row);
-      const dv=vcols.length ? vcols.map(c=>+row[c]) : [];
-      decomp.push(dv);
-      ownDecomp.push(dv.slice());
-      decompSum.push(vcols.reduce((s,c)=>s+(+row[c]),0));
+  // ── Passe 1 : déduplication des nœuds par signature f_*. Les tableaux f_* étant
+  // déjà dédupliqués (référence partagée par signature), on déduplique par identité
+  // du tableau (Map sur l'objet) — aucun join de chaîne par ligne.
+  const nodeByFd=new Map();        // tableau f_* → index de nœud
+  const nodeFdata=[], nodeWdata=[]; // par nœud : tableaux f_*/w_* représentatifs
+  const decomp=[], ownDecomp=[], decompSum=[], nodeRow0=[];
+  const rowNode=new Int32Array(nRows);
+  for(let ri=0; ri<nRows; ri++){
+    if(ri%CHUNK===0){ onP('déduplication', ri/Math.max(1,nRows)*0.5); await _nextFrame(); }
+    const fd=fdataRows[ri];
+    let idx=nodeByFd.get(fd);
+    if(idx===undefined){
+      idx=nodeFdata.length;
+      nodeByFd.set(fd,idx);
+      nodeFdata.push(fd); nodeWdata.push(wdataRows[ri]); nodeRow0.push(ri);
+      const dv=vcols.map(c=>+cols[c][ri]);
+      decomp.push(dv); ownDecomp.push(dv.slice()); decompSum.push(dv.reduce((a,b)=>a+b,0));
     } else if(vcols.length){
-      const idx=fkeyToIdx.get(fkey);
-      const s=vcols.reduce((a,c)=>a+(+row[c]),0);
-      if(s>decompSum[idx]){decomp[idx]=vcols.map(c=>+row[c]);decompSum[idx]=s;}
+      let s=0; for(const c of vcols) s+=+cols[c][ri];
+      if(s>decompSum[idx]){ decomp[idx]=vcols.map(c=>+cols[c][ri]); decompSum[idx]=s; }
     }
+    rowNode[ri]=idx;
   }
+  const N=nodeFdata.length;
 
-  const N=uniqueRows.length;
-  const vecs=uniqueRows.map(row=>fcols.map(c=>row[c]));
+  // signature (chaîne) → index, pour la recherche de voisins SBF
+  const sigToIdx=new Map();
+  for(let i=0;i<N;i++) sigToIdx.set(nodeFdata[i].join('|'), i);
 
+  // ── Arêtes (voisins SBF). nodeFdata[i] est partagé : on le CLONE avant mutation.
   const adj=Array.from({length:N},()=>[]);
   const eb=[];
   for(let i=0;i<N;i++){
-    const vec=vecs[i];
+    if(i%CHUNK===0){ onP('arêtes', 0.5+i/Math.max(1,N)*0.35); await _nextFrame(); }
+    const vec=nodeFdata[i].slice();
     for(let k=0;k<n;k++){
       const nbrs=neighbors.get(vec[k]); if(!nbrs)continue;
       const saved=vec[k];
       for(const nb of nbrs){
         vec[k]=nb;
-        const j=fkeyToIdx.get(vec.join('|'));
+        const j=sigToIdx.get(vec.join('|'));
         if(j!==undefined && j>i){adj[i].push(j);adj[j].push(i);eb.push(i,j);}
       }
       vec[k]=saved;
     }
   }
 
-  // Stats moyennées sur les doublons
+  // ── Passe 2 : stats moyennées sur les doublons (via rowNode, sans rejoin)
   const stats={}; for(const k of statKeys) stats[k]=new Float64Array(N);
   const statCounts=new Int32Array(N);
-  for(const row of rows){
-    const fkey=fcols.map(c=>row[c]).join('|');
-    const i=fkeyToIdx.get(fkey);
-    statCounts[i]++;
-    for(const k of statKeys){const x=parseFloat(row[k]); if(!isNaN(x))stats[k][i]+=x;}
+  for(let ri=0; ri<nRows; ri++){
+    if(ri%CHUNK===0){ onP('stats', 0.85+ri/Math.max(1,nRows)*0.13); await _nextFrame(); }
+    const i=rowNode[ri]; statCounts[i]++;
+    for(const k of statKeys){ const a=cols[k]; const x=a?parseFloat(a[ri]):NaN; if(!isNaN(x))stats[k][i]+=x; }
   }
   for(const k of statKeys) for(let i=0;i<N;i++) if(statCounts[i]>1) stats[k][i]/=statCounts[i];
 
-  // Positions pré-calculées : colonnes metagraph_x/metagraph_y (générées par
-  // add_metagraph_layout.py via DRGraph), avec repli sur x/y pour l'ancien format.
+  // ── Positions pré-calculées : metagraph_x/y (DRGraph), repli sur x/y.
   let csvX=null, csvY=null;
-  const xcol = header.includes('metagraph_x') ? 'metagraph_x'
-             : header.includes('x') ? 'x' : null;
-  const ycol = header.includes('metagraph_y') ? 'metagraph_y'
-             : header.includes('y') ? 'y' : null;
+  const has=k=>colNames.includes(k);
+  const xcol = has('metagraph_x')?'metagraph_x':has('x')?'x':null;
+  const ycol = has('metagraph_y')?'metagraph_y':has('y')?'y':null;
   if(xcol && ycol){
     csvX=new Float32Array(N); csvY=new Float32Array(N);
-    for(let i=0;i<N;i++){
-      csvX[i]=parseFloat(uniqueRows[i][xcol])||0;
-      csvY[i]=parseFloat(uniqueRows[i][ycol])||0;
-    }
+    for(let i=0;i<N;i++){ const r0=nodeRow0[i]; csvX[i]=(+cols[xcol][r0])||0; csvY[i]=(+cols[ycol][r0])||0; }
   }
 
-  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,edges:new Int32Array(eb),rows:uniqueRows,csvX,csvY};
+  return {n,N,adj,decomp,ownDecomp,stats,statKeys,fcols,wN:wN||n,
+          edges:new Int32Array(eb),fdata:nodeFdata,wdata:nodeWdata,csvX,csvY};
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -604,7 +701,7 @@ function updateSigmaPositions(x,y){
 // voile s'il ne veut pas l'attente au repos). Insere AVANT la couche .sigma-nodes
 // (WebGL transparent) -> les aretes apparaissent sous les noeuds.
 let _edgeCanvas=null,_edgeCtx=null,_edgeTimer=null,_evx=null,_evy=null;
-const CANVAS_EDGE_COLOR='rgba(130,165,215,0.16)', CANVAS_EDGE_W=0.7;
+const CANVAS_EDGE_W=0.7;   // couleur du voile : TH.edge (suit le thème)
 function _initEdgeLayer(host){
   clearTimeout(_edgeTimer);
   if(_edgeCanvas) _edgeCanvas.remove();
@@ -648,7 +745,7 @@ function _drawEdgesNow(){
   }
   // Trace toutes les aretes en un seul path (rapide), filtre par groupes masques.
   const e=G.edges, kc=nodeKeyCache;
-  ctx.strokeStyle=CANVAS_EDGE_COLOR; ctx.lineWidth=CANVAS_EDGE_W; ctx.beginPath();
+  ctx.strokeStyle=TH.edge; ctx.lineWidth=CANVAS_EDGE_W; ctx.beginPath();
   for(let t=0;t<e.length;t+=2){
     const a=e[t], b=e[t+1];
     if(kc&&(hidden.has(kc[a])||hidden.has(kc[b])))continue;
@@ -709,8 +806,8 @@ function _drawOverlay(){
     dot(c,cp);
   }
   // hov d'abord, sel par-dessus (priorite visuelle au selectionne)
-  if(hov!==-1&&hov!==sel) highlight(hov,'#a78bfa');
-  if(sel!==-1) highlight(sel,'#ffffff');
+  if(hov!==-1&&hov!==sel) highlight(hov,TH.accent2);
+  if(sel!==-1) highlight(sel,TH.ring);
 }
 
 // Voile complet d'aretes : rendu sur la couche canvas 2D (_edgeCanvas), pas dans
@@ -857,8 +954,10 @@ function onSearch(){
 // Convention : w_i,j = poids de l'arc DE i VERS j. Une réalisation quelconque
 // du phénotype (les w_* du CSV ne sont pas minimisés).
 function extractWeights(rowIdx){
-  const row=G.rows[rowIdx], n=G.n, Wm={};
-  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)Wm[i+','+j]=parseInt(row['w_'+i+','+j])||0;
+  // wdata = réalisation w_* dédupliquée, ordre row-major (w_1,1; w_1,2; …)
+  const wd=G.wdata[rowIdx], n=G.n, wN=G.wN||n, Wm={};
+  for(let i=1;i<=n;i++)for(let j=1;j<=n;j++)
+    Wm[i+','+j]=wd?(parseInt(wd[(i-1)*wN+(j-1)])||0):0;
   return Wm;
 }
 function weightColor(w){
@@ -904,8 +1003,8 @@ function sbnSVG(Wm,n,idp){
   s+=labels;
   // nœuds
   for(let i=0;i<n;i++){const nd=nodes[i];
-    s+=`<circle cx="${nd.x}" cy="${nd.y}" r="${r}" fill="#1e2535" stroke="#4f8ef7" stroke-width="1.5"/>`;
-    s+=`<text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.round(r*0.7)}" font-family="JetBrains Mono,monospace" font-weight="600" fill="#e2e8f0">${i+1}</text>`;
+    s+=`<circle cx="${nd.x}" cy="${nd.y}" r="${r}" fill="var(--node-off)" stroke="var(--accent)" stroke-width="1.5"/>`;
+    s+=`<text x="${nd.x}" y="${nd.y}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.round(r*0.7)}" font-family="JetBrains Mono,monospace" font-weight="600" fill="var(--text)">${i+1}</text>`;
   }
   return s+'</svg>';
 }
@@ -948,16 +1047,15 @@ function buildDecompTree(vec,T,n){
 }
 function findDecomposition(T,n,vec){if(!vec||!vec.length)return null;return buildDecompTree(vec,T,n);}
 function stateColor(s,decomp,inCycle){
-  if(!decomp)return inCycle[s]?'#ffe066':'#1e2535';
+  if(!decomp)return inCycle[s]?'#ffe066':TH.nodeOff;
   for(const g of decomp)if(g.states.includes(s)){const c=groupColor(g.groupKey);return inCycle[s]?c:hexA(c,0.55);}
-  return inCycle[s]?'#ffe066':'#1e2535';
+  return inCycle[s]?'#ffe066':TH.nodeOff;
 }
 
 // ── Dynamique du phénotype (graphe de transition en hypercube, à la sbn_viz) ──
 // T(s) = état successeur : bit (j-1) = f_j(s) = caractère s de la chaîne f_j.
 function phenoTransitions(rowIdx){
-  const row=G.rows[rowIdx], n=G.n, N=1<<n;
-  const fstr=G.fcols.map(c=>row[c]);
+  const fstr=G.fdata[rowIdx], n=G.n, N=1<<n;  // fdata = chaînes f_* du nœud
   const T=new Int32Array(N);
   for(let s=0;s<N;s++){let t=0;for(let j=0;j<n;j++)if(fstr[j].charCodeAt(s)===49)t|=(1<<j);T[s]=t;}
   return T;
@@ -995,7 +1093,7 @@ function drawDynamics(canvas,T,n,decomp){
   const N=1<<n, nr=Math.max(4,Math.min(9,scale*0.13));
   const groupOf=s=>decomp?decomp.find(g=>g.states.includes(s)):null;
   // squelette de l'hypercube
-  ctx.strokeStyle='rgba(100,116,139,0.22)';ctx.lineWidth=1;
+  ctx.strokeStyle=TH.skeleton;ctx.lineWidth=1;
   for(const [a,b] of hcEdges(n)){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
   // contours des sous-faces de la décomposition
   if(decomp){
@@ -1033,7 +1131,7 @@ function drawDynamics(canvas,T,n,decomp){
     ctx.save();
     if(att){ctx.shadowColor=col;ctx.shadowBlur=8;}
     ctx.beginPath();ctx.arc(px,py,nr,0,6.283);
-    ctx.fillStyle=att?col:'#1e2535';ctx.fill();
+    ctx.fillStyle=att?col:TH.nodeOff;ctx.fill();
     ctx.strokeStyle=col;ctx.lineWidth=att?2:1.3;ctx.stroke();
     ctx.restore();
     // self-loop (point fixe) : petite boucle radiale fine, couleur du groupe
@@ -1111,7 +1209,7 @@ function sizeLegendHTML(){
   for(const v of raw){
     const r=radiusForValue(v), cx=x+r, cy=baseline-r; // alignement par le bas
     elems+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(148,163,184,0.45)" stroke="rgba(148,163,184,0.9)" stroke-width="0.8"/>`;
-    elems+=`<text x="${cx}" y="${H-1}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="#94a3b8">${fmt(v)}</text>`;
+    elems+=`<text x="${cx}" y="${H-1}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="var(--axis)">${fmt(v)}</text>`;
     x=cx+r+pad+26;
   }
   return `<span class="scatter-legend-item" style="cursor:default;gap:6px">
@@ -1213,6 +1311,14 @@ function setLoading(html){
   if(_loadingTimer){clearTimeout(_loadingTimer);_loadingTimer=null;}
   document.getElementById('loading-indicator').innerHTML=html;
 }
+// Barre de progression : "<étape> … NN%". frac null → étape + spinner seul.
+function setProgress(step,frac){
+  if(_loadingTimer){clearTimeout(_loadingTimer);_loadingTimer=null;}
+  const el=document.getElementById('loading-indicator'); if(!el)return;
+  if(frac==null){ el.innerHTML=`<span class="spinning">⟳</span> ${step}…`; return; }
+  const pct=Math.round(Math.max(0,Math.min(1,frac))*100);
+  el.innerHTML=`<span class="spinning">⟳</span> ${step} … ${pct}%`;
+}
 // Affiche un message puis l'efface apres `ms`, en annulant tout effacement
 // precedent : sinon le timer d'effacement d'un chargement anterieur (ex. fichier
 // x/y, efface a +2.5s) efface l'indicateur du chargement courant (ex. layout
@@ -1227,16 +1333,15 @@ document.getElementById('file-input').addEventListener('change',async e=>{
   let lastLoaded=null;   // entree du dernier CSV reellement charge
   for(const file of list){
     document.getElementById('row-count').textContent='Loading '+file.name+'…';
-    setLoading('<span class="spinning">⟳</span> parsing…');
+    setProgress('lecture '+file.name, 0);
     try{
-      const {rows,header}=await parseCSVStream(file);
-      if(!rows.length)continue;
-      if(!header.some(h=>/^f_\d+$/.test(h))){
+      const data=await parseCSVStream(file, frac=>setProgress('lecture '+file.name, frac));
+      if(!data.nRows)continue;
+      if(!data.fcols.length){
         alert('Le fichier '+file.name+' ne contient pas de colonnes f_* : graphe de mutation impossible.');
         continue;
       }
-      const entry={name:file.name,rows,header};
-      files.push(entry); lastLoaded=entry;
+      files.push(data); lastLoaded=data;          // `data` columnar contient déjà .name
       files.sort((a,b)=>a.name.localeCompare(b.name));
     }catch(err){console.error('Erreur',file.name,err);}
   }
@@ -1247,7 +1352,7 @@ document.getElementById('file-input').addEventListener('change',async e=>{
     curFile=lastLoaded?files.indexOf(lastLoaded):files.length-1;
     populateFileSelect();
     document.getElementById('empty-state').style.display='none';
-    loadCurrent();
+    await loadCurrent();
   }
 });
 
@@ -1258,7 +1363,7 @@ function populateFileSelect(){
 }
 document.getElementById('file-select').addEventListener('change',e=>{curFile=+e.target.value;loadCurrent();});
 
-function loadCurrent(){
+async function loadCurrent(){
   // Kill any previous sigma instance before rebuilding. Defensif : kill() ne doit
   // jamais pouvoir avorter loadCurrent (sinon le nouveau fichier ne charge pas et
   // l'indicateur reste fige), et sigmaInstance doit finir a null quoi qu'il arrive.
@@ -1269,29 +1374,28 @@ function loadCurrent(){
   document.getElementById('sigma-host').style.display='none';
   document.getElementById('relayout-btn').style.display='';
   const f=files[curFile];
-  document.getElementById('row-count').textContent=f.rows.length.toLocaleString()+' rows';
-  setLoading('<span class="spinning">⟳</span> graphe…');
-  setTimeout(()=>{
-    try{
-      G=buildGraph(f.rows,f.header);
-      hidden.clear();dcCount=new Map();sel=-1;hov=-1;
-      document.getElementById('statbox').style.display='none';
-      document.getElementById('search').value='';
-      setupColors();
-      buildNodeKeyCache();
-      computeRadii();
-      computeColorableStats();
-      colorMode='decomp';populateColorBy();computeContRange();buildLegend();
-      const nE=G.edges.length/2;
-      document.getElementById('row-count').textContent=`${G.N.toLocaleString()} nœuds · ${nE.toLocaleString()} arêtes`;
-      startLayout();
-    }catch(err){
-      G=null;setLoading('');
-      document.getElementById('row-count').textContent='erreur';
-      alert('Échec du chargement de '+f.name+' :\n'+err.message);
-      throw err;
-    }
-  },10);
+  document.getElementById('row-count').textContent=f.nRows.toLocaleString()+' rows';
+  setProgress('graphe', null);
+  await _nextFrame();   // laisse le spinner se peindre avant le gros travail
+  try{
+    G=await buildGraph(f, (step,frac)=>setProgress(step,frac));
+    hidden.clear();dcCount=new Map();sel=-1;hov=-1;
+    document.getElementById('statbox').style.display='none';
+    document.getElementById('search').value='';
+    setupColors();
+    buildNodeKeyCache();
+    computeRadii();
+    computeColorableStats();
+    colorMode='decomp';populateColorBy();computeContRange();buildLegend();
+    const nE=G.edges.length/2;
+    document.getElementById('row-count').textContent=`${G.N.toLocaleString()} nœuds · ${nE.toLocaleString()} arêtes`;
+    startLayout();
+  }catch(err){
+    G=null;setLoading('');
+    document.getElementById('row-count').textContent='erreur';
+    alert('Échec du chargement de '+f.name+' :\n'+err.message);
+    throw err;
+  }
 }
 </script>
 </body>

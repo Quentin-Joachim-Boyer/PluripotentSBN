@@ -10,6 +10,24 @@
     --bg: #0f1117; --panel: #161b27; --border: #252d3d;
     --accent: #4f8ef7; --accent2: #a78bfa;
     --text: #e2e8f0; --muted: #64748b;
+    /* couleurs lues côté canvas (cf. readTheme) */
+    --grid: rgba(255,255,255,0.07);
+    --axis: #94a3b8;
+    --ring: #ffffff;            /* anneau de mise en valeur */
+    --ring-halo: rgba(0,0,0,0.55);
+    --node-off: #1e2535;        /* nœud hors cycle (dynamique) */
+    --skeleton: rgba(100,116,139,0.22);
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8fc; --panel: #ffffff; --border: #d6dde8;
+    --accent: #2563eb; --accent2: #7c3aed;
+    --text: #1e293b; --muted: #64748b;
+    --grid: rgba(15,23,42,0.10);
+    --axis: #475569;
+    --ring: #0f172a;
+    --ring-halo: rgba(255,255,255,0.75);
+    --node-off: #e6ebf3;
+    --skeleton: rgba(71,85,105,0.30);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -134,6 +152,9 @@
   <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
   <input type="file" id="file-input" accept=".csv,.gz" multiple style="display:none">
   <div class="controls">
+    <button id="theme-btn" onclick="toggleTheme()" title="Basculer thème clair / sombre"
+            style="background:var(--border);color:var(--text);border:none;padding:3px 9px;
+                   border-radius:5px;font-size:13px;cursor:pointer;font-family:inherit">🌙</button>
     <select id="file-select"></select>
     <span id="row-count" style="font-family:monospace"></span>
   </div>
@@ -208,6 +229,35 @@
 </div>
 
 <script>
+
+// ─── Thème clair / sombre ─────────────────────────────────────────────────────
+// Le DOM suit les variables CSS automatiquement ; le canvas, lui, lit ces mêmes
+// variables dans l'objet TH (rafraîchi à chaque bascule) puis on re-rend.
+let TH = {};
+function readTheme() {
+  const s = getComputedStyle(document.documentElement);
+  const g = k => s.getPropertyValue(k).trim();
+  TH = { grid:g('--grid'), axis:g('--axis'), muted:g('--muted'), text:g('--text'),
+         ring:g('--ring'), ringHalo:g('--ring-halo'), nodeOff:g('--node-off'),
+         skeleton:g('--skeleton'), accent:g('--accent') };
+}
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  try { localStorage.setItem('sbn-theme', mode); } catch(_){}
+  readTheme();
+  const b = document.getElementById('theme-btn');
+  if (b) b.textContent = mode === 'light' ? '☀️' : '🌙';
+  if (typeof scatterCache !== 'undefined' && scatterCache) {
+    _renderScatter();
+    drawSizeLegend(scatterCache.minR, scatterCache.maxR, scatterCache.maxCount);
+    // redessine le panneau de détail / dynamique courant s'il est affiché
+    if (typeof selectedPt !== 'undefined' && selectedPt) renderSelectedDyn();
+    else if (typeof hoveredPt !== 'undefined' && hoveredPt && detailPanelVisible) updateDetailPanel(hoveredPt);
+  }
+}
+function toggleTheme() {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+}
 
 // ─── State ───────────────────────────────────────────────────────────────────
 let files = [];
@@ -421,7 +471,12 @@ async function parseCSVStream(file, decomp_vec = [], onProgress) {
   const fdataRows = [], wdataRows = [];
   const fdataDedup = new Map(), wdataDedup = new Map();
 
-  // Append a row's kept columns into per-column accumulators as numbers (not string objects)
+  // Append a row's kept columns into per-column accumulators.
+  // Numeric columns grow a Float32Array directly (capacity doubling) instead of a
+  // number[] — that avoids holding every value as an 8 B JS double AND the extra
+  // Float32Array.from() conversion spike at the end (the previous approach roughly
+  // doubled peak memory, which could OOM mid-load on large files and leave the UI
+  // stuck at "100% reading"). String columns keep a plain array.
   function pushRow(fields) {
     if (!colData) {
       // Classify each kept column numeric/string from the first data row
@@ -429,11 +484,17 @@ async function parseCSVStream(file, decomp_vec = [], onProgress) {
         const v = fields[i];
         return v !== '' && v != null && Number.isFinite(parseFloat(v));
       });
-      colData = keptIndices.map(() => []);
+      colData = keptIndices.map((_, j) => numericCols[j] ? { buf: new Float32Array(4096), len: 0 } : []);
     }
     for (let j = 0; j < keptIndices.length; j++) {
       const v = fields[keptIndices[j]] ?? '';
-      colData[j].push(numericCols[j] ? parseFloat(v) : v);
+      if (numericCols[j]) {
+        const c = colData[j];
+        if (c.len === c.buf.length) { const nb = new Float32Array(c.buf.length * 2); nb.set(c.buf); c.buf = nb; }
+        c.buf[c.len++] = parseFloat(v);
+      } else {
+        colData[j].push(v);
+      }
     }
   }
 
@@ -497,18 +558,27 @@ async function parseCSVStream(file, decomp_vec = [], onProgress) {
   }
   const wN = wIndices.length ? Math.round(Math.sqrt(wIndices.length)) : 0;
 
-  // Finalise columns: numeric → Float32Array (4 B/cell), freeing the transient number[] as we go
-  const nRows = (colData && colData.length) ? colData[0].length : 0;
+  // Finalise columns: numeric buffers are right-sized (slice frees the spare capacity),
+  // string columns pass through. Each source slot is nulled as we go to free memory.
+  const nRows = (colData && colData.length)
+    ? (numericCols[0] ? colData[0].len : colData[0].length) : 0;
   const cols = {};
   if (colData) {
     for (let j = 0; j < colNames.length; j++) {
-      cols[colNames[j]] = numericCols[j] ? Float32Array.from(colData[j]) : colData[j];
+      if (numericCols[j]) {
+        const c = colData[j];
+        cols[colNames[j]] = c.len === c.buf.length ? c.buf : c.buf.slice(0, c.len);
+      } else {
+        cols[colNames[j]] = colData[j];
+      }
       colData[j] = null;
     }
   }
   const vKeys = (colNames || []).filter(k => /^v_[0-9]+$/.test(k))
     .sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
-  return { nRows, cols, colNames: colNames || [], vKeys, fdataRows, wdataRows, wN };
+  // nDataRows = lignes de données bien formées vues (≠ nRows, qui vaut 0 s'il n'y a
+  // aucune colonne gardée). Permet de distinguer "fichier vide" de "pas d'axe à tracer".
+  return { nRows, nDataRows: fdataRows.length, cols, colNames: colNames || [], vKeys, fdataRows, wdataRows, wN };
 }
 
 document.getElementById('file-input').addEventListener('change', async e => {
@@ -523,11 +593,26 @@ document.getElementById('file-input').addEventListener('change', async e => {
       const { dim, vec } = parseName(file.name.replace('.csv.gz','').replace('.csv',''));
       const parsed = await parseCSVStream(file, vec,
         frac => setLoadProgress(`${tag}Reading ${file.name}`, frac));
-      if (!parsed.nRows) { loaded++; continue; }
+      // Validation : un scatter a besoin d'au moins une colonne de statistique
+      // (= colonne gardée hors v_*) pour les axes X/Y. Les fichiers ne contenant
+      // que f_*/w_* (ex. 2d_<0,2,0>_output.csv) sont inexploitables -> message clair
+      // au lieu d'un skip silencieux.
+      const statCols = (parsed.colNames || []).filter(k => !/^v_\d+$/.test(k));
+      if (!parsed.nDataRows) throw new Error('fichier vide ou aucune ligne de données lisible');
+      if (statCols.length < 1) throw new Error(
+        'aucune colonne de statistique à tracer — le fichier ne contient que des colonnes '
+        + 'f_*/w_*. Le scatter a besoin de colonnes numériques (GenotypeCount, Robustness_mean, '
+        + 'CycleLenMSQ, …) pour les axes X/Y.');
       files.push({ name: file.name, ...parsed, decomp_vec: vec });
       files.sort((a,b) => a.name.localeCompare(b.name));
     } catch(err) {
+      // Surface the failure instead of leaving the indicator stuck at "100% reading".
+      // (Most often an out-of-memory during a very large parse.)
       console.error('Error loading', file.name, err);
+      const msg = (err && err.message) || String(err);
+      document.getElementById('loading-indicator').innerHTML =
+        `<span style="color:#f87171">⚠ ${file.name} : ${msg}</span>`;
+      document.getElementById('row-count').textContent = 'load failed';
     }
     loaded++;
   }
@@ -618,7 +703,7 @@ function drawSizeLegend(minR, maxR, maxCount) {
     ctx.strokeStyle = 'rgba(148,163,184,0.9)';
     ctx.lineWidth   = 0.8;
     ctx.fill(); ctx.stroke();
-    ctx.fillStyle    = '#94a3b8';
+    ctx.fillStyle    = TH.axis;
     ctx.font         = '9px JetBrains Mono,monospace';
     ctx.textAlign    = 'left';
     ctx.textBaseline = 'middle';
@@ -950,7 +1035,7 @@ function drawDynamics(canvas, T, n, decomp) {
   const N=1<<n, nr=Math.max(3,Math.min(8,scale*0.13));
   const groupOf=s=>decomp?decomp.find(g=>g.states.includes(s)):null;
   // Hypercube skeleton
-  ctx.strokeStyle='rgba(100,116,139,0.22)'; ctx.lineWidth=1;
+  ctx.strokeStyle=TH.skeleton; ctx.lineWidth=1;
   for (const [a,b] of hcEdges(n)){ctx.beginPath();ctx.moveTo(pos[a][0],pos[a][1]);ctx.lineTo(pos[b][0],pos[b][1]);ctx.stroke();}
   // Decomp sub-face outlines
   if (decomp){
@@ -969,7 +1054,7 @@ function drawDynamics(canvas, T, n, decomp) {
   for (let s=0;s<N;s++){
     const t=T[s]; if(t===s)continue;
     const[sx,sy]=pos[s],[tx,ty]=pos[t],dx=tx-sx,dy=ty-sy,dist=Math.hypot(dx,dy); if(dist<1)continue;
-    const grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):'#4f8ef7';
+    const grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):TH.accent;
     ctx.strokeStyle=col; ctx.fillStyle=col;
     const ux=dx/dist,uy=dy/dist,nv=-uy,nvy=ux,curve=dist*0.18;
     const x1=sx+ux*nr,y1=sy+uy*nr,x2=tx-ux*nr,y2=ty-uy*nr;
@@ -980,9 +1065,9 @@ function drawDynamics(canvas, T, n, decomp) {
   }
   // Nodes back-to-front
   for (const s of pos.map((_,i)=>i).sort((a,b)=>pos[a][2]-pos[b][2])){
-    const[px,py]=pos[s],att=inCycle[s],grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):'#4f8ef7';
+    const[px,py]=pos[s],att=inCycle[s],grp=groupOf(s),col=grp?dynGroupColor(parseInt(grp.groupKey)):TH.accent;
     ctx.save(); if(att){ctx.shadowColor=col;ctx.shadowBlur=8;}
-    ctx.beginPath();ctx.arc(px,py,nr,0,Math.PI*2);ctx.fillStyle=att?col:'#1e2535';ctx.fill();
+    ctx.beginPath();ctx.arc(px,py,nr,0,Math.PI*2);ctx.fillStyle=att?col:TH.nodeOff;ctx.fill();
     ctx.strokeStyle=att?col:hexA(col,0.7);ctx.lineWidth=att?2:1.3;ctx.stroke();ctx.restore();
     if (T[s]===s){
       const ra=Math.atan2(py-cy,px-cx)||-Math.PI/2,da=0.55,ld=nr*1.25;
@@ -1097,7 +1182,7 @@ function drawWeightMatrix(canvas, wdata, n) {
   // axis labels (1-based, matching metagraphe convention)
   const lfs = Math.max(7, Math.min(10, Math.floor(cW * 0.38)));
   ctx.font = `${lfs}px JetBrains Mono, monospace`;
-  ctx.fillStyle = '#64748b';
+  ctx.fillStyle = TH.muted;
   for (let k = 0; k < n; k++) {
     ctx.fillText(String(k + 1), pad + (k + 0.5) * cW, H - pad * 0.38);
     ctx.fillText(String(k + 1), pad * 0.42, (k + 0.5) * cH);
@@ -1401,14 +1486,14 @@ function _renderScatter() {
   const nTicks = 5;
   for (let i=0; i<=nTicks; i++) {
     const vx=xMin+i/nTicks*xRange, vy=yMin+i/nTicks*yRange;
-    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+    ctx.strokeStyle=TH.grid; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(toX(vx),pad); ctx.lineTo(toX(vx),H-pad); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(pad,toY(vy)); ctx.lineTo(W-pad,toY(vy)); ctx.stroke();
-    ctx.fillStyle='#64748b'; ctx.font='10px JetBrains Mono,monospace';
+    ctx.fillStyle=TH.muted; ctx.font='10px JetBrains Mono,monospace';
     ctx.textAlign='center'; ctx.fillText(fmtTick(vx,xRange),toX(vx),H-pad+14);
     ctx.textAlign='right';  ctx.fillText(fmtTick(vy,yRange),pad-6,toY(vy)+4);
   }
-  ctx.fillStyle='#94a3b8'; ctx.font='12px DM Sans,sans-serif';
+  ctx.fillStyle=TH.axis; ctx.font='12px DM Sans,sans-serif';
   ctx.textAlign='center'; ctx.fillText(xKey,W/2,H-4);
   ctx.save(); ctx.translate(14,H/2); ctx.rotate(-Math.PI/2);
   ctx.fillText(yKey,0,0); ctx.restore();
@@ -1495,9 +1580,9 @@ function _renderScatter() {
     const cx = toX(selectedPt.x), cy = toY(selectedPt.y);
     const rr = (selectedPt.radius || 5) + 4;
     ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.strokeStyle = TH.ringHalo; ctx.lineWidth = 3.5; ctx.stroke();
     ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI*2);
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.strokeStyle = TH.ring; ctx.lineWidth = 1.5; ctx.stroke();
   }
 
   ctx.restore(); // end clip
@@ -1656,6 +1741,10 @@ function resetView() {
     document.removeEventListener('mouseup', onUp);
   }
 })();
+
+// Applique le thème enregistré (ou sombre par défaut) au chargement, une fois
+// tout l'état déclaré (évite la TDZ sur scatterCache).
+applyTheme((() => { try { return localStorage.getItem('sbn-theme'); } catch(_){ return null; } })() || 'dark');
 </script>
 </body>
 </html>

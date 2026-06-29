@@ -103,7 +103,7 @@ Answer Set Programming, calcul parallèle.
 
 \subsection{Motivations}
 
-Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (SBN et variations) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
+Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (celui des Signed Boolean Network SBN) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
 
 La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent potentiellement à d'autres systèmes (plus petits), on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
 
@@ -136,15 +136,15 @@ L'apport principal de ce travail est la recherche de la pluripotence dans les SB
 
 Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques, mais aussi pour vérifier la justesse de nos programmes. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
 
-- sbn\_viz(7).html : réseaux et graphes de transitions détaillés.
+- sbn\_viz(7).html : structures et dynamiques détaillés.
 
-- sbn\_scatter(5).html : nuages des réseaux placés selon différentes métriques.
+- sbn\_scatter(5).html : nuages des dynamiques placées selon différentes métriques.
 
-- metagraphe.html : nuages des réseaux placés les uns par rapport aux autres selon des règles de mutations. 
+- metagraphe.html : nuages des dynamiques placées les unes par rapport aux autres selon des règles de mutations. 
 
 [Cf. partie technique pour un usage détaillé] 
 
-Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une longue réflexion sur les SBN ???
+Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une partie de la longue réflexion sur les SBN ?
 
 
 % ============================================================
@@ -160,32 +160,57 @@ Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une l
 
 [Cf. rapport Ailing]
 
-+ Table des échelles (Dimension, SBF, produit de SBF, SBN, PSBN, Poids, vecteurs, arbres)
++ Table des échelles (Dimension, SBF, produit de SBF, SBN, PSBN, Poids, borne des Poids, vecteurs, arbres)
 
-\subsection{Distances, règles de mutation}
++ Programme linéaire validant la borne des poids.
+
+\subsection{Métagraphes dynamiques et structurels, règles de mutation}
 
 Une approche proposée par Rémi (et poursuivie par Rémy et Ailing) a été de construire des méta-graphes dans lesquels deux dynamiques sont reliées si elles sont voisines en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
 
-Il a été essayé de reproduire les mêmes méta-graphes en réutilisant les définitions de distances, en particulier la distance DA agrégeant les changements des cycles limites. Mais comme le calcul exhaustif de ces distances tel quels ne pouvait être mis à l'échelle pour la dimension 3 qu'aux prix d'efforts conséquents (de l'ordre de 1e10 paires), et est difficilement concevable en dimension 4 (de l'ordre de 4e20 paires). Il est sans doute possible de trouver des manières de contourner cette difficulté qui n'est que technique, et de construire des méta-graphes similaires sémantiquement. En tout cas cette piste (qui existe) n'a pas été exploré plus avant ici.
+[figure métagraphe issue du rapport d'Ailing] 
 
-Cependant l'idée de construire des méta-graphes Force-directed n'a pas été totalement mise de côté, nous nous sommes juste plus modestement limités à des méta-graphes structurels (ou les dynamiques sont liées si elles possèdent des structures voisines). Cela nous permet notamment de faire un lien direct avec les simulations de Corentin Lacaze, car les règles de mutations qui dirige l'évolution des agents dans ce contexte sont des relations de voisinages entre structures. L'exploration contrainte par l'évolution des agents se traduit alors par un chemin (avec de potentiels embranchements, donc un arbre) dans le méta-graphe, et cela permet de poser des questions du type "Est-ce que certaines propriétés des dynamiques favorise le passage des chemins", "Certaines zones sont-elles plus viables que d'autres ? C'est-à-dire est-ce que les chemins préfèrent certaines zones ?" "Pour arriver à un phénotype cible, est-ce que plusieurs chemins sont possibles, si oui en quoi sont-ils différents ?" . 
+Il a été essayé de reproduire les mêmes méta-graphes en réutilisant les définitions de distances, en particulier la distance DA agrégeant les changements des cycles limites. Mais comme le calcul exhaustif de ces distances tel quels ne pouvait être mis à l'échelle pour la dimension 3 qu'aux prix d'efforts conséquents (de l'ordre de 1e10 paires), et est difficilement concevable en dimension 4 (de l'ordre de 4e20 paires), il n'a pas été poursuivi. Il est sans doute possible de trouver des manières de contourner cette difficulté qui n'est que technique, et de construire des méta-graphes similaires sémantiquement. En tout cas cette piste (qui existe) n'a pas été exploré plus avant ici.
 
-La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toute les dynamiques) sur un seul arc du réseau. [Insérer équation "Mathématiques"]
-{Pour faciliter la réutilisation du code, j'aimerais faire en sorte qu'un utilisateur extérieur puisse facilement modifier ces règles de mutations à l'envie, et régénérer les csv.}
+Cependant l'idée de construire des méta-graphes Force-directed n'a pas été totalement mise de côté, nous nous sommes juste plus modestement limités à des méta-graphes structurels (ou les dynamiques sont liées si elles possèdent des structures voisines). Cela nous permet notamment de faire un lien direct avec les simulations de Corentin Lacaze, car les règles de mutations qui dirige l'évolution des agents dans ce contexte sont des relations de voisinages entre structures. L'exploration contrainte par l'évolution des agents se traduit alors par un chemin (avec de potentiels embranchements, donc un arbre) dans le méta-graphe, et cela permet de poser des questions du type "Est-ce que certaines propriétés des dynamiques favorise le passage des chemins", "Certaines zones sont-elles plus viables que d'autres ? C'est-à-dire est-ce que les chemins préfèrent certaines zones ?" "Pour arriver à un phénotype cible, est-ce que plusieurs chemins sont possibles, si oui en quoi sont-ils différents ?" .
+
+[Figure métagraphe issu du html]
+
+La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toute les dynamiques) sur un seul arc du réseau. 
+
+[Insérer équation "Mathématiques" définissant une arête du métagraphe]
+
+[Cf partie utilisation de ma Pipeline pour modifier ces règles de mutations]
 
 \subsection{Quel paysage des réseaux explore-t-on ?}
 
-- Les différents aspects de la pluripotence : [À illustrer et formaliser à chaque fois]
+Les différents aspects de la pluripotence : \\
 
   - Noeuds de contrôle -> vecteurs de décomposition complet -> fichiers undercontrol.
 
+  [Formalisation Cf. rapport Danwen]
+  
+  [Figure issue de \texttt{sbn\_viz} montrant une dynamique décomposable dans ce sens là.]
+
   - Formalisme des sous réseaux -> fichiers PSBN/PTBN.
 
-  - Contrainte suplémentaire -> fichiers PSBNI (pour inhibiteurs).
+  [Formalisation : contraintes d'existence de réseaux simulés]
+  
+  [Figure issue de \texttt{sbn\_viz} montrant une dynamique non décomposable en SBN mais décomposable en TBN]
+
+  - Contrainte suplémentaire -> fichiers PSBNI (I pour inhibiteurs).
+
+  [Formalisation : restriction du domaine des poids]
+
+  [Figure issue de sbn\_viz montrant un PSBNI]
 
   - La partialité -> vecteurs de décomposition partiel -> non explorée.
 
+  [Figure issue de sbn\_viz montrant les supports stables et un vecteur de décomposition partiel]
+
   - Noeuds contrôlés -> offuscation -> non explorée.
+
+  [Figure montrant une structure organisée en 2 noeud PC et 1 noeud PO, dynamique associée]
 
 
 % ============================================================
@@ -200,38 +225,65 @@ Comme souvent dans l'écriture de code, les enjeux des phases de développement 
 L'objectif originel du stage était de prendre en main le language Answer Set Programming (ASP) pour parvenir à comprendre et améliorer les programmes existant [Cf. Programmes Laurent dans le git].
 
 Explication/Promo ASP
-- Clingo
-- Clingcon 
-- ApproxAsp
 
-Explication du programme de Laurent [Cf. un papier pas vraiment fini] 
+- Clingo [Cf. potassco etc]
 
-- travail sur la dynamique
+- Clingcon [Cf. lien du git]
 
-- Visualisation sbn\_viz pour apprécier. [Cf. fichier du git]
+- ApproxAsp [Cf. lien du git] \\
+
+Explication du programme de Laurent  
+
+- travail sur la dynamique [Cf. le papier pas vraiment fini de Laurent]
+
+- Systématisation et export en csv via le script python \texttt{export\_decomposition.py}. Visualisation via \texttt{sbn\_viz} pour mieux apprécier. 
 
 - Génération des réseaux pluripotents à 1 noeud de contrôle, de sous-réseau SBN, d'arbre de décomposition complet fixé, avec hyper-faces distinctes. Calcul lourd et peu scalable (utilisable en temps et ressources raisonnables que jusqu'en dimension 3).
+
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier des 189 $\langle 0,2,0,0\rangle$] 
+
+[Lien vers le fichier utilisable] \\
 
 Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille de réseaux en ne travaillant que sur les poids, c'est dans cette direction que nous sommes partis, aboutissant au fichiers :
 
 - \texttt{PTBN\_undercontrol.lp} permettant de générer des réseaux pluripotents à 1 nœud de contrôle, et d'arbre de décomposition fixé. (Et de sous-réseaux quelconques, donc TBN à cause du contrôle). [explication du fonctionnement précis du code ?]
 
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ selectionnant un non PSBN] 
+
+[Lien vers un fichier utilisable]
+
 - \texttt{PSBN\_undercontrol.lp} extension du fichier précédent permettant de préciser que les sous-réseaux sont bien des SBN.
+
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$] 
+
+[Lien vers un fichier utilisable]
 
 La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [préciser] au regard des rendus que l'on voulait afficher par la suite et a donc été laissée de côté. (\texttt{PSBN\_distinct\_faces\_HS.lp} a quand même été développé dans l'idée de confirmer que nos résultats correspondaient à ceux des programmes initiaux, ce qui a été le cas pour certaines configurations : les 189 $\langle 0,2,0,0\rangle$ en $d=3$ notamment).
 
 
-- \texttt{PSBN\_undercontrol\_undecomposable\_beyond.lp} et \texttt{PSBN\_undercontrol\_undecomposablePBN\_beyond.lp} [Question de décomposition fines]
-[Cf. la table des échelles pour pourquoi ce n'est pas si important]
+- \texttt{PSBN\_undercontrol\_undecomposable\_beyond.lp} et \texttt{PSBN\_undercontrol\_undecomposablePBN\_beyond.lp} Question de décomposition fines
+
+[donner une table des échelles de décomposition pour pourquoi ce n'est pas si important]
+
+[Figure illustrant un PSBN trop décomposable sur $\langle 0,2,0,0\rangle$ qu'on voudrait ne pas énumérer]
+
+[Lien vers un fichier utilisable]
 
 - \texttt{PTBN\_undercontrol\_treeinsolver.lp} prenant en compte n'importe quel arbre de décomposition à vecteur de décomposition fixé. Prise en compte des permutations sur les noeuds.
 
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ montrant une orientation et arbre différent de ceux vu jusque là (sur un décomposable uniquement TBN)]
+
+[Lien vers un fichier utilisable]
+
 - \texttt{PSBN\_undercontrol\_treeinsolver.lp} de la même manière qu'avec les fichiers \texttt{undercontrol} simple, extension du fichier précédent permettant de préciser que les sous-réseaux sont bien des SBN.
+
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ cette fois ci sur un décomposable SBN]
+
+[Lien vers un fichier utilisable]
 
 \subsection{Efficacité}
 
-- Base ASP : contraintes sur les poids plus efficaces que les contraintes sur la structure. Parallélisation possible directement en ASP, mais généralement peu efficace 
-[donner des chiffres].
+- Base ASP : contraintes sur les poids plus efficaces que les contraintes sur la structure. Parallélisation possible directement en ASP, mais généralement peu efficace [donner des chiffres].
 
 -> Répertoire JPPipeline du git. (Java)
 
@@ -239,9 +291,13 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
     - Le fonctionnement général.
 
-    - Ma pipeline. [Donner une image globale avec des instances à chaque fois].
+    - Ma pipeline. 
+    
+    [Donner une image globale avec des instances à chaque fois].
 
     - L'énumération avec garde-fou.
+
+    [Zoom sur la partie énumération]
 
     - utilisation
 
@@ -268,13 +324,13 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
 \subsection{Usage des grands modèles de langage en recherche}
 
-- Possibilités permises
+- Possibilités permises, rapidité de développement.
 
-- Usage différencié selon les parties du projet
+- Usage différencié selon les parties du projet.
 
 - Claude code en version pro. Utilisation naïve.
 
-\subsection{Exploration Monte-Carlo : MCSBN}
+\subsection{Exploration Randomisée : MCSBN}
 
 -> répertoire MCSBN du git. (python et C)
 
@@ -298,113 +354,22 @@ Utilisation de la pipeline :
 
 - Avec VScode utiliser le launch.json ou alors par le terminal [Insérer instructions]
 - changement d'énumérateur asp : implémenter dans JPPipeline/src/asp, changer l'argument dans le json, et garder les mêmes noms de prédicat (ou inspecter les regexp mais ce n'est pas recommandé)
+
 - changement de statistiques 
 
 Utilisation de MCSBN :
 
-% Doc par LLM, à revoir
-
-% % \medskip
-% % La génération d'un \emph{paysage hybride} (cœur des dynamiques les plus
-% % décomposées, puis voisinage connexe) se fait en deux temps : génération du CSV,
-% % puis calcul d'un \emph{layout} pour la visualisation. Tous les chemins sont
-% % relatifs au répertoire \texttt{MCSBN/}.
-
-% % \begin{verbatim}
-% % # 1. générer le paysage (cœur exhaustif + frontière par marche)
-% % python src/python/core_then_walk.py -d 4 -M 20000 -n 80000 \
-% %        --min-leaves 8 --fanout 8 -o paysage.csv
-
-% % # 2. ajouter le layout DRGraph (colonnes metagraph_x, metagraph_y)
-% % bin/metagraph_layout paysage.csv -o paysage_meta.csv
-
-% % # 3. charger paysage_meta.csv dans metagraphe.html
-% % \end{verbatim}
-
-% % \paragraph{Génération du paysage (\texttt{core\_then\_walk.py}).}
-% % \begin{description}
-% %   \item[\texttt{-d}] dimension du réseau (nombre de nœuds). Détermine la taille
-% %     de l'espace (370 SBF distinctes en $d{=}4$, 11\,292 en $d{=}5$\ldots).
-% %   \item[\texttt{-M}] taille du \emph{cœur} (phase 1) : on conserve les $M$
-% %     dynamiques les plus décomposées (plus grand \texttt{decompSum}), couvertes
-% %     exhaustivement.
-% %   \item[\texttt{-n}] nombre total de dynamiques du paysage final ; la phase 2
-% %     explore le voisinage connexe du cœur jusqu'à atteindre $n$ ($n-M$ nœuds de
-% %     voisinage).
-% %   \item[\texttt{-o}] fichier de sortie (\texttt{-} pour la sortie standard ;
-% %     suffixe \texttt{.gz} pour une compression à la volée).
-% %   \item[\texttt{-{}-min-leaves}] profondeur minimale des arbres de contrôle
-% %     énumérés en phase 1 (un arbre à $L$ feuilles $=$ décomposition en $L$
-% %     morceaux). Plus élevé $\Rightarrow$ cœur plus petit et plus profond ; plus
-% %     bas $\Rightarrow$ dynamiques moins décomposées, plus nombreuses (plus lent).
-% %     Défaut~: $2$ si $d\le 3$, sinon $8$.
-% %   \item[\texttt{-{}-max-free}] nombre maximal de nœuds \emph{libres} par arbre
-% %     (borne le coût). \texttt{0} (défaut en $d\ge 4$) $=$ arbres entièrement
-% %     contrôlés, ce qui est \emph{complet pour le cœur profond} et rapide ;
-% %     l'augmenter inclut des classes moins décomposées. Illimité en $d\le 3$.
-% %   \item[\texttt{-{}-fanout}] nombre de voisins nouveaux pris par nœud à chaque
-% %     couche de l'expansion de frontière (phase 2). Grand ($\ge 8$) $=$ pourtour
-% %     épais collé au cœur ; petit ($1$--$2$) $=$ couches fines, exploration plus
-% %     lointaine. Défaut $4$.
-% %   \item[\texttt{-{}-core-bin}] backend de la phase 1 : \texttt{auto} (défaut)
-% %     utilise le binaire C \texttt{bin/mcsbn} s'il existe ($\sim 45\times$ plus
-% %     rapide), sinon l'énumérateur Python ; \texttt{none} force Python.
-% %   \item[\texttt{-{}-seed}] graine du générateur aléatoire (reproductibilité de
-% %     la phase 2).
-% %   \item[\texttt{-{}-measure}] loi d'échantillonnage : \texttt{variety} (uniforme
-% %     sur les dynamiques distinctes) ou \texttt{genotype} (pondérée par le nombre
-% %     de matrices de poids réalisant chaque dynamique).
-% %   \item[\texttt{-{}-no-weights}] omet les colonnes \texttt{f\_*} et
-% %     \texttt{w\_*} (CSV plus compact, mais incompatible avec le métagraphe qui a
-% %     besoin des \texttt{f\_*}).
-% % \end{description}
-
-% % La phase 1 peut aussi être lancée seule par le binaire C, $\sim 45\times$ plus
-% % rapide (réutilisé automatiquement par \texttt{core\_then\_walk.py}) :
-% % \begin{verbatim}
-% % bin/mcsbn -d 4 --core-trees --min-leaves 8 -M 20000 -o coeur.csv
-% % \end{verbatim}
-
-% % \paragraph{Layout DRGraph (\texttt{metagraph\_layout}).}
-% % Construit le métagraphe (nœuds $=$ dynamiques, arêtes $=$ mutations voisines),
-% % appelle DRGraph et ajoute les colonnes \texttt{metagraph\_x}, \texttt{metagraph\_y}
-% % (positions 2D) afin que \texttt{metagraphe.html} affiche le paysage sans
-% % recalculer de layout. Le binaire se construit une fois par \texttt{make drgraph}
-% % (qui détecte \textsc{gsl}/\textsc{boost} dans l'environnement conda).
-% % \begin{description}
-% %   \item[\textit{(positionnel)}] le CSV d'entrée (ou \texttt{.csv.gz}) ; doit
-% %     contenir les colonnes \texttt{f\_*}.
-% %   \item[\texttt{-o}] sortie annotée (par défaut un nom dérivé de l'entrée).
-% %   \item[\texttt{-{}-stats-only}] n'écrit rien : rapporte seulement la structure
-% %     en composantes connexes (utile pour vérifier que le métagraphe percole avant
-% %     de lancer le layout).
-% %   \item[\texttt{-{}-vis}] chemin du binaire DRGraph \texttt{Vis} (défaut~:
-% %     \texttt{tools/DRGraph/Vis} ou la variable \texttt{\$MCSBN\_VIS}).
-% %   \item[\texttt{-{}-samples}] nombre d'itérations d'optimisation DRGraph (le
-% %     temps y est proportionnel ; défaut $400$, $150$--$200$ suffisent souvent).
-% %   \item[\texttt{-{}-neg}] nombre de \emph{negative samples} par pas de gradient
-% %     (force de répulsion approximée ; défaut $5$).
-% %   \item[\texttt{-{}-gamma}] poids de la répulsion : grand $\Rightarrow$ nœuds
-% %     plus écartés, petit $\Rightarrow$ amas plus serrés (défaut $0{,}1$).
-% %   \item[\texttt{-{}-A}, \texttt{-{}-B}] paramètres $a$ et $b$ de la fonction de
-% %     proximité ; $b$ contrôle la forme ($b{=}1$ amas locaux, $b{=}2$ équilibré
-% %     (défaut), $b{=}3$ longueurs d'arêtes uniformes).
-% %   \item[\texttt{-v}] affiche la sortie de DRGraph (progression, temps interne).
-% % \end{description}
-% % Une variante Python équivalente existe (\texttt{add\_metagraph\_layout.py},
-% % mêmes options DRGraph) ; le binaire C est préférable sur les gros paysages.
+% Doc par LLM ?
 
 \subsection{Guide d'utilisation des HTML}
 
-% Pourquoi une approche naïve ne passe pas à l'échelle
-% (explosion combinatoire du nombre de SBN avec la dimension)
-% Choix des dimensions explorées, paramètres epsilon et delta
-% Table des échelles : dimensions accessibles exhaustivement vs par échantillonnage
 
 
 \subsection{Observations et limites}
 
-Dans un premier temps, il est rassurant d'observer que nos graphiques confirment les résultats de [Wagner]. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. [Insérer graphique scatter EP/RP en plusieurs dimensions + régression linéaire potentielle]
+Dans un premier temps, il est rassurant d'observer que nos graphiques confirment les résultats de [Wagner]. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. 
+
+[Figure graphique scatter EP/RP en plusieurs dimensions (+ p-valeur)]
 
 
 
@@ -428,7 +393,33 @@ Ces conclusions résument les observations sur les visualisations générées, t
 
 L'objectif principal était de montrer ce que le formalisme des SBN permettait. Et à cet égard le présent travail semble nous indiquer qu'il parvient assez bien à donner des interprétations claires de concepts généraux (comme la pluripotence), et qu'il est suffisamment pratique et riche pour que l'exploration de ses possibilités soit faisable et porteuse de sens.
 
-Inachevé
+\vspace{5pt}
+Travaux inachevés :
+
+- Affichage d'arbre généalogique issu des simulations.
+
+- Minimisation de poids.
+
+- PluripotentSignedBooleanNetworkInhibiteur.
+
+- Régression linéaire pour confirmer Wagner.
+
+- Exploration dirigée.
+
+- Meilleure FrontEnd (toujours améliorable).
+
+\vspace{5pt}
+Idée futures : 
+
+- Gestion des arêtes non existantes (et pas juste de poids nuls)
+
+- Comparaison des dimensions entre elles.
+
+- Explorer d'autres aspects de la pluripotence : noeuds contrôlés, offuscation et vecteurs de décomposition partiels.
+
+- Exploitation plus aboutie des résultats.
+
+
 
 % ============================================================
 \newpage
