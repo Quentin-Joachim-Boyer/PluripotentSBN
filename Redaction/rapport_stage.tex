@@ -166,7 +166,7 @@ Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une p
 
 \subsection{Métagraphes dynamiques et structurels, règles de mutation}
 
-Une approche proposée par Rémi (et poursuivie par Rémy et Ailing) a été de construire des méta-graphes dans lesquels deux dynamiques sont reliées si elles sont voisines en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
+Une approche proposée dans la thèse de Rémi (et poursuivie par Rémy et Ailing) a été de construire des méta-graphes dans lesquels deux dynamiques sont reliées si elles sont voisines en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
 
 [figure métagraphe issue du rapport d'Ailing] 
 
@@ -176,7 +176,7 @@ Cependant l'idée de construire des méta-graphes Force-directed n'a pas été t
 
 [Figure métagraphe issu du html]
 
-La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toute les dynamiques) sur un seul arc du réseau. 
+La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toutes les dynamiques) sur un seul arc du réseau. Il serait intéressant de proposer d'autres règles de mutation pour observer les différences de résultats selon le prisme qu'elles constituent, et notamment des règles pouvant faire varier la dimension des réseaux : l'ajout ou la suppression de noeuds permettrait de prendre du recul par rapport à la dimension (qui reste un carcan solide dans cette étude). 
 
 [Insérer équation "Mathématiques" définissant une arête du métagraphe]
 
@@ -214,10 +214,10 @@ Les différents aspects de la pluripotence : \\
 
 
 % ============================================================
-\section{Développement : Méthodes et outils}
+\section{Méthodes et outils}
 % ============================================================
 
-Comme souvent dans l'écriture de code, les enjeux des phases de développement ont toujours été dans un premier temps la correction (l'exactitude) puis la terminaison (idéalement rapide). Mais comme la rectitude nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'observation se sont succédé en cycles. Les sections suivantes ne reflètent donc pas fidèlement la chronologie du développement.
+Comme souvent dans l'écriture de code, les enjeux des phases de développement ont toujours été dans un premier temps d'arriver au résultat attendu (la correction) puis d'optimiser pour passer à l'échelle (une terminaison, idéalement rapide). Mais comme la correction dans notre cas nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'évaluation des rendus se sont succédé en cycles. Les sections suivantes ne reflètent donc pas nécessairement fidèlement la chronologie du développement.
 
 
 \subsection{Rectitude}
