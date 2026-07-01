@@ -114,7 +114,7 @@ Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), for
     \begin{subfigure}{0.48\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figures/structure_3d_PSBN_undercontrol_treeinsolver_18036.png}
-        \caption{Une structure}
+        \caption{Une structure quelconque}
         \label{fig:structure-3d}
     \end{subfigure}
     \hfill
@@ -131,10 +131,31 @@ Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), for
 Le concept de pluripotence est volontairement suffisamment général et flou pour pouvoir capter les différentes interprétations que le vivant peut en faire. Elle pourrait ainsi prendre sens dans le formalisme des SBN comme la présence de sous-dynamiques stables correspondant à des SBN sur des supports pouvant être encodé par une dimension inférieure. Mais ce n'est pas la seule manière, on pourrait aussi (et c'est plutôt ce qui est fait ici comme première approche plus simple) rechercher des sous-dynamiques disjointes sur des supports identifiés par un unique noeud (dit "de contrôle"). Le choix des mots est important et il nous appartient d'être clair sur l'aspect de la pluripotence que l'on met en évidence. [Cf. Quel paysage explore-t-on ?].
 
 
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_reseau.png}
+        \caption{Une structure pluripotente. Le noeud 3 est de contrôle.}
+        \label{fig:structure-pluripotente-3d}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_hypercube.png}
+        \caption{Sa dynamique possède des hyper-faces disjointes (marquées par différentes couleurs).}
+        \label{fig:dynamique-pluripotente-3d}
+    \end{subfigure}
+    \caption{Un réseau pluripotent et son graphe de transition.}
+    \label{fig:mon-label}
+\end{figure}
+
 
 \subsection{Positionnement dans les travaux de l'équipe}
 
-Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. En voici une liste (non exhaustive, mais rassemblant les principaux).
+Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. 
+
+En voici une liste (non exhaustive, mais rassemblant les principaux).
 
 - HDR de Nicolas Glade : la bible donnant le cadre général [Cf. tout].
 
@@ -148,7 +169,9 @@ Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus lar
 
 - Programmes de Laurent Trilling : le point de départ de ce travail, l'énumération en Answer Set Programming (ASP) des réseaux pluripotents sous nœud de contrôle via la dynamique [Cf. partie Méthodologie d'exploration].
 
-Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique du présent travail d'un côté et l'aspect expérimental des simulations de l'autre aura alimenté nos échanges qui nous auront permis l'un l'autre de nous guider mutuellement.  
+Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique du présent travail d'un côté et l'aspect expérimental des simulations de l'autre aura alimenté nos échanges qui nous auront permis l'un l'autre de nous guider mutuellement.
+
+[Image issue des simulations]
 
 
 \subsection{Contributions de ce stage}
@@ -273,6 +296,25 @@ Les différents aspects de la pluripotence : \\
   [Figure montrant une structure organisée en 2 noeud PC et 1 noeud PO, dynamique associée]
 
 
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d_PSBN_undercontrol_treeinsolver_sbn6374_reseau.png}
+        \caption{Une structure pluripotente sous réseau de contrôle de dimension 2. Ici les noeuds 1 et 3 sont de contrôle.}
+        \label{fig:structure-pluripotente-3d}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d_PSBN_undercontrol_treeinsolver_sbn6374_hypercube.png}
+        \caption{Sa dynamique possède des supports disjoints correspondant à l'extension d'une dimension de la dynamique de sa partie contrôle.}
+        \label{fig:dynamique-pluripotente-3d}
+    \end{subfigure}
+    \caption{Un réseau pluripotent sous réseau de contrôle.}
+    \label{fig:mon-label}
+\end{figure}
+
 % ============================================================
 \section{Méthodes et outils}
 % ============================================================
@@ -306,7 +348,7 @@ Explication du programme de Laurent
 
 Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille de réseaux en ne travaillant que sur les poids, c'est dans cette direction que nous sommes partis, aboutissant au fichiers :
 
-- \texttt{PTBN\_undercontrol.lp} permettant de générer des réseaux pluripotents à 1 nœud de contrôle, et d'arbre de décomposition fixé. (Et de sous-réseaux quelconques, donc TBN à cause du contrôle). [explication du fonctionnement précis du code ?]
+- \texttt{PTBN\_undercontrol.lp} permettant de générer des réseaux pluripotents à 1 nœud de contrôle, et d'arbre de décomposition fixé. (Et de sous-réseaux quelconques, donc TBN à cause du contrôle). 
 
 [Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ selectionnant un non PSBN] 
 
@@ -321,7 +363,7 @@ Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille 
 La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [préciser] au regard des rendus que l'on voulait afficher par la suite et a donc été laissée de côté. (\texttt{PSBN\_distinct\_faces\_HS.lp} a quand même été développé dans l'idée de confirmer que nos résultats correspondaient à ceux des programmes initiaux, ce qui a été le cas pour certaines configurations : les 189 $\langle 0,2,0,0\rangle$ en $d=3$ notamment).
 
 
-- \texttt{PSBN\_undercontrol\_undecomposable\_beyond.lp} et \texttt{PSBN\_undercontrol\_undecomposablePBN\_beyond.lp} Question de décomposition fines
+- \texttt{PSBN\_undercontrol\_undecomposable\_beyond.lp} et \texttt{PSBN\_undercontrol\_undecomposablePBN\_beyond.lp} Question de décomposition fines. Échecs.
 
 [donner une table des échelles de décomposition pour pourquoi ce n'est pas si important]
 
@@ -329,7 +371,7 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
 [Lien vers un fichier utilisable]
 
-- \texttt{PTBN\_undercontrol\_treeinsolver.lp} prenant en compte n'importe quel arbre de décomposition à vecteur de décomposition fixé. Prise en compte des permutations sur les noeuds.
+- \texttt{PTBN\_undercontrol\_treeinsolver.lp} prenant en compte n'importe quel arbre de décomposition à vecteur de décomposition fixé. Prise en compte des permutations sur les noeuds du réseau principal, mais sur ceux des sous-réseaux.
 
 [Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ montrant une orientation et arbre différent de ceux vu jusque là (sur un décomposable uniquement TBN)]
 
@@ -340,6 +382,14 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 [Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ cette fois ci sur un décomposable SBN]
 
 [Lien vers un fichier utilisable]
+
+- \texttt{PTBN\_undercontrol\_taggedtree.lp} prise en compte des permutations des noeuds des sous-réseaux (i.e. d'un arbre de décomposition dont les branchements sont étiquetés par le numéro du noeud de contrôle associé).
+
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,0,2,4\rangle$ montrant ]
+
+[Lien vers un fichier utilisable]
+
+[explication du fonctionnement précis du code en annexe ?]
 
 \subsection{Optimisation}
 
@@ -407,10 +457,17 @@ Un des objectifs du projet étant son utilisation par autrui, j'essaie de prése
 
 Utilisation de la pipeline :
 
-- Avec VScode utiliser le launch.json ou alors par le terminal [Insérer instructions]
-- changement d'énumérateur asp : implémenter dans JPPipeline/src/asp, changer l'argument dans le json, et garder les mêmes noms de prédicat (ou inspecter les regexp mais ce n'est pas recommandé)
+- Changer les arguments [donner pseudo doc en annexe] : avec VScode utiliser le launch.json ou alors par le terminal.
 
-- changement de statistiques 
+- Changement d'énumérateur asp : à implémenter dans \texttt{JPPipeline/src/asp} en gardant les mêmes noms de prédicat (ou inspecter les regexp mais ce n'est pas recommandé).
+
+- Changer le garde-fou hard-codé.
+
+- Changer la limite de process d'énumération en parallèle hard-codé.
+
+- Changement de statistiques : à implémenter dans le processeur \texttt{JPPipeline/src/java\_src/PSBN/Statifier.java}
+
+- Compresser les résultats via gzip (les htmls gèrent les .gz)
 
 Utilisation de MCSBN :
 
@@ -449,7 +506,7 @@ Ces conclusions résument les observations sur les visualisations générées, t
 L'objectif principal était de montrer ce que le formalisme des SBN permettait. Et à cet égard le présent travail semble nous indiquer qu'il parvient assez bien à donner des interprétations claires de concepts généraux (comme la pluripotence), et qu'il est suffisamment pratique et riche pour que l'exploration de ses possibilités soit faisable et porteuse de sens.
 
 \vspace{5pt}
-Travaux inachevés (évoqués au fil du papier, mais rassemblés ici):
+Travaux inachevés (évoqués au fil du papier, mais rassemblés ici) :
 
 - Affichage d'arbre généalogique issu des simulations.
 
@@ -459,7 +516,7 @@ Travaux inachevés (évoqués au fil du papier, mais rassemblés ici):
 
 - Régression linéaire pour confirmer Wagner.
 
-- Exploration dirigée.
+- Exploration dirigée (MCSBN).
 
 - Meilleure FrontEnd (toujours améliorable).
 
