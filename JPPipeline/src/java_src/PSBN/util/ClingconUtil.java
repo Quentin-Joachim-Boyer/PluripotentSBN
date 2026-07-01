@@ -140,6 +140,87 @@ public final class ClingconUtil {
             }
         }
 
-        return new SBNP(n, weights, TT, dv);
+        // Arbre de decomposition etiquete par les noeuds de controle, serialise
+        // depuis les atomes branch_node/4 et leaf_node/3 (cf. buildTree). Chaine
+        // vide si le programme ne les expose pas (ex. anciens .lp).
+        String tree = buildTree(atomsLine);
+
+        return new SBNP(n, weights, TT, dv, tree);
+    }
+
+    /**
+     * Reconstruit l'arbre de decomposition (etiquete par les noeuds de controle)
+     * a partir des atomes {@code branch_node(ControlN,D,Ctx,CtxOn)} et
+     * {@code leaf_node(D,Ctx,CtxOn)}, et le serialise en notation imbriquee :
+     * {@code N[demi-0,demi-1]} pour un split sur le noeud N, {@code *} pour une
+     * feuille. Ex. une epine sur 1 puis 2 : {@code 1[*,2[*,*]]}.
+     *
+     * Un noeud de l'arbre est identifie par le couple (Ctx, CtxOn) tel qu'il
+     * apparait dans les atomes ; brancher sur N depuis (Ctx,CtxOn) engendre les
+     * enfants (c(N,Ctx), CtxOn) [demi N=0] et (c(N,Ctx), c(N,CtxOn)) [demi N=1].
+     * On travaille directement sur les formes textuelles des contextes, ce qui
+     * evite d'avoir a parser leur imbrication.
+     *
+     * @return la serialisation, ou {@code ""} si aucun atome d'arbre n'est present.
+     */
+    private static String buildTree(String atomsLine) {
+        Map<String, Integer> branch = new HashMap<>(); // (Ctx  CtxOn) -> noeud de controle
+        Set<String> leaves = new HashSet<>();
+        for (String[] a : findAtoms(atomsLine, "branch_node")) {
+            if (a.length == 4) branch.put(a[2] + '' + a[3], Integer.parseInt(a[0].trim()));
+        }
+        for (String[] a : findAtoms(atomsLine, "leaf_node")) {
+            if (a.length == 3) leaves.add(a[1] + '' + a[2]);
+        }
+        if (branch.isEmpty() && leaves.isEmpty()) return "";
+        return serializeTree("nil", "nil", branch, leaves);
+    }
+
+    private static String serializeTree(String ctx, String ctxOn,
+                                        Map<String, Integer> branch, Set<String> leaves) {
+        Integer cn = branch.get(ctx + '' + ctxOn);
+        if (cn == null) return "*"; // feuille (ou defaut si contexte inconnu)
+        String childCtx = "c(" + cn + "," + ctx + ")";
+        String off = serializeTree(childCtx, ctxOn, branch, leaves);
+        String on  = serializeTree(childCtx, "c(" + cn + "," + ctxOn + ")", branch, leaves);
+        return cn + "[" + off + "," + on + "]";
+    }
+
+    /**
+     * Extrait les atomes {@code name(...)} de {@code line} et renvoie, pour
+     * chacun, ses arguments de premier niveau (les parentheses imbriquees des
+     * contextes {@code c(...)} sont respectees).
+     */
+    private static List<String[]> findAtoms(String line, String name) {
+        List<String[]> res = new ArrayList<>();
+        String tok = name + "(";
+        int idx = 0;
+        while ((idx = line.indexOf(tok, idx)) >= 0) {
+            int start = idx + tok.length();
+            int depth = 1, i = start;
+            while (i < line.length() && depth > 0) {
+                char c = line.charAt(i);
+                if (c == '(') depth++;
+                else if (c == ')') depth--;
+                i++;
+            }
+            res.add(splitTopLevel(line.substring(start, i - 1)));
+            idx = i;
+        }
+        return res;
+    }
+
+    /** Decoupe une liste d'arguments sur les virgules de premier niveau. */
+    private static String[] splitTopLevel(String inner) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0, last = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) { parts.add(inner.substring(last, i)); last = i + 1; }
+        }
+        parts.add(inner.substring(last));
+        return parts.toArray(new String[0]);
     }
 }

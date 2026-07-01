@@ -105,11 +105,25 @@ SBN.csv = (function () {
     return fields;
   }
 
+  // La colonne `tree` (ex. "2[3[*,*],3[*,*]]") contient des virgules mais est écrite
+  // NON quotée par le pipeline : elle déborde sur plusieurs champs. Comme c'est la seule
+  // colonne à virgules non quotées, on recolle les champs excédentaires à sa position
+  // (déduite du schéma d'en-tête). Sans-effet si elle est un jour quotée correctement.
+  function realignTree(vals, ncol, treeIdx) {
+    const extra = vals.length - ncol;
+    return vals.slice(0, treeIdx)
+      .concat([vals.slice(treeIdx, treeIdx + extra + 1).join(',')])
+      .concat(vals.slice(treeIdx + extra + 1));
+  }
+
   function parse(text) {
     const lines = text.trim().split(/\r?\n/);
     const header = parseLine(lines[0]);
+    const treeIdx = header.indexOf('tree');
     return lines.slice(1).filter(l => l.trim()).map(line => {
-      const vals = parseLine(line); const obj = {};
+      let vals = parseLine(line);
+      if (treeIdx >= 0 && vals.length > header.length) vals = realignTree(vals, header.length, treeIdx);
+      const obj = {};
       header.forEach((h, i) => obj[h] = vals[i] ?? '');
       return obj;
     });
@@ -147,7 +161,7 @@ SBN.csv = (function () {
     if (gz) stream = stream.pipeThrough(new DecompressionStream('gzip'));
     const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
 
-    let header = null, leftover = '';
+    let header = null, leftover = '', treeIdx = -1;
     let keptIndices = null, colNames = null, numericCols = null, colData = null;
     let fIndices = [], wIndices = [], fcols = [];
     const fdataRows = [], wdataRows = [];
@@ -186,9 +200,10 @@ SBN.csv = (function () {
       leftover = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
-        const fields = parseLine(line);
+        let fields = parseLine(line);
         if (!header) {
           header = fields;
+          treeIdx = header.indexOf('tree');
           keptIndices = header.map((h, i) => i).filter(i => !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i]));
           colNames = keptIndices.map(i => header[i]);
           fIndices = header.map((h, i) => i).filter(i => /^f_\d+$/.test(header[i])).sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
@@ -199,12 +214,14 @@ SBN.csv = (function () {
           fcols = fIndices.map(i => header[i]);
           continue;
         }
+        if (treeIdx >= 0 && fields.length > header.length) fields = realignTree(fields, header.length, treeIdx);
         if (fields.length < header.length) continue;
         pushRow(fields); captureRow(fields);
       }
     }
     if (leftover.trim() && header) {
-      const fields = parseLine(leftover);
+      let fields = parseLine(leftover);
+      if (treeIdx >= 0 && fields.length > header.length) fields = realignTree(fields, header.length, treeIdx);
       if (fields.length >= header.length) { pushRow(fields); captureRow(fields); }
     }
 
@@ -332,6 +349,225 @@ SBN.core = (function () {
   }
 
   return { popcount, hexA, transitionsFromF, transitionsFromW, basins, decompTree, hcPositions, hcEdges, rot3 };
+})();
+
+</script>
+<script>
+/* inliné depuis sbn-export.js */
+/* Export de figures pour rapport (SBN viz / scatter / métagraphe). Script classique (file://).
+
+   UI : un seul bouton « Export » ouvre un widget (SBN.export.dialog) où l'on choisit
+   la PARTIE de la visu, le FORMAT (SVG/PNG) et l'ÉCHELLE (PNG).
+
+   API bas niveau :
+     SBN.export.svg(svgEl, name, opts)         -> .svg vectoriel
+     SBN.export.svgToPNG(svgEl, name, opts)     -> .png rastérisé depuis un <svg>
+     SBN.export.canvasPNG(canvas, name, opts)   -> .png d'un canvas
+     SBN.export.compositePNG(canvases, name)    -> .png empilant plusieurs canvases
+   opts : { background, scale }. background déf. = variable --bg courante (null = transparent).
+
+   API widget :
+     SBN.export.dialog(figures)
+       figures : [{ id, label, formats:['svg','png'], scalable:true, run(format, scale) }]
+*/
+window.SBN = window.SBN || {};
+SBN.export = (function () {
+
+  function bgColor(opts) {
+    if (opts && 'background' in opts) return opts.background;
+    return getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#ffffff';
+  }
+  function stamp() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+  function name(prefix, ext) { return `${prefix}_${stamp()}.${ext}`; }
+
+  // Base « significative » d'un nom de CSV : sans dossier, sans extension
+  // (.csv/.csv.gz/.gz) ni suffixe _output ; caractères invalides remplacés par _.
+  function baseName(filename) {
+    let b = (filename || 'figure').split(/[\\/]/).pop();
+    b = b.replace(/\.csv\.gz$/i, '').replace(/\.(csv|gz)$/i, '').replace(/_output$/i, '');
+    return b.replace(/[<>:"/\\|?*]+/g, '_').replace(/_+$/,'') || 'figure';
+  }
+
+  function download(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function _resolveVars(str) {
+    const cs = getComputedStyle(document.documentElement);
+    return str.replace(/var\(\s*(--[a-z0-9-]+)\s*\)/gi, (m, v) => cs.getPropertyValue(v).trim() || m);
+  }
+
+  // Dimensions d'un <svg> (attributs width/height, sinon viewBox, sinon bbox écran).
+  function _dims(svgEl) {
+    let w = parseFloat(svgEl.getAttribute('width')), h = parseFloat(svgEl.getAttribute('height'));
+    if (!w || !h) {
+      const vb = (svgEl.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+      const r = svgEl.getBoundingClientRect();
+      if (!w) w = vb.length === 4 ? vb[2] : Math.round(r.width);
+      if (!h) h = vb.length === 4 ? vb[3] : Math.round(r.height);
+    }
+    return { w, h };
+  }
+
+  // Sérialise un <svg> vivant en chaîne autonome (vars résolues, fond, dimensions).
+  function _serialize(svgEl, opts) {
+    const clone = svgEl.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    const { w, h } = _dims(svgEl);
+    clone.setAttribute('width', w);
+    clone.setAttribute('height', h);
+    const bg = bgColor(opts);
+    if (bg) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', 0); rect.setAttribute('y', 0);
+      rect.setAttribute('width', '100%'); rect.setAttribute('height', '100%');
+      rect.setAttribute('fill', bg);
+      clone.insertBefore(rect, clone.firstChild);
+    }
+    let str = new XMLSerializer().serializeToString(clone);
+    str = _resolveVars(str);
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + str;
+  }
+
+  function svg(svgEl, filename, opts) {
+    const str = _serialize(svgEl, opts);
+    download(new Blob([str], { type: 'image/svg+xml;charset=utf-8' }), filename || name('figure', 'svg'));
+  }
+
+  // Rastérise un <svg> en PNG (échelle ≥1 pour la résolution).
+  function svgToPNG(svgEl, filename, opts) {
+    const str = _serialize(svgEl, opts);
+    const scale = (opts && opts.scale) || 1;
+    const { w, h } = _dims(svgEl);
+    const url = URL.createObjectURL(new Blob([str], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+      const ctx = cv.getContext('2d');
+      const bg = bgColor(opts);
+      if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height); }
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(b => b && download(b, filename || name('figure', 'png')), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); alert('Échec du rendu SVG → PNG.'); };
+    img.src = url;
+  }
+
+  function canvasPNG(canvas, filename, opts) {
+    const bg = bgColor(opts);
+    const fn = filename || name('figure', 'png');
+    if (!bg) { canvas.toBlob(b => b && download(b, fn), 'image/png'); return; }
+    const off = document.createElement('canvas');
+    off.width = canvas.width; off.height = canvas.height;
+    const ctx = off.getContext('2d');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, off.width, off.height);
+    ctx.drawImage(canvas, 0, 0);
+    off.toBlob(b => b && download(b, fn), 'image/png');
+  }
+
+  function compositePNG(canvases, filename, opts) {
+    const cs = canvases.filter(Boolean);
+    if (!cs.length) return;
+    const w = cs[0].width, h = cs[0].height;
+    const off = document.createElement('canvas');
+    off.width = w; off.height = h;
+    const ctx = off.getContext('2d');
+    const bg = bgColor(opts);
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+    for (const c of cs) { try { ctx.drawImage(c, 0, 0, w, h); } catch (_) {} }
+    off.toBlob(b => b && download(b, filename || name('figure', 'png')), 'image/png');
+  }
+
+  // ── Widget de configuration d'export ─────────────────────────────────────────
+  const FMT_LABEL = { svg: 'SVG (vectoriel)', png: 'PNG (image)' };
+
+  function closeDialog() {
+    const ex = document.getElementById('sbn-export-overlay');
+    if (ex) ex.remove();
+  }
+
+  function dialog(figures) {
+    if (!figures || !figures.length) return;
+    closeDialog();
+    const ov = document.createElement('div');
+    ov.id = 'sbn-export-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center';
+    const btnCss = 'border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit';
+    ov.innerHTML = `
+      <div style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;
+                  padding:16px 18px;min-width:300px;max-width:92vw;font-family:'DM Sans',sans-serif;box-shadow:0 10px 40px #0008">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px">Exporter une figure</div>
+        <div id="sbn-exp-figrow" style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Partie</label>
+          <select id="sbn-exp-fig" style="width:100%;padding:5px 8px;font-size:12px"></select>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Format</label>
+          <select id="sbn-exp-fmt" style="width:100%;padding:5px 8px;font-size:12px"></select>
+        </div>
+        <div id="sbn-exp-scalerow" style="margin-bottom:12px">
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Résolution (PNG)</label>
+          <select id="sbn-exp-scale" style="width:100%;padding:5px 8px;font-size:12px">
+            <option value="1">×1</option><option value="2">×2</option>
+            <option value="3" selected>×3</option><option value="4">×4</option>
+          </select>
+        </div>
+        <div style="font-size:10px;color:var(--muted);font-style:italic;margin-bottom:12px">
+          Astuce : passe en thème clair (☀️) avant d'exporter pour un fond imprimable.
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button id="sbn-exp-cancel" style="${btnCss};background:var(--border);color:var(--text)">Fermer</button>
+          <button id="sbn-exp-go" style="${btnCss};background:var(--accent);color:#fff;font-weight:600">Exporter</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+
+    const figSel = ov.querySelector('#sbn-exp-fig');
+    const figRow = ov.querySelector('#sbn-exp-figrow');
+    const fmtSel = ov.querySelector('#sbn-exp-fmt');
+    const scaleRow = ov.querySelector('#sbn-exp-scalerow');
+    const scaleSel = ov.querySelector('#sbn-exp-scale');
+
+    figSel.innerHTML = figures.map((f, i) => `<option value="${i}">${f.label}</option>`).join('');
+    if (figures.length === 1) figRow.style.display = 'none';
+
+    function curFig() { return figures[+figSel.value]; }
+    function refreshFmt() {
+      const f = curFig();
+      fmtSel.innerHTML = f.formats.map(x => `<option value="${x}">${FMT_LABEL[x] || x}</option>`).join('');
+      refreshScale();
+    }
+    function refreshScale() {
+      const f = curFig();
+      const isPng = fmtSel.value === 'png';
+      scaleRow.style.display = (isPng && f.scalable !== false) ? '' : 'none';
+    }
+    figSel.addEventListener('change', refreshFmt);
+    fmtSel.addEventListener('change', refreshScale);
+    refreshFmt();
+
+    ov.querySelector('#sbn-exp-cancel').addEventListener('click', closeDialog);
+    ov.addEventListener('click', e => { if (e.target === ov) closeDialog(); });
+    ov.querySelector('#sbn-exp-go').addEventListener('click', () => {
+      const f = curFig();
+      const fmt = fmtSel.value;
+      const scale = parseInt(scaleSel.value) || 3;
+      closeDialog();
+      try { f.run(fmt, scale); } catch (err) { console.error(err); alert('Export échoué : ' + (err && err.message || err)); }
+    });
+  }
+
+  return { download, name, baseName, svg, svgToPNG, canvasPNG, compositePNG, dialog, closeDialog };
 })();
 
 </script>
@@ -549,6 +785,20 @@ SBN.core = (function () {
   }
   .fn-label { color: var(--muted); }
 
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    padding: 1px 0;
+    color: var(--text);
+  }
+  .stat-row .stat-label { color: var(--muted); }
+  .stat-row .stat-val {
+    font-family: 'JetBrains Mono', monospace;
+    text-align: right;
+  }
+
   .legend-row {
     display: flex;
     align-items: center;
@@ -700,7 +950,7 @@ SBN.core = (function () {
 <header>
   <h1>SBN Visualizer</h1><span style="font-size:10px;color:var(--muted);font-family:monospace">v8</span>
   <button class="upload-btn" onclick="document.getElementById('file-input').click()">+ Load CSV</button>
-  <input type="file" id="file-input" accept=".csv" multiple>
+  <input type="file" id="file-input" accept=".csv,.gz" multiple>
 
   <div class="controls">
     <button id="theme-btn" onclick="SBN.theme.toggle()" title="Basculer thème clair / sombre"
@@ -715,6 +965,13 @@ SBN.core = (function () {
              onchange="onSolInput()" onkeydown="if(event.key==='Enter')onSolInput()">
       <span id="sol-counter" style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap">/ —</span>
     </div>
+    <label title="Ne parcourir que les dynamiques distinctes (dédup par f_*)"
+           style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="unique-toggle" onchange="toggleUnique()" style="cursor:pointer"> dynamiques uniques
+    </label>
+    <button onclick="openExport()" title="Exporter une figure (réseau, arbre, hypercube)"
+            style="background:var(--btn-bg);color:var(--text);border:none;padding:4px 10px;
+                   border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit">⬇ Export</button>
   </div>
 </header>
 
@@ -749,6 +1006,10 @@ SBN.core = (function () {
       <div class="legend-pane-section">
         <h3>Functions</h3>
         <div id="fn-list"></div>
+      </div>
+      <div class="legend-pane-section" id="stats-block" style="display:none">
+        <h3>Statistics</h3>
+        <div id="stats-info"></div>
       </div>
       <div class="legend-pane-section">
         <h3>SBN Legend</h3>
@@ -813,21 +1074,75 @@ SBN.core = (function () {
 // TH = couleurs canvas/SVG, mutées en place à chaque bascule ; re-render via render().
 const TH = SBN.theme.TH;
 
+// ─── Export figures (widget) ──────────────────────────────────────────────────
+// Astuce : passe en thème clair (☀️) avant d'exporter pour un fond clair imprimable.
+let _hcExportScale = null;   // override de résolution de drawHC pendant l'export PNG
+// Préfixe d'export : base du nom de CSV + numéro du SBN (solution) courant.
+function exportPrefix(part) {
+  const base = files.length ? SBN.export.baseName(files[curFile].name) : 'figure';
+  return `${base}_sbn${curRowIdx + 1}_${part}`;
+}
+function openExport() {
+  const figs = [];
+  const net = document.getElementById('sbn-svg');
+  if (net && net.style.display !== 'none') figs.push({
+    id: 'reseau', label: 'Réseau SBN', formats: ['svg', 'png'], scalable: true,
+    run: (fmt, scale) => fmt === 'svg'
+      ? SBN.export.svg(net, exportPrefix('reseau') + '.svg')
+      : SBN.export.svgToPNG(net, exportPrefix('reseau') + '.png', { scale })
+  });
+  const tree = document.querySelector('#decomp-info svg');
+  if (tree) figs.push({
+    id: 'arbre', label: 'Arbre de décomposition', formats: ['svg', 'png'], scalable: true,
+    run: (fmt, scale) => fmt === 'svg'
+      ? SBN.export.svg(tree, exportPrefix('decomp') + '.svg')
+      : SBN.export.svgToPNG(tree, exportPrefix('decomp') + '.png', { scale })
+  });
+  const cube = document.getElementById('hc-canvas');
+  if (cube && cube.style.display !== 'none') figs.push({
+    id: 'cube', label: 'Hypercube (dynamique)', formats: ['png'], scalable: true,
+    run: (fmt, scale) => {
+      _hcExportScale = scale; drawHC();                            // haute résolution
+      SBN.export.canvasPNG(cube, exportPrefix('hypercube') + '.png');  // copie synchrone
+      _hcExportScale = null; drawHC();                             // restaure l'affichage
+    }
+  });
+  if (!figs.length) { alert('Charge d’abord une solution.'); return; }
+  SBN.export.dialog(figs);
+}
+
 // ─── State ───────────────────────────────────────────────────────────────────
 let files = [];       // {name, rows, dim, decomp_vec}
 let curFile = 0;
-let curSol  = 0;
+let curSol  = 0;       // position DANS la liste active (voir activeList)
+let curRowIdx = 0;     // index réel de la ligne dans f.rows (pour cache / export)
+let uniqueMode = false; // P3.3 : ne parcourir que les dynamiques distinctes (dédup f_*)
+
+// Liste des index de lignes à parcourir pour le fichier `f`, selon le mode courant.
+// Mode normal : toutes les lignes. Mode « uniques » : 1re occurrence de chaque
+// signature f_* (les réalisations d'une même dynamique sont masquées).
+function activeList(f) {
+  if (!uniqueMode) return f._allIdx || (f._allIdx = f.rows.map((_, i) => i));
+  if (!f._uniqueIdx) {
+    const seen = new Set(), out = [], n = f.dim;
+    for (let i = 0; i < f.rows.length; i++) {
+      const r = f.rows[i]; let sig = '';
+      for (let j = 1; j <= n; j++) sig += (r['f_' + j] || '') + '|';
+      if (!seen.has(sig)) { seen.add(sig); out.push(i); }
+    }
+    f._uniqueIdx = out;
+  }
+  return f._uniqueIdx;
+}
+
+function toggleUnique() {
+  const cb = document.getElementById('unique-toggle');
+  uniqueMode = !!(cb && cb.checked);
+  curSol = 0;
+  populateSolSelect(); render();
+}
 
 
-// ─── Colors ──────────────────────────────────────────────────────────────────
-const DIM_COLORS = {
-  1: '#f59e0b',
-  2: '#06b6d4',
-  3: '#8b5cf6',
-  4: '#ec4899',
-};
-
-function dimColor(d) { return DIM_COLORS[d] || '#94a3b8'; }
 
 // Perceptually distinct color palette using golden-angle hue spacing.
 // Works for up to 64 groups; each color is clearly distinct regardless of dimension.
@@ -867,70 +1182,73 @@ function weightColor(w) {
   }
 }
 
-// ─── CSV Parsing ─────────────────────────────────────────────────────────────
-// Parsing partagé (sbn-csv.js)
-const parseCSVLine = SBN.csv.parseLine;
-const parseCSV     = SBN.csv.parse;
-const parseName    = SBN.csv.parseName;
+// ─── CSV Parsing (partagé, sbn-csv.js) ───────────────────────────────────────
+const parseCSV  = SBN.csv.parse;
+const parseName = SBN.csv.parseName;
 
 function getDim(row) {
   return Object.keys(row).filter(k => k.startsWith('f_')).length;
 }
 
 // ─── File Loading ─────────────────────────────────────────────────────────────
-document.getElementById('file-input').addEventListener('change', e => {
-  const fileList = Array.from(e.target.files);
-  let loaded = 0;
-  fileList.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const rows = parseCSV(ev.target.result);
-      if (!rows.length) return;
-      const { dim, vec } = parseName(file.name.replace('.csv',''));
+// Lit un fichier en texte ; décompresse à la volée les .gz (DecompressionStream).
+async function readFileText(file) {
+  if (file.name.endsWith('.gz')) {
+    const stream = file.stream()
+      .pipeThrough(new DecompressionStream('gzip'))
+      .pipeThrough(new TextDecoderStream());
+    const reader = stream.getReader();
+    let text = '';
+    while (true) { const { done, value } = await reader.read(); if (done) break; text += value; }
+    return text;
+  }
+  return await file.text();
+}
 
-      const d = dim || getDim(rows[0]);
-      files.push({ name: file.name, rows, dim: d, decomp_vec: vec });
-      files.sort((a,b) => a.name.localeCompare(b.name));
-      loaded++;
-      if (loaded === fileList.length) {
-        populateFileSelect();
-        curFile = files.length - loaded;
-        curSol  = 0;
-        document.getElementById('file-select').selectedIndex = curFile;
-        populateSolSelect();
-        render();
-      }
-    };
-    reader.readAsText(file);
-  });
+// Charge un objet File en entrée parsée, l'ajoute à `files`. Retourne l'entrée (ou null si vide).
+async function loadFileObj(file) {
+  const text = await readFileText(file);
+  const rows = parseCSV(text);
+  if (!rows.length) return null;
+  const { dim, vec } = parseName(file.name.replace(/\.csv(\.gz)?$/, ''));
+  const entry = { name: file.name, rows, dim: dim || getDim(rows[0]), decomp_vec: vec };  // vec du nom = repli
+  files.push(entry);
+  return entry;
+}
+
+document.getElementById('file-input').addEventListener('change', async e => {
+  let last = null;
+  for (const file of Array.from(e.target.files)) {
+    try { const entry = await loadFileObj(file); if (entry) last = entry; }
+    catch (err) { console.error('Erreur', file.name, err); alert('Échec du chargement de ' + file.name + ' :\n' + (err && err.message || err)); }
+  }
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  if (files.length) {
+    curFile = last ? files.indexOf(last) : files.length - 1; curSol = 0;
+    populateFileSelect(); populateSolSelect(); render();
+  }
 });
 
 function populateFileSelect() {
   const sel = document.getElementById('file-select');
   sel.innerHTML = '';
-  files.forEach((f, i) => {
-    const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = f.name;
-    sel.appendChild(opt);
-  });
+  files.forEach((f, i) => { const o = document.createElement('option'); o.value = String(i); o.textContent = f.name; sel.appendChild(o); });
+  if (files.length) sel.value = String(curFile);
 }
 
 function populateSolSelect() {
   if (!files.length) return;
   const f   = files[curFile];
+  const len = activeList(f).length;
   const inp = document.getElementById('sol-input');
   const ctr = document.getElementById('sol-counter');
-  if (inp) { inp.min = 1; inp.max = f.rows.length; inp.value = curSol + 1; }
-  if (ctr) ctr.textContent = '/ ' + f.rows.length;
+  if (inp) { inp.min = 1; inp.max = len; inp.value = curSol + 1; }
+  if (ctr) ctr.textContent = '/ ' + len + (uniqueMode ? ' uniques' : '');
 }
 
 document.getElementById('file-select').addEventListener('change', e => {
-  curFile = parseInt(e.target.value);
-  curSol  = 0;
-  renderCache.clear();
-  populateSolSelect();
-  render();
+  curFile = parseInt(e.target.value); curSol = 0;
+  renderCache.clear(); populateSolSelect(); render();
 });
 
 // ─── Render cache (keyed by "fileIdx:solIdx") ────────────────────────────────
@@ -949,8 +1267,8 @@ function setCached(fileIdx, solIdx, data) {
 
 function navigate(delta) {
   if (!files.length) return;
-  const f = files[curFile];
-  curSol = Math.max(0, Math.min(f.rows.length - 1, curSol + delta));
+  const len = activeList(files[curFile]).length;
+  curSol = Math.max(0, Math.min(len - 1, curSol + delta));
   const inp = document.getElementById('sol-input');
   if (inp) inp.value = curSol + 1;
   render();
@@ -961,8 +1279,8 @@ function navigate(delta) {
 function onSolInput() {
   const inp = document.getElementById('sol-input');
   if (!inp || !files.length) return;
-  const f = files[curFile];
-  curSol = Math.max(0, Math.min(f.rows.length - 1, parseInt(inp.value) - 1 || 0));
+  const len = activeList(files[curFile]).length;
+  curSol = Math.max(0, Math.min(len - 1, parseInt(inp.value) - 1 || 0));
   inp.value = curSol + 1;
   render();
 }
@@ -976,9 +1294,12 @@ document.getElementById('sbn-pane').addEventListener('wheel', e => {
 // ─── Main Render ─────────────────────────────────────────────────────────────
 function render() {
   if (!files.length) return;
-  const f  = files[curFile];
-  const row = f.rows[curSol];
-  const n   = f.dim;
+  const f    = files[curFile];
+  const list = activeList(f);
+  if (curSol >= list.length) curSol = 0;
+  curRowIdx  = list[curSol];
+  const row  = f.rows[curRowIdx];
+  const n    = f.dim;
 
 
   document.getElementById('dim-tag').textContent = `d = ${n}`;
@@ -986,19 +1307,23 @@ function render() {
   document.getElementById('sbn-svg').style.display = 'block';
   document.getElementById('hc-canvas').style.display = 'block';
   document.getElementById('main-sidebar').style.display = 'flex';
+  // Vecteur de décomposition : colonnes v_* de la LIGNE courante (repli sur le nom de fichier).
+  const vec = rowVec(row) || f.decomp_vec;
   const vecDisp = document.getElementById('decomp-vec-display');
-  if (vecDisp) vecDisp.textContent = f.decomp_vec && f.decomp_vec.length ? '<'+f.decomp_vec.join(',')+'>' : '(no vec)';
+  if (vecDisp) vecDisp.textContent = vec && vec.length ? '<'+vec.join(',')+'>' : '(no vec)';
 
   renderFunctions(row, n);
+  renderStats(row);
 
   // Use cache to avoid recomputing weights/transitions for visited solutions
-  let cached = getCached(curFile, curSol);
+  // (clé = index réel de ligne, stable quel que soit le mode de navigation)
+  let cached = getCached(curFile, curRowIdx);
   if (!cached) {
-    const weights     = extractWeights(row, n);
-    const transitions = computeTransitions(weights, n);
-    const decomp      = findDecomposition(transitions, n, f.decomp_vec);
+    const weights     = extractWeights(row, n);          // W : réalisation affichée (réseau SBN)
+    const transitions = transFromRow(row, n);            // dynamique depuis f_* (pas de recalcul via W)
+    const decomp      = findDecomposition(transitions, n, vec, row.tree);
     cached = { weights, transitions, decomp };
-    setCached(curFile, curSol, cached);
+    setCached(curFile, curRowIdx, cached);
   }
   const { weights, transitions, decomp } = cached;
 
@@ -1017,32 +1342,25 @@ function extractWeights(row, n) {
   return W;
 }
 
-// ─── Transition ──────────────────────────────────────────────────────────────
-// Convention: w_i,j = weight of arc FROM node i TO node j
-// Node j activates iff sum_i W[i,j] * x_i > 0
-// Cœur partagé (sbn-core.js) : T depuis la matrice de poids W, et bassins.
-const computeTransitions = SBN.core.transitionsFromW;
-const computeBasins      = SBN.core.basins;
-
-// ─── Invariant Face Detection ────────────────────────────────────────────────
-function findInvariantFaces(T, n) {
-  const N = 1<<n;
-  const faces = [];
-  for (let mask = 1; mask < N; mask++) {
-    const fixed = popcount(mask);
-    const dim   = n - fixed;
-    if (dim < 1) continue;
-    for (let val = 0; val < N; val++) {
-      if (val & ~mask) continue;
-      const states = [];
-      for (let s = 0; s < N; s++) if ((s & mask) === val) states.push(s);
-      if (states.every(s => (T[s] & mask) === val)) {
-        faces.push({ dim, mask, val, states });
-      }
-    }
-  }
-  return faces;
+// Vecteur de décomposition depuis les colonnes v_* de la ligne (v_n…v_0, décroissant).
+// null si absentes -> on retombe sur le vecteur du nom de fichier.
+function rowVec(row) {
+  const keys = Object.keys(row).filter(k => /^v_\d+$/.test(k))
+                    .sort((a, b) => parseInt(b.slice(2)) - parseInt(a.slice(2)));
+  if (!keys.length) return null;
+  return keys.map(k => parseInt(row[k]) || 0);
 }
+
+// Dynamique T depuis les chaînes f_* de la ligne (réutilise f_i, aucun recalcul depuis W).
+function transFromRow(row, n) {
+  const fstr = [];
+  for (let j = 1; j <= n; j++) fstr.push(row['f_' + j] || '');
+  return SBN.core.transitionsFromF(fstr, n);
+}
+
+// ─── Transition / bassins (cœur partagé) ─────────────────────────────────────
+// La dynamique est désormais lue depuis f_* (transFromRow), pas recalculée depuis W.
+const computeBasins = SBN.core.basins;
 
 const popcount = SBN.core.popcount;   // cœur partagé
 
@@ -1057,27 +1375,23 @@ function freeInvBits(states, fixedBits, T, n) {
   return res; // high→low
 }
 
-// Build the expected decomposition tree from vec.
-// Returns a tree structure where:
-//   - leaves matching vec targets are "colored" (groupKey set, used for coloring)
-//   - further invariant splits below those leaves are "grey" extensions
+// Décomposition en faces invariantes INDÉCOMPOSABLES.
+// On coupe récursivement sur un bit INVARIANT (un bit que tous les états de la face
+// conservent sous T) jusqu'à ce qu'il n'en reste aucun : la face obtenue est alors
+// indécomposable — c'est une pièce de la décomposition (feuille colorée). Sa dimension
+// est le nombre de bits libres restants (0 = point fixe).
+// Le vecteur `vec` ne sert qu'à indiquer qu'une décomposition est attendue (et à
+// l'afficher) ; la STRUCTURE est entièrement déduite de la dynamique T, jamais des
+// valeurs de vec (qui, prises comme guide glouton, coloraient les mauvaises faces).
 function buildDecompTree(vec, T, n) {
-  // Parse target: target[dim] = count
-  const target = {};
-  for (let i = 0; i < vec.length; i++) {
-    const d = n - i;
-    if (vec[i] > 0 && d >= 1) target[d] = (target[d] || 0) + vec[i];
-  }
-  if (!Object.keys(target).length) return null;
+  if (!vec || !vec.some(v => v > 0)) return null;
 
   let nodeId = 0;
   const nodes = {}; // id -> node
-
-  // colorLeaves: array of colored leaf nodes (used for graph coloring)
-  const colorLeaves = [];
+  const colorLeaves = [];          // feuilles indécomposables, une couleur chacune
   let colorIdx = 0;
 
-  function buildExpected(states, dim, fixed, parentId, childIdx) {
+  function buildExpected(states, dim, fixed, parentId) {
     const id = ++nodeId;
     const node = { id, states, dim, fixed: new Set(fixed),
                    children: [], isColorLeaf: false, isGrey: false,
@@ -1085,92 +1399,162 @@ function buildDecompTree(vec, T, n) {
     nodes[id] = node;
     if (parentId) nodes[parentId].children.push(id);
 
-    // Is this a target-dimension leaf?
-    if (target[dim] && target[dim] > 0) {
-      target[dim]--;
+    const invs = freeInvBits(states, fixed, T, n);
+    if (!invs.length) {                        // plus de bit invariant -> face indécomposable
       node.isColorLeaf = true;
       node.groupKey = String(colorIdx++);
       colorLeaves.push(id);
-      // Extend with grey further splits
-      buildGrey(id);
       return id;
     }
 
-    // Split on highest free bit
-    const freeBits = [];
-    for (let b = n - 1; b >= 0; b--) if (!fixed.has(b)) freeBits.push(b);
-    if (!freeBits.length) { node.isColorLeaf = true; node.groupKey = String(colorIdx++); colorLeaves.push(id); return id; }
-
-    const sb = freeBits[0];
+    const sb = invs[0];                        // couper sur un bit invariant
     node.splitBit = sb;
     const newFixed = new Set(fixed); newFixed.add(sb);
     const h0 = states.filter(s => !((s >> sb) & 1));
     const h1 = states.filter(s =>  ((s >> sb) & 1));
-    buildExpected(h0, dim - 1, newFixed, id, 0);
-    buildExpected(h1, dim - 1, newFixed, id, 1);
+    buildExpected(h0, dim - 1, newFixed, id);
+    buildExpected(h1, dim - 1, newFixed, id);
     return id;
   }
 
-  function buildGrey(leafId) {
-    const leaf = nodes[leafId];
-    // Find first free invariant bit in this leaf's states
-    const invs = freeInvBits(leaf.states, leaf.fixed, T, n);
-    if (!invs.length) return;
-    const sb = invs[0];
-    leaf.splitBit = sb;
-    // NOTE: do NOT clear isColorLeaf — the node stays a color boundary for graph coloring
-    // Grey children are added purely for the tree display
-    const newFixed = new Set(leaf.fixed); newFixed.add(sb);
-    const h0 = leaf.states.filter(s => !((s >> sb) & 1));
-    const h1 = leaf.states.filter(s =>  ((s >> sb) & 1));
+  const rootId = buildExpected(Array.from({length: 1<<n}, (_,i)=>i), n, new Set(), null);
 
-    function makeGrey(states, dim, fixed, parentId) {
-      const id = ++nodeId;
-      const node = { id, states, dim, fixed: new Set(fixed),
-                     children: [], isColorLeaf: false, isGrey: true,
-                     splitBit: null, groupKey: null };
-      nodes[id] = node;
-      nodes[parentId].children.push(id);
-      const invs2 = freeInvBits(states, fixed, T, n);
-      if (!invs2.length) {
-        node.isColorLeaf = true; // grey leaf
-        return;
-      }
-      const sb2 = invs2[0];
-      node.splitBit = sb2;
-      const nf = new Set(fixed); nf.add(sb2);
-      makeGrey(states.filter(s => !((s>>sb2)&1)), dim-1, nf, id);
-      makeGrey(states.filter(s =>  ((s>>sb2)&1)), dim-1, nf, id);
-    }
-
-    makeGrey(h0, leaf.dim - 1, newFixed, leafId);
-    makeGrey(h1, leaf.dim - 1, newFixed, leafId);
-  }
-
-  const rootId = buildExpected(Array.from({length: 1<<n}, (_,i)=>i), n, new Set(), null, 0);
-
-  // Build colorLeaves array as decomp result (for graph coloring)
   const result = colorLeaves.map(lid => {
     const nd = nodes[lid];
-    // Collect all actual leaves under this node (could have grey children)
-    function allLeafStates(nid) {
-      const node = nodes[nid];
-      if (!node.children.length) return node.states;
-      return node.children.flatMap(c => allLeafStates(c));
-    }
     return { groupKey: nd.groupKey, states: nd.states, dim: nd.dim };
   });
   result.tree = nodes;
   result.rootId = rootId;
   result.n = n;
-  // invBits for compatibility (first split bits top-down)
   result.invBits = [];
   return result;
 }
 
-function findDecomposition(T, n, vec) {
+// ─── Décomposition : coloriage depuis l'arbre étiqueté du CSV ────────────────────
+// Le pipeline (PTBN_undercontrol_taggedtree) émet désormais l'arbre de décomposition
+// dans la colonne `tree`, avec les nœuds de contrôle explicites : `N[demi0,demi1]` =
+// découpe sur le nœud de contrôle N (demi0 = bit N-1 à 0, demi1 = bit à 1), `*` = feuille.
+// On colorie directement depuis cet arbre → exact, sans reconstruire de permutation.
+//
+// Repli (anciens CSV sans colonne `tree`) : convention « nœud de contrôle = le plus
+// haut », i.e. arbre à ordre fixe descendant (dim D -> bit D-1), découpes optionnelles
+// résolues par programmation dynamique pour coller au vecteur vec.
+
+// Parse le format imbriqué `tree` -> { leaf:true } | { split:N, left, right }. null si vide/invalide.
+function parseTaggedTree(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  let i = 0;
+  function node() {
+    if (i >= s.length) throw new Error('tree tronqué');
+    if (s[i] === '*') { i++; return { leaf: true }; }
+    let num = '';
+    while (i < s.length && s[i] >= '0' && s[i] <= '9') num += s[i++];
+    if (num === '' || s[i] !== '[') throw new Error('tree malformé @' + i);
+    i++;                                   // '['
+    const left = node();
+    if (s[i] !== ',') throw new Error('tree: virgule attendue @' + i);
+    i++;                                   // ','
+    const right = node();
+    if (s[i] !== ']') throw new Error('tree: ] attendu @' + i);
+    i++;                                   // ']'
+    return { split: parseInt(num, 10), left, right };
+  }
+  try { const t = node(); return i === s.length ? t : null; }
+  catch (e) { console.warn('parseTaggedTree:', e.message, '|', s); return null; }
+}
+
+// Construit l'arbre de nœuds (format renderDecompInfo) + feuilles colorées depuis un `tree` parsé.
+function buildFromTagged(parsed, n) {
+  const nodes = {}; let nodeId = 0; const colorLeaves = []; let colorIdx = 0;
+  function rec(node, states, dim, parentId) {
+    const id = ++nodeId;
+    const nd = { id, states, dim, children: [], isColorLeaf: false, isGrey: false, splitBit: null, groupKey: null };
+    nodes[id] = nd;
+    if (parentId) nodes[parentId].children.push(id);
+    if (node.leaf) { nd.isColorLeaf = true; nd.groupKey = String(colorIdx++); colorLeaves.push(id); return id; }
+    const b = node.split - 1;              // nœud de contrôle N -> bit N-1
+    nd.splitBit = b;
+    rec(node.left,  states.filter(x => !((x >> b) & 1)), dim - 1, id);
+    rec(node.right, states.filter(x =>  ((x >> b) & 1)), dim - 1, id);
+    return id;
+  }
+  const rootId = rec(parsed, Array.from({ length: 1 << n }, (_, i) => i), n, null);
+  const result = colorLeaves.map(lid => { const nd = nodes[lid]; return { groupKey: nd.groupKey, states: nd.states, dim: nd.dim }; });
+  result.tree = nodes; result.rootId = rootId; result.n = n; result.invBits = [];
+  return result;
+}
+
+// Histogramme cible depuis vec (descendant [v_n…v_0]) : hist[k] = nb de feuilles de dim k.
+function vecToHist(vec, n) {
+  const h = new Array(n + 1).fill(0);
+  for (let i = 0; i < vec.length; i++) { const k = n - i; if (k >= 0 && k <= n) h[k] = vec[i] | 0; }
+  return h;
+}
+const histKey = h => h.join(',');
+
+// DP sur une face (repli vec) : histogrammes atteignables (map clé -> choix) selon l'ordre
+// de découpe perm. Choix = {leaf} ou {split, b, k0, k1}. b = bit de contrôle = perm[D-1].
+function faceDP(states, D, perm, T, n) {
+  const b = D >= 1 ? perm[D - 1] : -1;
+  const invariant = D >= 1 && states.every(s => ((T[s] >> b) & 1) === ((s >> b) & 1));
+  const map = new Map();
+  const unit = new Array(n + 1).fill(0); unit[D] = 1;
+  map.set(histKey(unit), { type: 'leaf' });                     // option feuille (dim D)
+  const face = { map, D, states, b, invariant, h0: null, h1: null };
+  if (!invariant) return face;                                  // bit non invariant -> feuille forcée
+  const s0 = states.filter(s => !((s >> b) & 1));
+  const s1 = states.filter(s =>  ((s >> b) & 1));
+  face.h0 = faceDP(s0, D - 1, perm, T, n);
+  face.h1 = faceDP(s1, D - 1, perm, T, n);
+  for (const k0 of face.h0.map.keys()) {
+    const a = k0.split(',').map(Number);
+    for (const k1 of face.h1.map.keys()) {
+      const bb = k1.split(',').map(Number);
+      const hk = histKey(a.map((x, i) => x + bb[i]));
+      if (!map.has(hk)) map.set(hk, { type: 'split', b, k0, k1 }); // feuille préférée si égalité
+    }
+  }
+  return face;
+}
+
+function materializeFace(face, wantKey, ctx) {
+  const choice = face.map.get(wantKey);
+  const id = ++ctx.nodeId;
+  const node = { id, states: face.states, dim: face.D, children: [],
+                 isColorLeaf: false, isGrey: false, splitBit: null, groupKey: null };
+  ctx.nodes[id] = node;
+  if (!choice || choice.type === 'leaf') {
+    node.isColorLeaf = true; node.groupKey = String(ctx.colorIdx++); ctx.colorLeaves.push(id);
+  } else {
+    node.splitBit = choice.b;
+    node.children.push(materializeFace(face.h0, choice.k0, ctx));
+    node.children.push(materializeFace(face.h1, choice.k1, ctx));
+  }
+  return id;
+}
+
+// Repli vec + convention « contrôle = nœud le plus haut » (perm identité : dim D -> bit D-1).
+function decompByVec(vec, T, n) {
+  const targetKey = histKey(vecToHist(vec, n));
+  const identity = Array.from({ length: n }, (_, i) => i);
+  const root = faceDP(Array.from({ length: 1 << n }, (_, i) => i), n, identity, T, n);
+  if (!root.map.has(targetKey)) return null;                    // vec non atteignable sous cette convention
+  const ctx = { nodeId: 0, nodes: {}, colorLeaves: [], colorIdx: 0 };
+  const rootId = materializeFace(root, targetKey, ctx);
+  const result = ctx.colorLeaves.map(lid => { const nd = ctx.nodes[lid]; return { groupKey: nd.groupKey, states: nd.states, dim: nd.dim }; });
+  result.tree = ctx.nodes; result.rootId = rootId; result.n = n; result.invBits = [];
+  return result;
+}
+
+function findDecomposition(T, n, vec, treeStr) {
+  // 1) CSV récent : coloriage exact depuis l'arbre étiqueté (colonne `tree`).
+  const parsed = parseTaggedTree(treeStr);
+  if (parsed) return buildFromTagged(parsed, n);
+  // 2) Ancien CSV : vec + convention (contrôle = nœud le plus haut) ; repli fin sinon.
   if (!vec || !vec.length) return null;
-  return buildDecompTree(vec, T, n);
+  return decompByVec(vec, T, n) || buildDecompTree(vec, T, n);
 }
 
 // ─── Decomp Info ─────────────────────────────────────────────────────────────
@@ -1315,13 +1699,57 @@ function renderDecompInfo(decomp, n) {
 // ─── Functions Display ────────────────────────────────────────────────────────
 function renderFunctions(row, n) {
   let html = '';
+  const N = 1 << n;
   for (let i = 1; i <= n; i++) {
-    const v = parseInt(row[`f_${i}`]);
-    // Convert to binary string of length 2^n
-    const bits = v.toString(2).padStart(1<<n,'0');
+    const raw = String(row[`f_${i}`] ?? '');
+    // Convention actuelle : bitstring de longueur 2^n (car[s] = transition_function_bit(i,s),
+    // etat 0 a gauche), coherent avec transitionsFromF. Fallback : ancien entier
+    // decimal (bit s = etat s) -> on decode en inversant toString(2) (MSB-first).
+    const bits = /^[01]+$/.test(raw) && raw.length === N
+      ? raw
+      : ((parseInt(raw) || 0).toString(2).padStart(N, '0').split('').reverse().join(''));
     html += `<div class="fn-row"><span class="fn-label">f<sub>${i}</sub></span><span>${bits}</span></div>`;
   }
   document.getElementById('fn-list').innerHTML = html;
+}
+
+// ─── Statistics Display (P2.2) ───────────────────────────────────────────────
+// Colonnes de stats présentes dans les CSV, avec alias (deux conventions de nom
+// coexistent : Robustness_mean / R_P_mean, Evolvability / E_P, …). On affiche
+// celles présentes dans la ligne courante ; le reste (coordonnées, f/w/v) est ignoré.
+const STAT_SPECS = [
+  { label: 'Génotypes',      keys: ['GenotypeCount'] },
+  { label: 'Robustesse μ',   keys: ['Robustness_mean', 'R_P_mean'], num: true },
+  { label: 'Robustesse σ',   keys: ['Robustness_std',  'R_P_std'],  num: true },
+  { label: 'Évolvabilité',   keys: ['Evolvability',    'E_P'],      num: true },
+  { label: 'Attracteurs',    keys: ['NumAttractors'] },
+  { label: 'Taille attr.',   keys: ['AtrSize'] },
+  { label: 'Bassins',        keys: ['NumBasins'] },
+  { label: 'CycleLen MSQ',   keys: ['CycleLenMSQ'], num: true },
+];
+
+// Formatte une valeur numérique : entier tel quel, flottant arrondi (max 4 déc., zéros retirés).
+function fmtStat(v) {
+  const s = String(v).trim();
+  const x = Number(s);
+  if (s === '' || !Number.isFinite(x)) return s;
+  if (Number.isInteger(x)) return String(x);
+  return parseFloat(x.toFixed(4)).toString();
+}
+
+function renderStats(row) {
+  const block = document.getElementById('stats-block');
+  const el = document.getElementById('stats-info');
+  let html = '';
+  for (const spec of STAT_SPECS) {
+    const key = spec.keys.find(k => row[k] !== undefined && row[k] !== '');
+    if (!key) continue;
+    const val = spec.num ? fmtStat(row[key]) : String(row[key]).trim();
+    html += `<div class="stat-row"><span class="stat-label">${spec.label}</span>`
+          + `<span class="stat-val">${val}</span></div>`;
+  }
+  el.innerHTML = html;
+  block.style.display = html ? 'block' : 'none';
 }
 
 // ─── SBN Drawing ─────────────────────────────────────────────────────────────
@@ -1501,9 +1929,6 @@ function renderSBN(W, n, row) {
   }
 }
 
-function getDimRow(row) {
-  return Object.keys(row).filter(k=>k.startsWith('f_')).length;
-}
 
 function drawLabel(svg, x, y, text, col, positions) {
   // Try 8 directions to find a spot that doesn't overlap existing labels
@@ -1731,7 +2156,7 @@ function drawHC() {
   if (!T || !n) return;
 
   const rect = canvas.parentElement.getBoundingClientRect();
-  const DPR  = window.devicePixelRatio || 1;
+  const DPR  = _hcExportScale || window.devicePixelRatio || 1;
   canvas.width  = rect.width  * DPR;
   canvas.height = rect.height * DPR;
   canvas.style.width  = rect.width  + 'px';
@@ -1973,7 +2398,7 @@ window.addEventListener('resize', () => {
       const svg = document.getElementById('sbn-svg');
       if (svg) {
         const f = files[curFile];
-        if (f) { const row = f.rows[curSol]; renderSBN(extractWeights(row, f.dim), f.dim, row); }
+        if (f) { const row = f.rows[curRowIdx]; renderSBN(extractWeights(row, f.dim), f.dim, row); }
       }
     });
     window.addEventListener('mouseup', () => {
@@ -2007,7 +2432,7 @@ window.addEventListener('resize', () => {
       const svg = document.getElementById('sbn-svg');
       if (svg) {
         const f = files[curFile];
-        if (f) { const row = f.rows[curSol]; renderSBN(extractWeights(row, f.dim), f.dim, row); }
+        if (f) { const row = f.rows[curRowIdx]; renderSBN(extractWeights(row, f.dim), f.dim, row); }
       }
     });
     window.addEventListener('mouseup', () => {

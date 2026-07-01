@@ -68,9 +68,11 @@ def parse_transition_bits(line):
     return bits
 
 
-def bits_to_int(active_states):
-    """Convert a set of active states to a truth-table integer (sum of 2**S)."""
-    return sum(2 ** s for s in active_states)
+def bits_to_str(active_states, n):
+    """Truth-table bitstring : caractere s = etat s actif, etat 0 a gauche,
+    longueur 2**n. Convention attendue par sbn_viz/transitionsFromF (et
+    SBN.toCsvRow du pipeline Java) ; NE PAS confondre avec l'entier decimal."""
+    return "".join("1" if s in active_states else "0" for s in range(1 << n))
 
 
 def parse_weights(line):
@@ -115,7 +117,7 @@ def parse_output(output, n):
         if line.startswith("Answer:"):
             atoms_line = next(lines, "").strip()
             bits    = parse_transition_bits(atoms_line)
-            funcs   = {node: bits_to_int(active) for node, active in bits.items()}
+            funcs   = {node: bits_to_str(active, n) for node, active in bits.items()}
 
             next(lines, "")
             assignement_line = next(lines, "").strip()
@@ -135,7 +137,7 @@ def write_csv(solutions, n, output_path):
     written = skipped = 0
     rows = []
     for sol in solutions:
-        fvals = [sol['funcs'].get(j, 0)              for j in range(1, n + 1)]
+        fvals = [sol['funcs'].get(j, "0" * (1 << n)) for j in range(1, n + 1)]
         wvals = [sol['weights'].get((i, j), 0)
                     for i in range(1, n + 1) for j in range(1, n + 1)]
         

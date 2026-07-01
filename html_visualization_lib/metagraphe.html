@@ -52,6 +52,7 @@
 <script src="sbn-theme.js"></script>
 <script src="sbn-csv.js"></script>
 <script src="sbn-core.js"></script>
+<script src="sbn-export.js"></script>
 </head>
 <body>
 
@@ -74,6 +75,7 @@
   <button class="btn" id="ebtn" onclick="toggleEdges()">Arêtes ✗</button>
   <button class="btn" onclick="resetView()">↺ Vue</button>
   <button class="btn" id="relayout-btn" onclick="startLayout()">⟲ Relayout</button>
+  <button class="btn" onclick="openExport()" title="Exporter la vue du métagraphe">⬇ Export</button>
   <label style="margin-left:8px">Recherche id:</label>
   <input type="text" id="search" placeholder="ex: 1042" style="width:90px" oninput="onSearch()">
   <span id="loading-indicator" style="margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);letter-spacing:.05em"></span>
@@ -829,6 +831,30 @@ function toggleEdges(){
   showEdges=!showEdges;const b=document.getElementById('ebtn');
   b.textContent=showEdges?'Arêtes ✓':'Arêtes ✗';b.classList.toggle('active',showEdges);
   syncEdges();   // dessine/efface le voile complet sur la couche canvas 2D
+}
+
+// Ouvre le widget d'export (une seule figure : la vue ; PNG à la résolution écran).
+function openExport(){
+  if(!sigmaInstance){ alert('Charge d’abord un graphe.'); return; }
+  SBN.export.dialog([{ id:'graph', label:'Vue du métagraphe', formats:['png'], scalable:false,
+                       run:()=>exportPNG() }]);
+}
+// Export PNG : empile les couches (voile 2D + nœuds WebGL + overlay). On capture
+// dans afterRender (le buffer WebGL y est encore valide, Sigma n'expose pas
+// preserveDrawingBuffer). compositePNG copie de façon synchrone -> snapshot fidèle.
+// Astuce rapport : passer en thème clair (🌙→☀️) avant d'exporter.
+function exportPNG(){
+  if(!sigmaInstance){ alert('Charge d’abord un graphe.'); return; }
+  const host=document.getElementById('sigma-host');
+  const once=()=>{
+    sigmaInstance.off('afterRender', once);
+    if(showEdges) _drawEdgesNow();   // le handler par défaut vient d'effacer le voile -> on le redessine
+    _drawOverlay();
+    const base=files.length?SBN.export.baseName(files[curFile].name):'metagraphe';
+    SBN.export.compositePNG([...host.querySelectorAll('canvas')], base+'_metagraphe.png');
+  };
+  sigmaInstance.on('afterRender', once);
+  sigmaInstance.refresh();           // force un rendu -> afterRender -> capture
 }
 
 // ── recherche / statbox ──────────────────────────────────────────────────────

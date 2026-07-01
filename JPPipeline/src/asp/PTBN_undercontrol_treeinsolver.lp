@@ -37,7 +37,7 @@
 
 #show transition_function_bit/2.
 
-% Décommenter pour afficher le vecteur de décomposition 
+% Décommenter pour afficher le vecteur de décomposition
 % (peut être utile si on ne l'a pas spécifié dans les constantes).
 % #show v/2. 
 

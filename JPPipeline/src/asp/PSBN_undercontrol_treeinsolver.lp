@@ -1,11 +1,11 @@
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % Ceci est une extension du PTBN_undercontrol_treeinsolver.lp vérifiant que les 
 % sous réseaux sont effectivement des SBNs.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-#include "PTBN_undercontrol_treeinsolver.lp"
+#include "PTBN_undercontrol_treeinsolver.lp".
 
 % Déclaration des poids de tous les contextes possibles (sinon clingcon râle).
 &dom{-Wb..Wb} = w(I,J,context(D,O)) :- node(I), node(J), possible_context(D,O), I<=D, J<=D, wb(Wb).

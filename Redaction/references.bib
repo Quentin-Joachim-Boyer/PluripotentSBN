@@ -1,57 +1,123 @@
 % Bibliographie du rapport de stage
 % Format BibLaTeX
 
-@mastersthesis{defossez2021,
-    author  = {Defossez, Rémy},
-    title   = {Le mille-feuille évolutionnaire, une nouvelle formalisation de l'évolution},
-    school  = {ENS Paris Ulm / Université Grenoble Alpes},
-    year    = {2021},
-    note    = {Stage L3, encadrants : Sergiu Ivanov et Nicolas Glade}
+% ----- Travaux de l'équipe -----
+
+@phdthesis{glade2022,
+    author  = {Glade, Nicolas},
+    title   = {Le Vivant Rare, Faible et Amorphe --- Évolution depuis les Origines jusqu'à la Vie telle qu'elle nous Apparaît},
+    school  = {Université Grenoble Alpes},
+    year    = {2022},
+    type    = {Habilitation à Diriger des Recherches},
+    note    = {HAL : tel-04075075}
 }
 
-@mastersthesis{bonnet2023,
-    author  = {Nguyen Bonnet, Ai-Ling},
-    title   = {Évolution des réseaux booléens à signe},
+@phdthesis{segretain2023,
+    author  = {Segretain, Rémi},
+    title   = {Complexité et évolution : étude des Réseaux Booléens à Signe},
     school  = {Université Grenoble Alpes},
     year    = {2023},
-    note    = {Stage M1, encadrants : Sergiu Ivanov et Nicolas Glade}
+    type    = {Thèse de doctorat},
+    note    = {École doctorale ISCE, spécialité MBS. Directeur : Nicolas Glade}
 }
 
-@phdthesis{elena2009,
-    author  = {Elena, Adrien},
-    title   = {Robustesse des réseaux d'automates Booléens à seuil aux modes d'itération},
-    school  = {TIMC-IMAG, Grenoble},
-    year    = {2009}
+@article{segretain2020,
+    author  = {Segretain, Rémi and Ivanov, Sergiu and Trilling, Laurent and Glade, Nicolas},
+    title   = {Implementation of a Computing Pipeline for Evaluating the Extensibility of {Boolean} Networks' Structure and Function},
+    year    = {2020},
+    note    = {bioRxiv preprint, doi:10.1101/2020.10.02.323949}
 }
 
-@article{kauffman1969,
-    author  = {Kauffman, Stuart A.},
-    title   = {Metabolic stability and epigenesis in randomly constructed genetic nets},
-    journal = {Journal of Theoretical Biology},
-    volume  = {22},
-    number  = {3},
-    pages   = {437--467},
-    year    = {1969}
+@report{bonnet2023,
+    author      = {Nguyen Bonnet, Ai-Ling},
+    title       = {Évolution des réseaux booléens à signe},
+    type        = {Rapport de stage M1},
+    institution = {Université Grenoble Alpes},
+    year        = {2023},
+    note        = {Encadrants : Sergiu Ivanov et Nicolas Glade}
 }
 
-@article{hopfield1982,
-    author  = {Hopfield, John J.},
-    title   = {Neural networks and physical systems with emergent collective computational abilities},
-    journal = {Proceedings of the National Academy of Sciences},
-    volume  = {79},
-    number  = {8},
-    pages   = {2554--2558},
-    year    = {1982}
+@report{defossez2021,
+    author      = {Defossez, Rémy},
+    title       = {Le mille-feuille évolutionnaire, une nouvelle formalisation de l'évolution},
+    type        = {Rapport de stage L3},
+    institution = {ENS Paris Ulm / Université Grenoble Alpes},
+    year        = {2021},
+    note        = {Encadrants : Sergiu Ivanov et Nicolas Glade}
 }
 
-@article{wagner2007,
+@report{wu2024,
+    author      = {Wu, Danwen},
+    title       = {Formalization, identification and decomposition of pluripotents {Boolean} networks},
+    type        = {Rapport de stage M1},
+    institution = {Université Grenoble Alpes},
+    year        = {2024},
+    note        = {Encadrants : Nicolas Glade et Laurent Trilling, TIMC Laboratory}
+}
+
+% ----- Résultats biologiques de référence -----
+
+@article{wagner2008,
     author  = {Wagner, Andreas},
     title   = {Robustness and evolvability: a paradox resolved},
     journal = {Proceedings of the Royal Society B},
     volume  = {275},
     number  = {1630},
     pages   = {91--100},
-    year    = {2007}
+    year    = {2008},
+    doi     = {10.1098/rspb.2007.1137}
 }
 
-% À compléter avec les articles ASP utilisés, les papiers sur les modèles de comptage, etc.
+% @article{kauffman1969,
+%     author  = {Kauffman, Stuart A.},
+%     title   = {Metabolic stability and epigenesis in randomly constructed genetic nets},
+%     journal = {Journal of Theoretical Biology},
+%     volume  = {22},
+%     number  = {3},
+%     pages   = {437--467},
+%     year    = {1969}
+% }
+
+% @article{hopfield1982,
+%     author  = {Hopfield, John J.},
+%     title   = {Neural networks and physical systems with emergent collective computational abilities},
+%     journal = {Proceedings of the National Academy of Sciences},
+%     volume  = {79},
+%     number  = {8},
+%     pages   = {2554--2558},
+%     year    = {1982}
+% }
+
+% @phdthesis{elena2009,
+%     author  = {Elena, Adrien},
+%     title   = {Robustesse des réseaux d'automates Booléens à seuil aux modes d'itération},
+%     school  = {TIMC-IMAG, Grenoble},
+%     year    = {2009}
+% }
+
+% ----- Outils ASP -----
+
+@article{banbara2017,
+    author  = {Banbara, Mutsunori and Kaufmann, Benjamin and Ostrowski, Max and Schaub, Torsten},
+    title   = {{Clingcon}: The Next Generation},
+    journal = {Theory and Practice of Logic Programming},
+    year    = {2017},
+    note    = {arXiv:1705.04569}
+}
+
+@inproceedings{kabir2022,
+    author    = {Kabir, Mohimenul and Everardo, Flavio O and Shukla, Ankit K and Hecher, Markus and Fichte, Johannes Klaus and Meel, Kuldeep S},
+    title     = {{ApproxASP} --- a Scalable Approximate Answer Set Counter},
+    booktitle = {Proceedings of the Thirty-Sixth AAAI Conference on Artificial Intelligence (AAAI-22)},
+    pages     = {5755--5764},
+    year      = {2022}
+}
+
+% ----- Visualisation -----
+
+@article{zhu2020,
+    author  = {Zhu, Minfeng and Chen, Wei and Hu, Yuanzhe and Hou, Yuxuan and Liu, Liangjun and Zhang, Kaiyuan},
+    title   = {{DRGraph}: An Efficient Graph Layout Algorithm for Large-scale Graphs by Dimensionality Reduction},
+    year    = {2020},
+    note    = {arXiv:2008.07799}
+}

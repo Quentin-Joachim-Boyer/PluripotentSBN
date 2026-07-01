@@ -19,11 +19,25 @@ SBN.csv = (function () {
     return fields;
   }
 
+  // La colonne `tree` (ex. "2[3[*,*],3[*,*]]") contient des virgules mais est écrite
+  // NON quotée par le pipeline : elle déborde sur plusieurs champs. Comme c'est la seule
+  // colonne à virgules non quotées, on recolle les champs excédentaires à sa position
+  // (déduite du schéma d'en-tête). Sans-effet si elle est un jour quotée correctement.
+  function realignTree(vals, ncol, treeIdx) {
+    const extra = vals.length - ncol;
+    return vals.slice(0, treeIdx)
+      .concat([vals.slice(treeIdx, treeIdx + extra + 1).join(',')])
+      .concat(vals.slice(treeIdx + extra + 1));
+  }
+
   function parse(text) {
     const lines = text.trim().split(/\r?\n/);
     const header = parseLine(lines[0]);
+    const treeIdx = header.indexOf('tree');
     return lines.slice(1).filter(l => l.trim()).map(line => {
-      const vals = parseLine(line); const obj = {};
+      let vals = parseLine(line);
+      if (treeIdx >= 0 && vals.length > header.length) vals = realignTree(vals, header.length, treeIdx);
+      const obj = {};
       header.forEach((h, i) => obj[h] = vals[i] ?? '');
       return obj;
     });
@@ -61,7 +75,7 @@ SBN.csv = (function () {
     if (gz) stream = stream.pipeThrough(new DecompressionStream('gzip'));
     const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
 
-    let header = null, leftover = '';
+    let header = null, leftover = '', treeIdx = -1;
     let keptIndices = null, colNames = null, numericCols = null, colData = null;
     let fIndices = [], wIndices = [], fcols = [];
     const fdataRows = [], wdataRows = [];
@@ -100,9 +114,10 @@ SBN.csv = (function () {
       leftover = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
-        const fields = parseLine(line);
+        let fields = parseLine(line);
         if (!header) {
           header = fields;
+          treeIdx = header.indexOf('tree');
           keptIndices = header.map((h, i) => i).filter(i => !/^f_\d+$/.test(header[i]) && !/^w_\d+,\d+$/.test(header[i]));
           colNames = keptIndices.map(i => header[i]);
           fIndices = header.map((h, i) => i).filter(i => /^f_\d+$/.test(header[i])).sort((a, b) => +header[a].slice(2) - +header[b].slice(2));
@@ -113,12 +128,14 @@ SBN.csv = (function () {
           fcols = fIndices.map(i => header[i]);
           continue;
         }
+        if (treeIdx >= 0 && fields.length > header.length) fields = realignTree(fields, header.length, treeIdx);
         if (fields.length < header.length) continue;
         pushRow(fields); captureRow(fields);
       }
     }
     if (leftover.trim() && header) {
-      const fields = parseLine(leftover);
+      let fields = parseLine(leftover);
+      if (treeIdx >= 0 && fields.length > header.length) fields = realignTree(fields, header.length, treeIdx);
       if (fields.length >= header.length) { pushRow(fields); captureRow(fields); }
     }
 

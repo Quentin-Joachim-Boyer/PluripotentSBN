@@ -9,6 +9,7 @@
 <script src="sbn-theme.js"></script>
 <script src="sbn-csv.js"></script>
 <script src="sbn-core.js"></script>
+<script src="sbn-export.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap');
 
@@ -153,8 +154,11 @@
           style="display:none;background:var(--border);color:var(--text);
                  border:none;padding:3px 10px;border-radius:5px;font-size:11px;
                  cursor:pointer;font-family:inherit">&#8962; Reset</button>
+  <button onclick="openExport()" title="Exporter le nuage de points"
+          style="margin-left:auto;background:var(--border);color:var(--text);border:none;padding:3px 10px;
+                 border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit">⬇ Export</button>
   <button id="detail-toggle-btn" onclick="toggleDetailPanel()"
-          style="margin-left:auto;background:var(--border);color:var(--text);
+          style="background:var(--border);color:var(--text);
                  border:none;padding:3px 10px;border-radius:5px;font-size:11px;
                  cursor:pointer;font-family:inherit">⊞ Detail</button>
 </div>
@@ -1203,6 +1207,7 @@ function drawScatter() {
   _renderScatter();
 }
 
+let _exportScale = null;   // si défini, _renderScatter rend à cette résolution (export PNG)
 function _renderScatter() {
   const canvas = document.getElementById('scatter-canvas');
   if (!canvas) return;
@@ -1210,7 +1215,7 @@ function _renderScatter() {
   const { allPts, xKey, yKey, meanAxis } = scatterCache;
   const { xMin, xMax, yMin, yMax } = view;
 
-  const DPR = window.devicePixelRatio || 1;
+  const DPR = _exportScale || window.devicePixelRatio || 1;
   const rect = canvas.parentElement.getBoundingClientRect();
   const W = rect.width, H = rect.height;
   if (canvas.width !== Math.round(W * DPR) || canvas.height !== Math.round(H * DPR)) {
@@ -1336,6 +1341,26 @@ function _renderScatter() {
   _renderMs = performance.now() - _t0;
   _drawnPts = drawn;
   updatePerfOverlay();
+}
+
+// Ouvre le widget d'export (une seule figure : le nuage).
+function openExport() {
+  if (!scatterCache) { alert('Charge d’abord un CSV.'); return; }
+  SBN.export.dialog([{ id: 'nuage', label: 'Nuage de points', formats: ['png'], scalable: true,
+                       run: (fmt, scale) => exportPNG(scale) }]);
+}
+// Export PNG haute résolution du nuage. canvasPNG copie le canvas de façon
+// SYNCHRONE (sur un offscreen avec fond), donc on peut restaurer l'affichage juste après.
+function exportPNG(scale) {
+  if (!scatterCache) return;
+  const prev = _exportScale, wasInt = interacting;
+  _exportScale = scale || 3; interacting = false;
+  _renderScatter();                                  // rend à haute résolution
+  const base = files.length ? SBN.export.baseName(files[curFile].name) : 'scatter';
+  SBN.export.canvasPNG(document.getElementById('scatter-canvas'),
+                       `${base}_${scatterCache.xKey}_vs_${scatterCache.yKey}.png`);
+  _exportScale = prev; interacting = wasInt;
+  _renderScatter();                                  // restaure l'affichage écran
 }
 
 function fmtTick(v, range) {

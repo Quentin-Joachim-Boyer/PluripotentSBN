@@ -15,10 +15,10 @@
             "mainClass": "PSBN.Main",
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
-                "3",
-                "${workspaceFolder}/JPPipeline/src/asp/PTBN_undercontrol_treeinsolver.lp",
+                "4",
+                "${workspaceFolder}/JPPipeline/src/asp/PTBN_undercontrol_taggedtree.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
-                "0",
+                "10000",
                 "${workspaceFolder}/JPPipeline/out",
                 "1"
             ]

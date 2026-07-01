@@ -157,6 +157,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
         StringBuilder csv_header = new StringBuilder();
         for (int i = 0; i <= n; i++)
             csv_header.append("v_").append(n - i).append(",");
+        csv_header.append("tree,"); // arbre etiquete par les noeuds de controle, apres le vecteur
         if (this.input.includeWeightsAndTransitions) {
             for (int j = 1; j <= n; j++)
                 csv_header.append("f_").append(j).append(",");

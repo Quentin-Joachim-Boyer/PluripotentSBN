@@ -105,9 +105,30 @@ Answer Set Programming, calcul parallèle.
 
 Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (celui des Signed Boolean Network SBN) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
 
-La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent potentiellement à d'autres systèmes (plus petits), on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
+La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent à d'autres systèmes (plus petits), on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
 
-Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation des n nœuds du réseau comme une STRUCTURE possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE dans l'espace du graphe de transition de ces états (hypercube à n dimensions). [Insérer illustration]. La pluripotence [concept volontairement flou/général pour pouvoir capter différentes interprétations] peut donc prendre sens dans le formalisme des SBN comme la présence de sous-dynamiques stables sur des supports de dimension inférieure reste [Cf. Quel paysage explore-t-on ?].
+Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation des n nœuds du réseau comme une STRUCTURE (ou un programme, un code, un plan...) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE (ou une exécution, une expression, une construction...) dans l'espace du graphe de transition de ces états (hypercube à n dimensions). 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/structure_3d_PSBN_undercontrol_treeinsolver_18036.png}
+        \caption{Une structure}
+        \label{fig:structure-3d}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/dynamique_3d_PSBN_undercontrol_treeinsolver_18036.png}
+        \caption{Sa dynamique}
+        \label{fig:dynamique-3d}
+    \end{subfigure}
+    \caption{Un réseau et son graphe de transition en dimension 3.}
+    \label{fig:mon-label}
+\end{figure}
+
+Le concept de pluripotence est volontairement suffisamment général et flou pour pouvoir capter les différentes interprétations que le vivant peut en faire. Elle pourrait ainsi prendre sens dans le formalisme des SBN comme la présence de sous-dynamiques stables correspondant à des SBN sur des supports pouvant être encodé par une dimension inférieure. Mais ce n'est pas la seule manière, on pourrait aussi (et c'est plutôt ce qui est fait ici comme première approche plus simple) rechercher des sous-dynamiques disjointes sur des supports identifiés par un unique noeud (dit "de contrôle"). Le choix des mots est important et il nous appartient d'être clair sur l'aspect de la pluripotence que l'on met en évidence. [Cf. Quel paysage explore-t-on ?].
 
 
 
@@ -136,15 +157,15 @@ L'apport principal de ce travail est la recherche de la pluripotence dans les SB
 
 Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques, mais aussi pour vérifier la justesse de nos programmes. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
 
-- sbn\_viz(7).html : structures et dynamiques détaillés.
+- sbn\_viz.html : structures et dynamiques détaillés.
 
-- sbn\_scatter(5).html : nuages des dynamiques placées selon différentes métriques.
+- sbn\_scatter.html : nuages des dynamiques placées selon différentes métriques.
 
 - metagraphe.html : nuages des dynamiques placées les unes par rapport aux autres selon des règles de mutations. 
 
-[Cf. partie technique pour un usage détaillé] 
+[Cf. partie postérité pour un usage détaillé] \\
 
-Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une partie de la longue réflexion sur les SBN ?
+Ce stage aura aussi donné l'occasion de rédiger un article (i.e. plus ou moins ce papier) synthétisant un bout de chemin parcouru sur la longue route qu'est la réflexion sur les SBN ?
 
 
 % ============================================================
@@ -156,13 +177,52 @@ Ce stage aura aussi donné l'occasion de rédiger un article synthétisant une p
 [Cf. rapport Ailing]
 
 
-\subsection{Fonctions booléennes de seuil (SBF)}
+\subsection{Fonctions booléennes à seuil (SBF)}
 
 [Cf. rapport Ailing]
+
+Commentaire sur les permutations des poids des SBF et la non prise en compte d'une arête non existante (chemin à exploiter). Ceci explique les différences entre cette table d'échelle et celles qui ont étés faits précédemment. 
 
 + Table des échelles (Dimension, SBF, produit de SBF, SBN, PSBN, Poids, borne des Poids, vecteurs, arbres)
 
 + Programme linéaire validant la borne des poids.
+
+\begin{table}[H]
+\centering
+\caption{Les 6 SBF distinctes en dimension $2$. $f(\mathbf{x}) = 1$ ssi $\sum_i w_i x_i > 0$, avec $w_i \in \{-1, 0, 1\}$.}
+\label{tab:sbf2}
+\begin{tabular}{cccccl}
+\toprule
+$(w_0,\,w_1)$ repr. & $f(0,0)$ & $f(1,0)$ & $f(0,1)$ & $f(1,1)$ & Expression \\
+\midrule
+$(-1,-1)$ & 0 & 0 & 0 & 0 & $0$ \\
+$(1,-1)$  & 0 & 1 & 0 & 0 & $x_0 \wedge \neg x_1$ \\
+$(-1,\;1)$  & 0 & 0 & 1 & 0 & $\neg x_0 \wedge x_1$ \\
+$(1,\;0)$   & 0 & 1 & 0 & 1 & $x_0$ \\
+$(0,\;1)$   & 0 & 0 & 1 & 1 & $x_1$ \\
+$(1,\;1)$   & 0 & 1 & 1 & 1 & $x_0 \vee x_1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Statistiques, propriétés, métriques}
+
+Donner des mesures fait parties des moyens que l'on a pour former des groupes, des relations d'équivalence, des relations d'ordre, bref pour se faire des intuitions sans avoir à éplucher l'intégralité de l'information contenue dans chaque réseau (ce qui est impossible). C'est pourquoi en plus d'énumérer les réseaux, nous calculons des métriques associés qui sont bien utiles pour visualiser les réseaux dans différents espaces. Le choix des statistiques calculées est motivé par les travaux de [Rémi] et [Ailing], mais reviennent aussi beaucoup au papier de [Wagner]. Un axe d'amélioration du présent travail serait les calculs d'autres statistiques, ce qui permettrait d'élargir l'horizon observable (dans les limites du passage à l'échelle nécessaire). 
+
+Explication dans les grandes lignes en quoi le papier de Wagner nous intéresse :
+
+- Robustesse.
+
+- Évolutivité.
+
+Autres métriques intéressantes :
+
+- Complexité au sens de rareté.
+
+- Bassins d'attraction, attracteurs.
+
+- Calcul sur des poids minimisés (non fait).
+
 
 \subsection{Métagraphes dynamiques et structurels, règles de mutation}
 
@@ -217,10 +277,10 @@ Les différents aspects de la pluripotence : \\
 \section{Méthodes et outils}
 % ============================================================
 
-Comme souvent dans l'écriture de code, les enjeux des phases de développement ont toujours été dans un premier temps d'arriver au résultat attendu (la correction) puis d'optimiser pour passer à l'échelle (une terminaison, idéalement rapide). Mais comme la correction dans notre cas nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'évaluation des rendus se sont succédé en cycles. Les sections suivantes ne reflètent donc pas nécessairement fidèlement la chronologie du développement.
+Comme souvent dans l'écriture de code, les enjeux des phases de développement ont toujours été dans un premier temps d'arriver au résultat attendu (la correction) puis d'optimiser pour passer à l'échelle (la terminaison, idéalement rapide). Mais comme la correction dans notre cas nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'évaluation des rendus se sont succédé en cycles. Les sections suivantes ne reflètent donc pas nécessairement fidèlement la chronologie du développement.
 
 
-\subsection{Rectitude}
+\subsection{Correction}
 
 L'objectif originel du stage était de prendre en main le language Answer Set Programming (ASP) pour parvenir à comprendre et améliorer les programmes existant [Cf. Programmes Laurent dans le git].
 
@@ -281,7 +341,7 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
 [Lien vers un fichier utilisable]
 
-\subsection{Efficacité}
+\subsection{Optimisation}
 
 - Base ASP : contraintes sur les poids plus efficaces que les contraintes sur la structure. Parallélisation possible directement en ASP, mais généralement peu efficace [donner des chiffres].
 
@@ -299,7 +359,7 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
     [Zoom sur la partie énumération]
 
-    - utilisation
+    - utilisation ?
 
 
 - post processing python relativement abandonné ici.
@@ -310,11 +370,6 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 \subsection{Observation}
 
 -> fichiers html à la racine du git.
-
-% sbn\_viz(7).html : exploration détaillée d'un réseau (structure, graphe de transition, attracteurs)
-% sbn\_scatter(5).html : nuage de réseaux placés selon différentes métriques (robustesse, évolutivité...)
-% metagraphe.html : position relative des réseaux par règles de mutation (métagraphe, layout DRGraph)
-% Chargement de CSV générés indépendamment par la pipeline ASP ou MCSBN
 
 - Beaucoup de questions de Front : lisibilité (palette de couleur, styles des points, fonctions interactives, ordre d'affichage), fluidité (webGL, parsing en streaming, rafraîchissement partiel), ergonomie (parsing des différentes conventions de CSV mises en place pendant le développement)
 
@@ -328,7 +383,7 @@ La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle [
 
 - Usage différencié selon les parties du projet.
 
-- Claude code en version pro. Utilisation naïve.
+- Claude code en version pro. Utilisation relativement naïve, il est probablement possible de l'utiliser encore plus efficacement.
 
 \subsection{Exploration Randomisée : MCSBN}
 
@@ -373,7 +428,7 @@ Dans un premier temps, il est rassurant d'observer que nos graphiques confirment
 
 
 
-Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication pourrait éventuellement permettre de généraliser aux dimensions supérieures. [Insérer des graphiques avec des jolies flèche paint pour chaque assertion]
+Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication pourrait éventuellement permettre de généraliser aux dimensions supérieures. [Insérer des graphiques avec des jolies flèches paint pour chaque assertion]
 
 - La décomposition d'un SBN en sous-dynamiques distinctes est déterminante dans le calcul de ses autres propriétés. (La pluripotence n'est pas décorrélée de tout)
 
@@ -394,7 +449,7 @@ Ces conclusions résument les observations sur les visualisations générées, t
 L'objectif principal était de montrer ce que le formalisme des SBN permettait. Et à cet égard le présent travail semble nous indiquer qu'il parvient assez bien à donner des interprétations claires de concepts généraux (comme la pluripotence), et qu'il est suffisamment pratique et riche pour que l'exploration de ses possibilités soit faisable et porteuse de sens.
 
 \vspace{5pt}
-Travaux inachevés :
+Travaux inachevés (évoqués au fil du papier, mais rassemblés ici):
 
 - Affichage d'arbre généalogique issu des simulations.
 
@@ -423,6 +478,7 @@ Idée futures :
 
 % ============================================================
 \newpage
+\nocite{*}
 \printbibliography[title={Références}]
 % ============================================================
 
