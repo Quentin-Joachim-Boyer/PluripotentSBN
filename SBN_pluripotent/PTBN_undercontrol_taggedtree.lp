@@ -1,10 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Génère les SBN (i.e. les bits de ses fonctions de transition) de dimension d 
-% vérifiant (au moins) un vecteur de décomposition v, ainsi que leur permutation sur
-% les noeuds.
+% vérifiant (au moins) un vecteur de décomposition v.
 %
-% Il est possible de fixer la permutation identité pour supprimer ces permutations.
-% Cf. environs de la ligne 61 (redirection instable)
 %
 % Utilisation pour un vecteur de décomposition V0,V1,... VD en dimension D:
 %   clingcon PSBN_undercontrol_insolver.lp --project 0 -c d=D -c v0=V0 ... -c vD=VD 
@@ -64,24 +61,11 @@ w_bound(1,1). w_bound(1,2). w_bound(2,3). w_bound(3,4). w_bound(5,5).
 wb(Wb) :- w_bound(Wb,d).
 &dom{(-Wb)..Wb} = w(I,J) :- node(I), node(J), wb(Wb).
 
-% Déclaration d'une permutation des noeuds. 
-% 1 {sigma(N,M) : node(M)} 1 :- node(N).
-% 1 {sigma(N,M) : node(N)} 1 :- node(M).
-% :- sigma(N,M), N != M.
 
 % Déclaration de la DYNAMIQUE. 
 state(0..2**d-1).
 activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 
-
-% % Permutation des etats induite par sigma : sigma_state(S, S2) ou le bit (M-1) de S2
-% % vaut le bit (N-1) de S, avec M = sigma(N).
-% sigma_state(S, S2) :- state(S),
-%     S2 = #sum{ (2**(M-1)),N : sigma(N,M), (S / 2**(N-1)) \ 2 = 1 }.
-
-% % Dynamique permutée (la sortie).
-% transition_function_bit(M,S2) :- node(N), state(S), sigma(N,M), sigma_state(S,S2),
-%     &sum{ w(NI,N) : node(NI), activated(NI,S) } > 0.
 
 transition_function_bit(N,S) :- node(N), state(S),
     &sum{ w(NI,N) : node(NI), activated(NI,S) } > 0.
@@ -121,7 +105,7 @@ tree(D-1,c(ControlN,Ctx),c(ControlN,CtxOn)):- branch_node(ControlN, D, Ctx, CtxO
 &sum{ neg_w(I,J) ; -1*w(I,J) } <= 0 :- node(I), node(J).
 
 % ATTENTION clingcon : ctx_chain/ctxon_chain descendent du choix { leaf_node },
-% donc interdits comme CONDITION d'un &sum ("invalid sum constraint"). On passe
+% donc sont interdits comme CONDITION d'un &sum ("invalid sum constraint"). On passe
 % par des variables auxiliaires actc/deac sur le domaine FIXE des noeuds, le choix
 % restant dans le CORPS des regles. (Ctx,CtxOn) identifie le branch_node.
 % Contribution de chaque noeud I (ctxon inclus dans ctx, offset exclus de ext) :

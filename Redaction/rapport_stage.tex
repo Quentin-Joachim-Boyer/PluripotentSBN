@@ -213,7 +213,7 @@ Commentaire sur les permutations des poids des SBF et la non prise en compte d'u
 \caption{Ordres de grandeur par dimension~$n$. \textbf{SBF}~$=|\mathcal{T}_n|$ (chambres,
 BFS exact)~; \textbf{orb.}~$=|\mathcal{T}_n/S_n|$ (réduction par permutation des nœuds)~;
 \textbf{SBN}~$=|\mathcal{T}_n|^n$ (\emph{produit de SBF}~: tout $n$-uplet de SBF est
-réalisable, cf. indépendance des colonnes)~; \textbf{PSBN}~$=|\mathcal{T}_n|^n-(|\mathcal{T}_n|-1)^n$
+réalisable, cf. indépendance des colonnes)~; \textbf{PTBN}~$=|\mathcal{T}_n|^n-(|\mathcal{T}_n|-1)^n$
 (SBN admettant $\ge 1$ nœud de contrôle, i.e. une colonne $f_c=\pi_c$~; forme close validée par
 énumération)~; \textbf{$B$}~$=w_{\text{bound}}(n)$ (ILP, pire cas)~; \textbf{Poids}~$=(2B+1)^{n^2}$
 (espace syntaxique des matrices)~; \textbf{vec.} vecteurs de décomposition (couverts par
@@ -223,7 +223,7 @@ $T(m)=1+m\,T(m-1)^2$ (\texttt{taggedtree}).}
 \label{tab:echelles}
 \begin{tabular}{r r r r r c r r r r}
 \toprule
-$n$ & SBF & orb. & SBN & PSBN & $B$ & Poids & vec. & btree & tagged \\
+$n$ & SBF & orb. & SBN & PTBN & $B$ & Poids & vec. & btree & tagged \\
 \midrule
 \emph{form.} & $|\mathcal{T}_n|$ & $|\mathcal{T}_n/S_n|$ & $|\mathcal{T}_n|^n$ & $|\mathcal{T}_n|^n{-}(|\mathcal{T}_n|{-}1)^n$ & $w_{\mathrm{b}}(n)$ & $(2B{+}1)^{n^2}$ & $|H_n|$ & $1{+}A_{n-1}^2$ & $1{+}n\,T_{n-1}^2$ \\
 \midrule
