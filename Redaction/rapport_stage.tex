@@ -206,9 +206,87 @@ Ce stage aura aussi donné l'occasion de rédiger un article (i.e. plus ou moins
 
 Commentaire sur les permutations des poids des SBF et la non prise en compte d'une arête non existante (chemin à exploiter). Ceci explique les différences entre cette table d'échelle et celles qui ont étés faits précédemment. 
 
-+ Table des échelles (Dimension, SBF, produit de SBF, SBN, PSBN, Poids, borne des Poids, vecteurs, arbres)
+\begin{table}[H]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Ordres de grandeur par dimension~$n$. \textbf{SBF}~$=|\mathcal{T}_n|$ (chambres,
+BFS exact)~; \textbf{orb.}~$=|\mathcal{T}_n/S_n|$ (réduction par permutation des nœuds)~;
+\textbf{SBN}~$=|\mathcal{T}_n|^n$ (\emph{produit de SBF}~: tout $n$-uplet de SBF est
+réalisable, cf. indépendance des colonnes)~; \textbf{PSBN}~$=|\mathcal{T}_n|^n-(|\mathcal{T}_n|-1)^n$
+(SBN admettant $\ge 1$ nœud de contrôle, i.e. une colonne $f_c=\pi_c$~; forme close validée par
+énumération)~; \textbf{$B$}~$=w_{\text{bound}}(n)$ (ILP, pire cas)~; \textbf{Poids}~$=(2B+1)^{n^2}$
+(espace syntaxique des matrices)~; \textbf{vec.} vecteurs de décomposition (couverts par
+\texttt{setup\_btree})~; \textbf{btree} arbres non étiquetés $A(d)=1+A(d-1)^2$
+(\texttt{treeinsolver})~; \textbf{tagged} arbres étiquetés par nœud de contrôle
+$T(m)=1+m\,T(m-1)^2$ (\texttt{taggedtree}).}
+\label{tab:echelles}
+\begin{tabular}{r r r r r c r r r r}
+\toprule
+$n$ & SBF & orb. & SBN & PSBN & $B$ & Poids & vec. & btree & tagged \\
+\midrule
+\emph{form.} & $|\mathcal{T}_n|$ & $|\mathcal{T}_n/S_n|$ & $|\mathcal{T}_n|^n$ & $|\mathcal{T}_n|^n{-}(|\mathcal{T}_n|{-}1)^n$ & $w_{\mathrm{b}}(n)$ & $(2B{+}1)^{n^2}$ & $|H_n|$ & $1{+}A_{n-1}^2$ & $1{+}n\,T_{n-1}^2$ \\
+\midrule
+1 & 2      & 2   & $2$                 & $1$                 & 1 & $3$                 & 2   & 2                 & 2 \\
+2 & 6      & 4   & $36$                & $11$                & 1 & $81$                & 4   & 5                 & 9 \\
+3 & 32     & 10  & $3.28{\cdot}10^{4}$ & $2977$              & 2 & $1.95{\cdot}10^{6}$ & 10  & 26                & 244 \\
+4 & 370    & 36  & $1.87{\cdot}10^{10}$& $2.02{\cdot}10^{8}$ & 3 & $3.32{\cdot}10^{13}$& 36  & 677               & $2.38{\cdot}10^{5}$ \\
+5 & 11292  & 224 & $1.84{\cdot}10^{20}$& $8.13{\cdot}10^{16}$& 5 & $1.08{\cdot}10^{26}$& 202 & $4.58{\cdot}10^{5}$ & $2.84{\cdot}10^{11}$ \\
+6 & $1.07{\cdot}10^{6}$ & 3024 & $1.47{\cdot}10^{36}$& $8.26{\cdot}10^{30}$& 9 & $1.08{\cdot}10^{46}$& 1828 & $2.10{\cdot}10^{11}$ & $4.82{\cdot}10^{23}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-+ Programme linéaire validant la borne des poids.
+Les colonnes \textbf{Poids} et \textbf{SBN} explosent (respectivement $(2B+1)^{n^2}$ et
+$|\mathcal{T}_n|^n$)~: la force brute est intenable dès $n=4$. Les trois dernières colonnes
+donnent les trois leviers qui rendent la montée en dimension possible~: réduction par $S_n$
+(facteur jusqu'à $n!$), restriction au sous-espace pluripotent (\emph{vec.}, \emph{btree},
+\emph{tagged} $\ll$ SBN), et énumération par arbre-dans-le-solveur plutôt que par grille de
+poids. Les trois familles d'arbres sont emboîtées, $\text{vec.}\le\text{btree}\le\text{tagged}$,
+et correspondent à trois outils de complétude croissante~: \texttt{setup\_btree} (une orientation
+par vecteur, \emph{incomplet}) $\subset$ \texttt{treeinsolver} (toutes orientations) $\subset$
+\texttt{taggedtree} (étiqueté, sans permutation).
+
+\paragraph{Borne des poids par programmation linéaire en nombre entier.}
+
+On note $\mathcal{T}_n = \{ f_w : w \in \mathbb{Z}^n \}$ l'ensemble des SBF réalisables
+en dimension~$n$.
+
+Pour une SBF réalisable $f$, posons $P = \{\mathbf{x} : f(\mathbf{x}) = 1\}$ et
+$N = \{\mathbf{x} : f(\mathbf{x}) = 0\}$. La borne de poids minimale réalisant $f$ est
+$W(f) = \min\{ \|w\|_\infty : w \in \mathbb{Z}^n,\ f_w = f \}$. Comme
+$\sum_i w_i x_i \in \mathbb{Z}$ pour $w$ entier, la condition stricte
+$\sum_i w_i x_i > 0$ équivaut à $\sum_i w_i x_i \ge 1$, ce qui permet d'écrire le problème comme un programme linéaire en nombres entiers:
+\begin{equation}
+\begin{aligned}
+W(f) = \min_{w \in \mathbb{Z}^n,\ B \in \mathbb{Z}_{\ge 0}}\quad & B\\
+\text{s.c.}\quad
+& \textstyle\sum_i w_i x_i \ge 1 && \forall\, \mathbf{x} \in P,\\
+& \textstyle\sum_i w_i x_i \le 0 && \forall\, \mathbf{x} \in N,\\
+& -B \le w_i \le B && \forall\, i \in \{1,\dots,n\}.
+\end{aligned}
+\end{equation}
+Les deux premières familles de contraintes caractérisent $f$ ~;  $-B \le w_i \le B$
+linéarise $B = \|w\|_\infty$.
+
+La borne recherchée, celle qui permet d'exprimer \emph{toutes} les SBF de
+dimension~$n$, est alors le pire cas sur $\mathcal{T}_n$~:
+\begin{equation}
+\boxed{\max_{f_w \in \mathcal{T}_n} W(f)\ }
+\end{equation}
+c'est-à-dire le plus petit $B$ tel que tout $f_w \in \mathcal{T}_n$ soit réalisable avec
+$\|w\|_\infty \le B$.
+
+Il ne reste donc plus qu'à énumérer toutes les SBF et résoudre l'ILP ci-dessus pour chacune. Enumérer les $2^{2^n}$ fonctions booléennes pour ne selectionner que les réalisables n'est pas raisonnable pour $n\ge 5$, il faut donc trouver une autre manière. Une idée est de passer par les poids, il suffirait de trouver \emph{une} borne minimale des poids garantissant l'obtention de toutes les SBF, mais il n'en a pas été trouvé de suffisamment raisonnable pour le calcul. L'idée retenue a donc été d'explorer l'espace des SBF par un parcourt (en largeur) de graphe, en considérant que deux SBF sont voisines si on peut passer de l'une à l'autre par changement d'un unique bit, i.e. en traversant un unique hyper-plan de $\mathbb{R}^n$ dans l'espace des poids. [Cf la thèse de Rémi, les parties 3 et 4 présentent une approche différente d'énumération que celle évoquée ici, mais ses illustrations permettent d'y voir plus clair]
+
+\paragraph{Complétude du parcours.} Cette relation de voisinage est exactement l'adjacence des \emph{chambres} de l'arrangement des $2^n$ hyperplans $H_{\mathbf x} = \{w : \sum_i w_i x_i = 0\}$ dans l'espace des poids~: sur chaque chambre (région ouverte délimitée par ces hyperplans), le signe de $\sum_i w_i x_i$ est constant pour tout $\mathbf x$, donc $f_w$ y est constante. $\mathcal{T}_n$ est donc exactement l'ensemble des chambres, et deux chambres voisines (séparées par une seule facette) donnent deux SBF qui ne diffèrent que d'un bit.
+
+Le graphe des chambres est connexe~: $\mathbb{R}^n$ (l'espace complet, avant de retirer les hyperplans) est connexe, donc deux poids quelconques $w,w'$ sont reliés par un chemin~; quitte à le perturber légèrement, ce chemin ne traverse jamais deux hyperplans au même instant (cas de mesure nulle), donc il les traverse un par un, chaque traversée faisant passer à une chambre voisine. La suite des chambres ainsi traversées relie celle de $w$ à celle de $w'$~: le graphe est connexe.
+
+Un parcours en largeur partant d'une seule SBF réalisable (par exemple $f=0$, obtenue avec $w=0$) et ne testant, à chaque étape, que la réalisabilité du voisin à un bit de distance (simple faisabilité LP) visite donc nécessairement toute $\mathcal{T}_n$~: la connexité garantit qu'aucune SBF n'est hors d'atteinte, contrairement à une recherche par force brute sur les poids où une SBF exigeant de gros poids peut être manquée sans avertissement.
+
+\paragraph{Réduction par symétrie.} Deux SBF liées par une permutation des $n$ coordonnées ont la même borne $\|w\|_\infty$ (permuter les poids ne change pas leur norme), il suffit donc d'explorer un seul représentant par orbite sous $S_n$ . Cela ne coûte rien en complétude~: si $r$ est le représentant exploré et $\sigma \cdot r$ un autre représentant de la même orbite, retourner le bit $k$ de $\sigma\cdot r$ revient, après application de $\sigma^{-1}$, à retourner le bit $\sigma^{-1}(k)$ de $r$~; comme $\sigma^{-1}$ est une bijection sur les positions, les $2^n$ voisins de $r$ (une fois ramenés à leur représentant canonique) donnent déjà toutes les orbites voisines, quel que soit le représentant de départ choisi.
+
 
 \begin{table}[H]
 \centering
@@ -230,13 +308,17 @@ $(1,\;1)$   & 0 & 1 & 1 & 1 & $x_0 \vee x_1$ \\
 
 \subsection{Statistiques, propriétés, métriques}
 
-Donner des mesures fait parties des moyens que l'on a pour former des groupes, des relations d'équivalence, des relations d'ordre, bref pour se faire des intuitions sans avoir à éplucher l'intégralité de l'information contenue dans chaque réseau (ce qui est impossible). C'est pourquoi en plus d'énumérer les réseaux, nous calculons des métriques associés qui sont bien utiles pour visualiser les réseaux dans différents espaces. Le choix des statistiques calculées est motivé par les travaux de [Rémi] et [Ailing], mais reviennent aussi beaucoup au papier de [Wagner]. Un axe d'amélioration du présent travail serait les calculs d'autres statistiques, ce qui permettrait d'élargir l'horizon observable (dans les limites du passage à l'échelle nécessaire). 
+Donner des mesures fait parties des moyens que l'on a pour former des groupes, des relations d'équivalence, des relations d'ordre, bref pour se faire des intuitions sans avoir à éplucher l'intégralité de l'information contenue dans chaque réseau (ce qui est impossible, donc on fait une sorte de modèle dans le modèle). C'est pourquoi en plus d'énumérer les réseaux, nous calculons des métriques associés qui sont bien utiles pour visualiser les réseaux dans différents espaces. Le choix des statistiques calculées est motivé par les travaux de [Rémi] et [Ailing], mais reviennent aussi beaucoup au papier de [Wagner]. Un axe d'amélioration du présent travail serait les calculs d'autres statistiques, ce qui permettrait d'élargir l'horizon observable (dans les limites du passage à l'échelle nécessaire). 
 
 Explication dans les grandes lignes en quoi le papier de Wagner nous intéresse :
 
 - Robustesse.
 
 - Évolutivité.
+
+[Scatter robustesse evolutivité]
+
+-> confirmation des résultats de Wagner.
 
 Autres métriques intéressantes :
 
@@ -251,7 +333,16 @@ Autres métriques intéressantes :
 
 Une approche proposée dans la thèse de Rémi (et poursuivie par Rémy et Ailing) a été de construire des méta-graphes dans lesquels deux dynamiques sont reliées si elles sont voisines en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
 
-[figure métagraphe issue du rapport d'Ailing] 
+[figure métagraphe issue du rapport d'Ailing]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/robustesse_eps1_delta0.png}
+    \caption{Exemple d'un métagraphe sur les réseaux de dimension 2. Accompagné d'une coloration des noeuds }
+    \label{fig:métagraphe-Ailing}
+\end{figure}
+
+À noter qu'ici, les noeuds du graphe sont des dynamiques, 
 
 Il a été essayé de reproduire les mêmes méta-graphes en réutilisant les définitions de distances, en particulier la distance DA agrégeant les changements des cycles limites. Mais comme le calcul exhaustif de ces distances tel quels ne pouvait être mis à l'échelle pour la dimension 3 qu'aux prix d'efforts conséquents (de l'ordre de 1e10 paires), et est difficilement concevable en dimension 4 (de l'ordre de 4e20 paires), il n'a pas été poursuivi. Il est sans doute possible de trouver des manières de contourner cette difficulté qui n'est que technique, et de construire des méta-graphes similaires sémantiquement. En tout cas cette piste (qui existe) n'a pas été exploré plus avant ici.
 
@@ -350,7 +441,7 @@ Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille 
 
 - \texttt{PTBN\_undercontrol.lp} permettant de générer des réseaux pluripotents à 1 nœud de contrôle, et d'arbre de décomposition fixé. (Et de sous-réseaux quelconques, donc TBN à cause du contrôle). 
 
-[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ selectionnant un non PSBN] 
+[Figure screenshot de \texttt{sbn\_viz} sur le fichier $\langle 0,2,0,0\rangle$ sélectionnant un non PSBN] 
 
 [Lien vers un fichier utilisable]
 

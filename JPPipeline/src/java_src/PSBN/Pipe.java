@@ -103,7 +103,7 @@ public class Pipe extends Pipeline<PipeInput,Void> {
                         }
                     }
                 })
-                // .setMaximumParallelTasks(10)
+                .setMaximumParallelTasks(10)
                 .setEndOfJobAction(OneTimeAction.printActionFactory("Enumeration Job terminated"))
                 .build();
         // L'enumeration subdivisee streame chaque solution directement vers la
