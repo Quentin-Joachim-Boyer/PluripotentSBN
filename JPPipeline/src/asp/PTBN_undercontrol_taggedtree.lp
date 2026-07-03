@@ -1,10 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Génère les SBN (i.e. les bits de ses fonctions de transition) de dimension d 
-% vérifiant (au moins) un vecteur de décomposition v, ainsi que leur permutation sur
-% les noeuds.
+% vérifiant (au moins) un vecteur de décomposition v.
 %
-% Il est possible de fixer la permutation identité pour supprimer ces permutations.
-% Cf. environs de la ligne 61 (redirection instable)
 %
 % Utilisation pour un vecteur de décomposition V0,V1,... VD en dimension D:
 %   clingcon PSBN_undercontrol_insolver.lp --project 0 -c d=D -c v0=V0 ... -c vD=VD 
@@ -64,24 +61,11 @@ w_bound(1,1). w_bound(1,2). w_bound(2,3). w_bound(3,4). w_bound(5,5).
 wb(Wb) :- w_bound(Wb,d).
 &dom{(-Wb)..Wb} = w(I,J) :- node(I), node(J), wb(Wb).
 
-% Déclaration d'une permutation des noeuds. 
-% 1 {sigma(N,M) : node(M)} 1 :- node(N).
-% 1 {sigma(N,M) : node(N)} 1 :- node(M).
-% :- sigma(N,M), N != M.
 
 % Déclaration de la DYNAMIQUE. 
 state(0..2**d-1).
 activated(N,S) :- node(N), state(S), (S / 2**(N-1)) \ 2 = 1.
 
-
-% % Permutation des etats induite par sigma : sigma_state(S, S2) ou le bit (M-1) de S2
-% % vaut le bit (N-1) de S, avec M = sigma(N).
-% sigma_state(S, S2) :- state(S),
-%     S2 = #sum{ (2**(M-1)),N : sigma(N,M), (S / 2**(N-1)) \ 2 = 1 }.
-
-% % Dynamique permutée (la sortie).
-% transition_function_bit(M,S2) :- node(N), state(S), sigma(N,M), sigma_state(S,S2),
-%     &sum{ w(NI,N) : node(NI), activated(NI,S) } > 0.
 
 transition_function_bit(N,S) :- node(N), state(S),
     &sum{ w(NI,N) : node(NI), activated(NI,S) } > 0.
@@ -121,27 +105,32 @@ tree(D-1,c(ControlN,Ctx),c(ControlN,CtxOn)):- branch_node(ControlN, D, Ctx, CtxO
 &sum{ neg_w(I,J) ; -1*w(I,J) } <= 0 :- node(I), node(J).
 
 % ATTENTION clingcon : ctx_chain/ctxon_chain descendent du choix { leaf_node },
-% donc interdits comme CONDITION d'un &sum ("invalid sum constraint"). On passe
-% par des variables auxiliaires actc/deac sur le domaine FIXE des noeuds, le choix
-% restant dans le CORPS des regles. (Ctx,CtxOn) identifie le branch_node.
-% Contribution de chaque noeud I (ctxon inclus dans ctx, offset exclus de ext) :
-%   offset ctxon(CtxOn) -> w(I,CN) ; externe ext -> pos_w/neg_w ; sinon 0 ;
-%   pour la desactivation, I=CN (soi) -> w(CN,CN).
-ext(I,CN,Ctx) :- branch_node(CN,_,Ctx,_), node(I), I != CN, not ctx_chain(I,_,Ctx).
+% donc sont interdits comme CONDITION d'un &sum ("invalid sum constraint").
+% Mais l'appartenance d'un noeud a une chaine est inscrite dans le TERME
+% lui-meme (c(2,c(1,nil)) contient 1 et 2) : on la precalcule au grounding par
+% le predicat SYNTAXIQUE deterministe chain_member/2, utilisable, lui, en
+% condition de &sum. Chaines de noeuds distincts generees avec l'ensemble
+% porte en masque de bits M (recursion positive, stratifiee, terminaison
+% garantie par M < 2**d ; une version recursive avec negation boucle au
+% grounding). Egalement utilise par PSBN_undercontrol_taggedtree.lp.
+chain(nil, 0).
+chain(c(N,C), M + 2**(N-1)) :- chain(C,M), node(N), (M / 2**(N-1)) \ 2 = 0.
+chain_member(N,C) :- chain(C,M), node(N), (M / 2**(N-1)) \ 2 = 1.
+
+% Contribution de chaque noeud I (membres(CtxOn) inclus dans membres(Ctx),
+% CN hors de Ctx par construction du choix branch_node) :
+%   offset (I dans CtxOn) -> w(I,CN) ; externe (I hors Ctx, I != CN) ->
+%   pos_w/neg_w ; pour la desactivation, I=CN (soi) -> w(CN,CN).
 
 % Non activation externe :  sum_offset w(I,CN) + sum_ext pos_w(I,CN)  <= 0
-&dom{(-Wb)..Wb} = actc(I,Ctx,CtxOn) :- node(I), branch_node(_,_,Ctx,CtxOn), wb(Wb).
-&sum{ actc(I,Ctx,CtxOn) ; -1*w(I,CN)     } = 0 :- branch_node(CN,_,Ctx,CtxOn), ctxon_chain(I,_,CtxOn).
-&sum{ actc(I,Ctx,CtxOn) ; -1*pos_w(I,CN) } = 0 :- branch_node(CN,_,Ctx,CtxOn), ext(I,CN,Ctx).
-&sum{ actc(I,Ctx,CtxOn)                  } = 0 :- branch_node(CN,_,Ctx,CtxOn), node(I), not ctxon_chain(I,_,CtxOn), not ext(I,CN,Ctx).
-&sum{ actc(I,Ctx,CtxOn) : node(I) } <= 0 :- branch_node(_,_,Ctx,CtxOn).
+&sum{ w(I,CN)     : node(I), chain_member(I,CtxOn) ;
+      pos_w(I,CN) : node(I), I != CN, not chain_member(I,Ctx) } <= 0
+    :- branch_node(CN,_,Ctx,CtxOn).
 
 % Non desactivation externe : sum_offset w(I,CN) + sum_ext neg_w(I,CN) + w(CN,CN)  > 0
-&dom{(-Wb)..Wb} = deac(I,Ctx,CtxOn) :- node(I), branch_node(_,_,Ctx,CtxOn), wb(Wb).
-&sum{ deac(I,Ctx,CtxOn) ; -1*w(I,CN)     } = 0 :- branch_node(CN,_,Ctx,CtxOn), ctxon_chain(I,_,CtxOn).
-&sum{ deac(I,Ctx,CtxOn) ; -1*neg_w(I,CN) } = 0 :- branch_node(CN,_,Ctx,CtxOn), ext(I,CN,Ctx).
-&sum{ deac(CN,Ctx,CtxOn) ; -1*w(CN,CN)   } = 0 :- branch_node(CN,_,Ctx,CtxOn).
-&sum{ deac(I,Ctx,CtxOn)                  } = 0 :- branch_node(CN,_,Ctx,CtxOn), ctx_chain(I,_,Ctx), not ctxon_chain(I,_,CtxOn).
-&sum{ deac(I,Ctx,CtxOn) : node(I) } > 0 :- branch_node(_,_,Ctx,CtxOn).
+&sum{ w(I,CN)     : node(I), chain_member(I,CtxOn) ;
+      neg_w(I,CN) : node(I), I != CN, not chain_member(I,Ctx) ;
+      w(CN,CN) } > 0
+    :- branch_node(CN,_,Ctx,CtxOn).
 
 

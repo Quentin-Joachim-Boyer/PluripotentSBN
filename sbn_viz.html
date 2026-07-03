@@ -1120,20 +1120,34 @@ let uniqueMode = false; // P3.3 : ne parcourir que les dynamiques distinctes (d�
 
 // Liste des index de lignes à parcourir pour le fichier `f`, selon le mode courant.
 // Mode normal : toutes les lignes. Mode « uniques » : 1re occurrence de chaque
-// signature f_* (les réalisations d'une même dynamique sont masquées).
+// signature f_* (les réalisations d'une même dynamique sont masquées). Parmi les
+// réalisations d'une même dynamique, on garde celle au vecteur le PLUS décomposé
+// (plus de pièces ; à égalité, pièces de plus basse dimension).
 function activeList(f) {
   if (!uniqueMode) return f._allIdx || (f._allIdx = f.rows.map((_, i) => i));
   if (!f._uniqueIdx) {
-    const seen = new Set(), out = [], n = f.dim;
+    const best = new Map(), order = [], n = f.dim;   // sig -> {idx, rank}
     for (let i = 0; i < f.rows.length; i++) {
       const r = f.rows[i]; let sig = '';
       for (let j = 1; j <= n; j++) sig += (r['f_' + j] || '') + '|';
-      if (!seen.has(sig)) { seen.add(sig); out.push(i); }
+      const rank = decompRank(rowVec(r), n);
+      if (!best.has(sig)) { best.set(sig, { idx: i, rank }); order.push(sig); }
+      else { const b = best.get(sig); if (rankGreater(rank, b.rank)) { b.idx = i; b.rank = rank; } }
     }
-    f._uniqueIdx = out;
+    f._uniqueIdx = order.map(sig => best.get(sig).idx);
   }
   return f._uniqueIdx;
 }
+
+// Degré de décomposition d'un vecteur (vec descendant [v_n…v_0]) : [nbFeuilles, -Σdim].
+// Plus grand = plus décomposé (raffiner une pièce augmente strictement le nb de feuilles).
+function decompRank(vec, n) {
+  if (!vec || !vec.length) return [-1, 0];
+  let leaves = 0, dimSum = 0;
+  for (let i = 0; i < vec.length; i++) { const k = n - i, c = vec[i] | 0; leaves += c; dimSum += c * k; }
+  return [leaves, -dimSum];
+}
+function rankGreater(a, b) { return a[0] !== b[0] ? a[0] > b[0] : a[1] > b[1]; }
 
 function toggleUnique() {
   const cb = document.getElementById('unique-toggle');

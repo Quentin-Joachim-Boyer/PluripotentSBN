@@ -16,7 +16,7 @@
             "vmArgs": "-Djpp_monitoring=true -Djpp_monitoring.stepTime=5",
             "args": [
                 "2",
-                "${workspaceFolder}/JPPipeline/src/asp/PTBN_undercontrol_taggedtree.lp",
+                "${workspaceFolder}/JPPipeline/src/asp/PSBN_undercontrol_taggedtree.lp",
                 "${workspaceFolder}/JPPipeline/src/asp",
                 "0",
                 "${workspaceFolder}/JPPipeline/out",
