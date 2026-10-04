@@ -234,8 +234,8 @@ static int parse_header(const char *line) {
 }
 
 /* Calcule la signature (u64) d'une ligne de donnees a partir des champs f_k.
- * Les lignes de donnees ne contiennent pas de virgule entre guillemets, on
- * marche donc simplement les virgules. Retourne 0 si ok, -1 si ligne courte. */
+ * Decoupage quote-aware : la colonne tree des CSV de JPP est entre guillemets
+ * et contient des virgules (ex. "1[*,*]"). Retourne 0 si ok, -1 si ligne courte. */
 static int line_signature(const char *line, u64 *out) {
     /* on parcourt une fois, en capturant les champs voulus */
     int want = 0;                 /* prochain f_field a capturer (tries) */
@@ -247,7 +247,11 @@ static int line_signature(const char *line, u64 *out) {
     /* pre-tri des index voulus avec leur rang k */
     while (*p && got < n_f) {
         const char *start = p;
-        while (*p && *p != ',' && *p != '\n' && *p != '\r') p++;
+        int q = 0;
+        while (*p && (q || (*p != ',' && *p != '\n' && *p != '\r'))) {
+            if (*p == '"') q = !q;
+            p++;
+        }
         int len = (int)(p - start);
         for (int k = 0; k < n_f; k++) {
             if (f_field[k] == field) {

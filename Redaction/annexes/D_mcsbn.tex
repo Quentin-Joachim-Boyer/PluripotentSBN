@@ -1,0 +1,80 @@
+% ============================================================
+\subsection{MCSBN : exploration Monte-Carlo}
+\label{ann:mcsbn}
+% ============================================================
+
+% Brouillon rédigé par Claude le 2026-10-03, à reprendre dans la voix de Quentin, à partir de
+% MCSBN/README.md (rédigé avec Claude pendant le stage) et du code. « test 2026-10-03 » : mcsbn,
+% core_then_walk.py, add_metagraph_layout.py et metagraph_layout lancés ce jour-là en d = 3.
+
+MCSBN se compile et se lance depuis son dossier, \texttt{MCSBN/}, où il garde en cache, dans \texttt{.cache/}, les tables qu'il calcule à la première exécution dans chaque dimension :
+\begin{verbatim}
+make && make metalayout && make drgraph
+\end{verbatim}
+% src : MCSBN/Makefile (cibles par défaut, metalayout, drgraph) ; mcsbn.c (cache_path : $MCSBN_DIR/.cache,
+% répertoire courant par défaut)
+Ces trois cibles produisent respectivement le générateur \texttt{bin/mcsbn}, le calcul des positions dans le métagraphe \texttt{bin/metagraph\_layout} et le binaire \texttt{tools/DRGraph/Vis} de DRGraph, qui va chercher GSL et Boost dans l'environnement conda (\cref{ann:a-chaine}) ; le \texttt{Makefile} fonctionne aussi sous Windows, depuis le shell MSYS2 MinGW64.
+% src : MCSBN/Makefile ; MCSBN/tools/DRGraph/build.sh ; test 2026-10-03 (build.sh avec l'environnement recréé)
+
+Le générateur s'utilise ainsi :
+{\small
+\begin{verbatim}
+./bin/mcsbn -d <d> [-n <n>] [-o <fichier>] [--measure variety|genotype]
+      [--seed <s>] [--max-draws <m>] [--exhaustive] [--no-weights]
+      [--progress|--no-progress]
+\end{verbatim}
+}
+\begin{description}
+\setlength{\itemsep}{0pt}
+\item[\texttt{-d <d>}] dimension, de 1 à 6 ;
+\item[\texttt{-n <n>}] nombre de dynamiques distinctes à produire (100\,000 par défaut) ;
+\item[\texttt{-o <fichier>}] fichier de sortie, compressé si son nom finit par \texttt{.gz} (sortie standard par défaut) ;
+\item[\texttt{-{}-measure}] \texttt{variety} (par défaut) tire chaque fonction uniformément parmi les SBF distinctes, si bien que toutes les dynamiques sont équiprobables, alors que \texttt{genotype} la tire en proportion de son nombre de réalisations, comme un tirage uniforme des matrices de poids ;
+\item[\texttt{-{}-seed <s>}] graine du tirage, fixe par défaut, de sorte que deux exécutions identiques donnent le même fichier ;
+\item[\texttt{-{}-max-draws <m>}] nombre maximal de tirages, au-delà duquel le programme s'arrête même s'il n'a pas obtenu $n$ dynamiques distinctes, ce qui n'arrive qu'en petite dimension ($50n$ par défaut) ;
+\item[\texttt{-{}-exhaustive}] énumère toutes les dynamiques au lieu de tirer, ce qui n'est accepté qu'en deçà de $5\cdot 10^7$ dynamiques ;
+\item[\texttt{-{}-no-weights}] omet les colonnes \texttt{f\_*} et \texttt{w\_*} ;
+\item[\texttt{-{}-progress}, \texttt{-{}-no-progress}] force ou coupe l'affichage de l'avancement, actif par défaut dans un terminal.
+\end{description}
+% src : mcsbn.c (main : valeurs par défaut target = 100000, max_draws = 50 target, seed fixe 0x12345678,
+% limite exhaustive 50 000 000, dimension 1..6) ; MCSBN/README.md (les deux lois de tirage) ;
+% test 2026-10-03 (--no-weights retire f_* et w_*)
+La version Python, \texttt{src/python/mcsbn.py}, accepte les mêmes options mais tourne bien plus lentement ; elle sert de référence aux tests.
+% src : MCSBN/README.md (« Deux implémentations ») ; test_mcsbn.py
+
+Un tirage de \texttt{mcsbn} est trop clairsemé pour que le métagraphe ait des arêtes, et c'est \texttt{src/python/core\_then\_walk.py} qui produit un paysage où il en a, en gardant toutes les dynamiques les plus décomposées puis en y ajoutant leur voisinage :
+{\small
+\begin{verbatim}
+python3 src/python/core_then_walk.py -d <d> [-M <m>] [-n <n>] [-o <fichier>]
+      [--min-leaves <k>] [--max-free <k>] [--fanout <k>]
+      [--measure variety|genotype] [--seed <s>] [--no-weights]
+\end{verbatim}
+}
+\begin{description}
+\setlength{\itemsep}{0pt}
+\item[\texttt{-M <m>}] nombre maximal de dynamiques du cœur décomposé (3000 par défaut) ;
+\item[\texttt{-n <n>}] nombre total de dynamiques, cœur compris (30\,000 par défaut) ;
+\item[\texttt{-{}-min-leaves <k>}] nombre minimal de feuilles des arbres du cœur, à augmenter pour un cœur plus petit et plus décomposé (2 si $d\leq 3$, 8 sinon) ;
+\item[\texttt{-{}-max-free <k>}] nombre maximal de nœuds libres par arbre du cœur, à augmenter pour y inclure des dynamiques moins décomposées, au prix du temps de calcul (illimité si $d\leq 3$, 0 sinon) ;
+\item[\texttt{-{}-fanout <k>}] nombre de nouveaux voisins pris par dynamique à chaque étape de l'exploration du voisinage (4 par défaut).
+\end{description}
+Les autres options sont celles de \texttt{mcsbn}, que le script utilise s'il est compilé (et sinon une version Python plus lente).
+% src : core_then_walk.py (docstring, argparse, --core-bin auto) ; MCSBN/README.md (« Le métagraphe n'est dense
+% [...] que sur une couverture exhaustive ; sur un échantillon clairsemé [...] 0 arête ») ; test 2026-10-03
+
+Les positions dans le métagraphe s'ajoutent à n'importe quel CSV, de MCSBN comme de JPP, avec
+{\small
+\begin{verbatim}
+python3 src/python/add_metagraph_layout.py <entrée> [-o <sortie>] [--vis <Vis>]
+      [--neg <k>] [--samples <k>] [--gamma <x>] [--mode <k>] [--A <x>] [--B <x>]
+\end{verbatim}
+}
+où les dernières options sont celles de DRGraph.
+Par défaut, la sortie s'appelle \texttt{<entrée>\_metagraph.csv} (ou \texttt{.csv.gz}) et \texttt{Vis} est cherché dans \texttt{tools/DRGraph/}.
+Le portage en C, \texttt{bin/metagraph\_layout}, prend les mêmes arguments et va plus vite sur les gros fichiers, mais se limite à $d\leq 4$ ; son option \texttt{-{}-stats-only} n'écrit rien et affiche seulement les composantes connexes du métagraphe.
+% src : add_metagraph_layout.py (argparse, default_output, locate_vis) ; metagraph_layout.c (en-tête : n <= 4 ;
+% main : options, --stats-only) ; MCSBN/Makefile (« pour les gros volumes ») ; test 2026-10-03
+
+Enfin, \texttt{make test} compare MCSBN aux CSV que JPP produit avec les programmes \texttt{treeinsolver} (\texttt{<d>d\_PSBN\_undercontrol\_treeinsolver\_output.csv} et sa version \texttt{PTBN}, dans \texttt{JPPipeline/out/}), qu'il faut donc avoir générés.
+% src : MCSBN/Makefile (cible test) ; test_mcsbn.py (l. 6, 23-32)
+Les autres scripts de \texttt{src/python/} sont des modules communs ou des outils intermédiaires.

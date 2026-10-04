@@ -36,7 +36,9 @@ public class SBNP extends SBN {
         for (int i = 0; i <= decomp.getDimension(); i++) {
             sb.append(decomp.get(i)).append(",");
         }
-        sb.append(tree).append(","); // arbre etiquete, juste apres le vecteur
+        // arbre etiquete, juste apres le vecteur ; entre guillemets car il contient
+        // des virgules (ex. 1[*,*]) qui decaleraient les colonnes suivantes
+        sb.append('"').append(tree).append('"').append(",");
         sb.append(super.toCsvRow(includeWeightsAndTransitions));
         return sb.toString();
     }

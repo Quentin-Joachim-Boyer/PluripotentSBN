@@ -42,6 +42,23 @@
 }
 \usepackage[french]{cleveref}
 
+% ----- cleveref et babel-french -----
+% babel-french rend « : » actif, ce qui casse \cref et \Cref sur les étiquettes de
+% la forme fig:..., tab:..., ann:... (erreur « Missing \endcsname inserted »).
+% On neutralise les caractères actifs le temps de lire les étiquettes ; \protected
+% garde ces commandes utilisables dans les légendes (\caption).
+\makeatletter
+\newcommand*{\psbn@saferef}[2]{\begingroup\@safe@activestrue#1{#2}\endgroup}
+\AtBeginDocument{%
+  \let\psbn@cref\cref \let\psbn@Cref\Cref
+  \let\psbn@crefrange\crefrange \let\psbn@Crefrange\Crefrange
+  \protected\def\cref{\@ifstar{\psbn@saferef{\psbn@cref*}}{\psbn@saferef{\psbn@cref}}}%
+  \protected\def\Cref{\@ifstar{\psbn@saferef{\psbn@Cref*}}{\psbn@saferef{\psbn@Cref}}}%
+  \protected\def\crefrange#1#2{\begingroup\@safe@activestrue\psbn@crefrange{#1}{#2}\endgroup}%
+  \protected\def\Crefrange#1#2{\begingroup\@safe@activestrue\psbn@Crefrange{#1}{#2}\endgroup}%
+}
+\makeatother
+
 % ----- Bibliographie -----
 \usepackage[backend=biber, style=numeric, sorting=none]{biblatex}
 \addbibresource{references.bib}
@@ -49,6 +66,10 @@
 % ----- Divers -----
 \usepackage{xcolor}
 \usepackage{lipsum} % à supprimer quand tu rédiges
+
+% ----- Schémas -----
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, fit}
 
 % ----- Métadonnées -----
 \title{
@@ -103,11 +124,11 @@ Answer Set Programming, calcul parallèle.
 
 \subsection{Motivations}
 
-Un des intérêts de la modélisation des systèmes biologiques (au sens large, à toute échelle : écosystèmes, cellules, expression génétique, relations symbiotiques, neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (clarté) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (celui des Signed Boolean Network SBN) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
+Un des intérêts de la modélisation des systèmes biologiques au sens large et à toute échelle (que ce soient des écosystèmes,des cellules, l'expression génétique, des relations symbiotiques, des neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (donc clarifier) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (celui des Signed Boolean Network SBN) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
 
-La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent à d'autres systèmes (plus petits), on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
+La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent à d'autres systèmes similaires mais potentiellement plus "simple", on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
 
-Le modèle exploré ici est donc celui des Réseaux Booléen à Signe (SBN), formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation des n nœuds du réseau comme une STRUCTURE (ou un programme, un code, un plan...) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE (ou une exécution, une expression, une construction...) dans l'espace du graphe de transition de ces états (hypercube à n dimensions). 
+Le modèle exploré ici pour formaliser ces concepts est donc celui des Réseaux Booléen à Signe $SBN$, formalisé en section [X.] et ce qui nous y intéresse particulièrement, c'est l'interprétation des $n$ nœuds du réseau comme une STRUCTURE (ou un programme, un code, un plan...) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE (ou une exécution, une expression, une construction...) dans l'espace du graphe de transition de ces états (hypercube à n dimensions). 
 
 \begin{figure}[H]
     \centering
@@ -136,7 +157,7 @@ Le concept de pluripotence est volontairement suffisamment général et flou pou
     \begin{subfigure}{0.48\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_reseau.png}
-        \caption{Une structure pluripotente. Le noeud 3 est de contrôle.}
+        \caption{Une structure pluripotente. Le noeud 3 est un noeud de contrôle.}
         \label{fig:structure-pluripotente-3d}
     \end{subfigure}
     \hfill
@@ -153,7 +174,7 @@ Le concept de pluripotence est volontairement suffisamment général et flou pou
 
 \subsection{Positionnement dans les travaux de l'équipe}
 
-Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. 
+Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis en quelque sorte de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. 
 
 En voici une liste (non exhaustive, mais rassemblant les principaux).
 
@@ -165,8 +186,6 @@ En voici une liste (non exhaustive, mais rassemblant les principaux).
 
 - Rapport de Danwen Wu : Démonstration mathématique de l'équivalence entre l'existence de dynamiques séparées sur deux hyper-faces disjointes et de contraintes sur les poids du réseau [Cf. partie Méthodologie d'exploration].
 
-
-
 - Programmes de Laurent Trilling : le point de départ de ce travail, l'énumération en Answer Set Programming (ASP) des réseaux pluripotents sous nœud de contrôle via la dynamique [Cf. partie Méthodologie d'exploration].
 
 Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique du présent travail d'un côté et l'aspect expérimental des simulations de l'autre aura alimenté nos échanges qui nous auront permis l'un l'autre de nous guider mutuellement.
@@ -176,9 +195,9 @@ Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin
 
 \subsection{Contributions de ce stage}
 
-L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 5 noeuds [Cf table des échelles]. Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
+L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et avec nos méthodes, il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 5 noeuds [Cf table des échelles]. Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
 
-Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques, mais aussi pour vérifier la justesse de nos programmes. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
+Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour vérifier la justesse de nos programmes, mais aussi pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
 
 - sbn\_viz.html : structures et dynamiques détaillés.
 
@@ -196,6 +215,8 @@ Ce stage aura aussi donné l'occasion de rédiger un article (i.e. plus ou moins
 % ============================================================
 
 \subsection{Structure et dynamique}
+
+
 
 [Cf. rapport Ailing]
 
@@ -628,6 +649,16 @@ Idée futures :
 \newpage
 \nocite{*}
 \printbibliography[title={Références}]
+% ============================================================
+
+% ============================================================
+\newpage
+\appendix
+\input{annexes/A_vue_ensemble}
+\input{annexes/B_asp}
+\input{annexes/C_jppipeline}
+\input{annexes/D_mcsbn}
+\input{annexes/F_scripts}
 % ============================================================
 
 \end{document}

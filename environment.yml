@@ -1,0 +1,17 @@
+# Environnement conda du projet (clingcon, dépendances de DRGraph, bibliothèques Python).
+# Création, depuis la racine du dépôt :
+#   conda env create -p .conda -f environment.yml
+#   conda activate ./.conda        # met notamment clingcon dans le PATH
+name: psbn
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - clingcon=5.2.1     # énumération ASP, appelé par JPPipeline
+  - gsl                # DRGraph (MCSBN/tools/DRGraph/build.sh)
+  - libboost-devel     # DRGraph (Boost.program_options)
+  - numpy
+  - scipy              # bornes des poids (SBN_pluripotent/w_bound*.py)
+  - pandas             # comptage de fréquences (JPPipeline/src/asp/freq_counting/)
+  - matplotlib
+  - networkx

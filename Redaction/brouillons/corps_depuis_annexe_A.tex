@@ -1,0 +1,49 @@
+% ============================================================
+% Brouillons écartés de l'annexe A le 2026-10-03 (rédigés par Claude).
+% Ils expliquent ce que font les programmes et définissent les statistiques,
+% ce qui relève du corps du rapport (sections Méthodes et outils, et
+% « Statistiques, propriétés, métriques »). Ce fichier n'est pas compilé.
+% ============================================================
+
+% ----- Ce que font JPP et MCSBN (section Méthodes et outils) -----
+
+Pour une dimension $d$ et un programme ASP donnés, JPP énumère tous les vecteurs de décomposition de cette dimension et confie chacun d'eux à \texttt{clingcon}, puis calcule les statistiques des réseaux trouvés avant de les écrire au fur et à mesure dans un CSV, le travail étant réparti sur tous les cœurs de la machine par la bibliothèque JPP.
+% src : Pipe.java ; Decomposer.java ; EnumeratorPSBNFull.java ; Statifier.java
+MCSBN se passe d'ASP et tire des matrices de poids au hasard, dont il calcule lui-même la décomposition et les statistiques, mais il écrit le même format, à la colonne \texttt{tree} près.
+% src : mcsbn.c (en-tête ; l. 539-546 pour l'en-tête CSV)
+
+% ----- Fonction de seuil (section Formalisme) -----
+
+La fonction du nœud $j$ est un seuil strict, sans biais :
+\begin{equation}
+  f_j(s) = 1 \iff \sum_{i \text{ actif dans } s} w_{i,j} > 0 .
+\end{equation}
+% src : PTBN_undercontrol_taggedtree.lp l. 70-71 (transition_function_bit/2) ; sbn-core.js (transitionsFromW)
+Le nœud $j$ s'allume ainsi quand les influences qu'il reçoit des nœuds actifs sont, au total, activatrices, et s'éteint sinon (y compris quand elles s'annulent), si bien qu'il ne dépend que de la colonne $j$ de la matrice des poids.
+La dynamique est synchrone, tous les nœuds étant mis à jour en même temps.
+% src : SBN.java (nextState)
+Les poids sont bornés par $w_{\mathrm{b}}(d)$, qui vaut 1, 1, 2, 3, 5 et 6 pour $d$ allant de 1 à 6 ; en $d=6$, cette valeur est antérieure au calcul de la borne par ILP, qui donne 9, et reste une limite assumée.
+% src : SBFStatTable.java (wBound) ; PTBN_undercontrol_taggedtree.lp l. 60 ; Redaction/CLAUDE.md (points connus)
+
+% ----- Statistiques (section « Statistiques, propriétés, métriques ») -----
+
+Les quatre statistiques des CSV reprennent les mesures de Wagner~\cite{wagner2008}, le génotype étant la matrice des poids et le phénotype la dynamique $(f_1,\dots,f_d)$.
+Une mutation remplace un seul poids par une autre valeur de $[-w_{\mathrm{b}}(d), w_{\mathrm{b}}(d)]$, ce qui donne à chaque génotype $K = 2\,w_{\mathrm{b}}(d)\,d^2$ mutants.
+% src : Statifier.java (javadoc) ; SBFStatTable.java (neighborCount = n·(2·w_bound)) ; Statifier.java (K = n·neighborCount)
+% Avant le 2026-06-15 (commit 074263a), une mutation changeait un poids de ±1 seulement.
+Si l'on note $G(P)$ l'ensemble des génotypes qui réalisent un phénotype $P$, et $r(g)$ la part des mutants de $g$ qui réalisent encore $P$, \texttt{GenotypeCount} vaut $|G(P)|$, \texttt{Robustness\_mean} et \texttt{Robustness\_std} sont la moyenne et l'écart-type de $r$ sur $G(P)$, et \texttt{Evolvability} compte les phénotypes différents de $P$ qu'atteint au moins un mutant d'au moins un génotype de $G(P)$.
+Autrement dit, la première mesure dit de combien de façons on peut câbler une dynamique, la robustesse à quel point une mutation au hasard la laisse intacte, et l'évolutivité combien de dynamiques nouvelles se trouvent à une mutation de distance.
+Comme $f_j$ ne dépend que de la colonne $j$, $G(P)$ est un produit d'ensembles de colonnes, ce qui permet un calcul exact à partir de tables établies une fois par dimension, sans échantillonnage ni appel à \texttt{clingcon}.
+% src : Statifier.java (javadoc) ; SBFStatTable.java
+
+Sur un exemple, la ligne
+\begin{center}
+\small\texttt{0,2,0,"1[*,*]",0101,0000,1,0,0,0,1.0,2,4,0.0,0.25,7}
+\end{center}
+% src : sortie de JPP régénérée le 2026-10-03
+du CSV $d=2$ de \texttt{PSBN\_undercontrol\_taggedtree} décrit un réseau dont le seul poids non nul est $w_{1,1} = 1$, de sorte que le nœud 1 garde sa valeur (\texttt{f\_1} vaut 1 dans les états 1 et 3, où il est actif) tandis que le nœud 2 s'éteint toujours.
+Les états 0 et 1 sont alors deux points fixes (\texttt{NumAttractors} $= 2$, \texttt{CycleLenMSQ} $= 1$), et comme les deux côtés $x_1 = 0$ et $x_1 = 1$ du carré sont invariants, on obtient l'arbre \texttt{1[*,*]} et le vecteur $\langle 0,2,0\rangle$.
+Avec des poids dans $\{-1,0,1\}$, la colonne 1 ne peut valoir que $(1,0)$ alors que la colonne 2 peut prendre les 4 valeurs de $\{-1,0\}^2$, ce qui fait 4 génotypes ; chacun a 8 mutants, dont 2 neutres (un poids de la colonne 2 qui passe de 0 à $-1$ ou l'inverse), d'où une robustesse de 0,25 pour tous et un écart-type nul.
+Enfin, les mutants changent $f_1$ en 3 autres fonctions ($0$, $x_1 \lor x_2$ et $x_1 \land \lnot x_2$) et $f_2$ en 4 autres ($x_1$, $x_2$, $x_1 \land \lnot x_2$ et $\lnot x_1 \land x_2$), pour une évolutivité de 7.
+% Vérifié le 2026-10-02 par force brute sur les 81 matrices de poids de d = 2 : les statistiques
+% recalculées coïncident avec celles des 50 lignes du CSV.

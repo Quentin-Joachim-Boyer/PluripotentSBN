@@ -18,6 +18,7 @@ public final class ClingconUtil {
 
     private static final Pattern BIT_PATTERN    = Pattern.compile("transition_function_bit\\((\\d+),(\\d+)\\)");
     private static final Pattern WEIGHT_PATTERN = Pattern.compile("w\\((\\d+),(\\d+)\\)=(-?\\d+)");
+    private static final Pattern SIGMA_PATTERN  = Pattern.compile("sigma\\((\\d+),(\\d+)\\)");
 
     private ClingconUtil() {
     }
@@ -131,6 +132,30 @@ public final class ClingconUtil {
             int val = Integer.parseInt(wm.group(3));
             if (wi >= 0 && wi < n && wj >= 0 && wj < n)
                 weights[wi][wj] = val;
+        }
+
+        // La sortie transition_function_bit est la dynamique PERMUTEE par sigma
+        // (sigma(N,M) : noeud original N -> noeud permute M), mais w(I,J) est dans
+        // l'etiquetage ORIGINAL. On permute donc W par la MEME permutation (lignes
+        // ET colonnes) : permW[sigma(a)][sigma(b)] = W[a][b], de sorte que
+        // seuil(w_*) == f_*. Si sigma n'est pas presente (identite / ancien
+        // comportement), on garde W tel quel.
+        int[] sigma = new int[n];
+        for (int i = 0; i < n; i++) sigma[i] = -1;
+        Matcher sm = SIGMA_PATTERN.matcher(atomsLine);
+        while (sm.find()) {
+            int a = Integer.parseInt(sm.group(1)) - 1;
+            int b = Integer.parseInt(sm.group(2)) - 1;
+            if (a >= 0 && a < n && b >= 0 && b < n) sigma[a] = b;
+        }
+        boolean haveSigma = true;
+        for (int i = 0; i < n; i++) if (sigma[i] < 0) { haveSigma = false; break; }
+        if (haveSigma) {
+            int[][] permW = new int[n][n];
+            for (int a = 0; a < n; a++)
+                for (int b = 0; b < n; b++)
+                    permW[sigma[a]][sigma[b]] = weights[a][b];
+            weights = permW;
         }
 
         boolean[][] TT = new boolean[n][1 << n];

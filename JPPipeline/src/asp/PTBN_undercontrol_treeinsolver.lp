@@ -36,6 +36,9 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  OUTPUT  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 #show transition_function_bit/2.
+% Permutation des noeuds : indispensable cote post-traitement pour permuter la
+% matrice de poids comme la dynamique (sinon seuil(w_*) != f_*).
+#show sigma/2.
 
 % Décommenter pour afficher le vecteur de décomposition
 % (peut être utile si on ne l'a pas spécifié dans les constantes).

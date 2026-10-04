@@ -1,0 +1,37 @@
+% Partie « Visualisations HTML » retirée de l annexe le 2026-10-03 (usage jugé intuitif par Quentin). Non compilé.
+% ============================================================
+\subsection{Visualisations HTML}
+\label{ann:visualisations}
+% ============================================================
+
+% Brouillon rédigé par Claude le 2026-10-03, à reprendre dans la voix de Quentin. Décrit l'existant à
+% partir du code des pages (html_visualization_lib/), sans le modifier : le développement des
+% visualisations relève d'une conversation dédiée. Pages non testées dans un navigateur.
+
+Les trois pages s'ouvrent directement dans un navigateur, sans serveur, et l'on utilise pour cela leurs versions autonomes, à la racine du dépôt, qui tiennent chacune en un seul fichier et peuvent donc être copiées ou envoyées seules.
+Le bouton \texttt{Load CSV} charge un ou plusieurs CSV, compressés ou non, entre lesquels on passe ensuite par un menu, et le bouton \texttt{Export} enregistre la figure affichée en SVG ou en PNG.
+% src : build_standalone.py (docstring) ; sbn-csv.js (« Script classique (file://) ») ; input file multiple,
+% accept=".csv,.gz" et file-select dans les trois pages ; sbn-export.js (formats svg et png)
+Leurs sources sont dans \texttt{html\_visualization\_lib/}, où elles partagent leurs scripts (\texttt{sbn-core.js}, \texttt{sbn-csv.js}, \texttt{sbn-export.js}) et leur thème ; après toute modification, il faut régénérer les versions autonomes avec
+\begin{verbatim}
+python3 html_visualization_lib/build_standalone.py
+\end{verbatim}
+% src : build_standalone.py (DEV_HTMLS, écriture à la racine du dépôt)
+
+\texttt{sbn\_viz.html} montre un réseau à la fois (structure, fonctions, statistiques, décomposition et dynamique sur l'hypercube des états), et demande donc les colonnes \texttt{f\_*} et \texttt{w\_*}.
+On passe d'un réseau à l'autre à la molette sur le réseau ou en tapant son numéro, la case \texttt{dynamiques uniques} ne parcourant qu'une ligne par dynamique (\cref{ann:a-csv}), et l'on tourne l'hypercube à la souris ou par les boutons de vue.
+% src : sbn_viz.html (panneaux Functions, Statistics, Decomposition ; wheel sur sbn-pane -> navigate ;
+% sol-input ; unique-toggle ; rotation de l'hypercube à la souris, boutons Front/Top/Iso/Side ; transFromRow)
+
+\texttt{sbn\_scatter.html} trace deux statistiques l'une contre l'autre, choisies dans les menus des axes, avec un point par position et par vecteur de décomposition, coloré selon ce vecteur ; c'est la seule page qui se contente des statistiques, sans \texttt{f\_*} ni \texttt{w\_*}.
+La molette zoome, le glisser déplace la vue et \texttt{Reset} la rétablit, tandis qu'un clic sur la légende masque ou réaffiche un vecteur, ou tout un groupe de vecteurs.
+Cliquer sur un point ouvre le panneau \texttt{Detail} sur les dynamiques qu'il regroupe, que l'on parcourt aux flèches du clavier, \texttt{Échap} annulant la sélection.
+% src : sbn_scatter.html (pointMap : clé rx|ry|vecStr ; scatter-x, scatter-y ; wheel, mousedown, resetView ;
+% toggleVec, toggleLegGroupSel ; detail-panel ; keydown : flèches -> navigateDyn, Escape -> clearSelection ;
+% l. 400-407 : refus sans statistique)
+
+\texttt{metagraphe.html} dessine le métagraphe, avec un nœud par dynamique distincte, et demande donc les colonnes \texttt{f\_*}.
+Il place les nœuds aux positions \texttt{metagraph\_x} et \texttt{metagraph\_y} du CSV quand elles existent (\cref{ann:mcsbn}), et calcule sinon un placement dans le navigateur, que le bouton \texttt{Relayout} permet de relancer.
+Le menu \texttt{Couleur} colore les nœuds selon une statistique ou la décomposition, le champ \texttt{Recherche id} retrouve un nœud par son numéro, et cliquer sur un nœud affiche ses statistiques, sa dynamique et sa structure.
+% src : metagraphe.html (buildGraph ; l. 251-255 positions ; worker force-directed et relayout-btn ; color-by ;
+% search ; clickNode -> updateStatbox : nodeStatsHTML, dynamicsBlockHTML, networkBlockHTML)

@@ -1,0 +1,36 @@
+% ============================================================
+\subsection{Programmes ASP d'énumération}
+\label{ann:asp}
+% ============================================================
+
+% Brouillon rédigé par Claude le 2026-10-03, à reprendre dans la voix de Quentin. « test 2026-10-03 »
+% renvoie aux exécutions faites ce jour-là : les dix programmes de JPPipeline/src/asp/ lancés par JPP
+% en d = 3 et comparés. taggedtree contient, vecteur par vecteur, toutes les dynamiques des autres
+% programmes undercontrol et remplit seul la colonne tree ; treeinsolver écrivait des w_* qui ne
+% réalisaient pas f_* (dynamique permutée par sigma, pas les poids), corrigé le 2026-10-03 au prix de
+% lignes en double (une par permutation compatible) ; undercontrol (arbre fixé par
+% setup_btree) est incomplet ; undecomposablePBN_beyond donne 30 613 dynamiques sur 32 768.
+
+La version aboutie des programmes ASP est \texttt{PSBN\_undercontrol\_taggedtree.lp}, dans \texttt{JPPipeline/src/asp/}, ou sa variante \texttt{PTBN\_undercontrol\_taggedtree.lp} si l'on admet des sous-réseaux qui ne sont pas des SBN.
+Les autres programmes du dossier (familles \texttt{undercontrol}, \texttt{treeinsolver} et \texttt{undecomposablePBN\_beyond}) sont des versions intermédiaires, dont l'objectif a été atteint ou non selon les cas (section « Correction »), mais qui n'ont pas été maintenues jusqu'au bout.
+% src : Quentin, 2026-10-03 ; rapport_stage.tex, section Correction ; test 2026-10-03
+
+Le programme lit la dimension et le vecteur de décomposition dans des constantes, et se lance seul avec
+{\small
+\begin{verbatim}
+clingcon <n> --project -c d=<d> -c v<d>=<v_d> ... -c v0=<v_0> \
+      JPPipeline/src/asp/PSBN_undercontrol_taggedtree.lp
+\end{verbatim}
+}
+\begin{description}
+\setlength{\itemsep}{0pt}
+\item[\texttt{<n>}] nombre de solutions à afficher (0 pour toutes) ;
+\item[\texttt{d}] dimension, au plus 5 ;
+\item[\texttt{v<k>}] nombre de sous-cubes de dimension $k$ du vecteur de décomposition ; laissées à $-1$, leur valeur par défaut, ces constantes n'imposent aucun vecteur et le programme énumère tous les SBN de dimension $d$.
+\end{description}
+% src : PTBN_undercontrol_taggedtree.lp (en-tête ; l. 19-24 : d = 2 et v0..v5 = -1 par défaut ;
+% l. 60 : bornes des poids définies jusqu'à d = 5) ; ClingconUtil.java (options passées par JPP)
+
+Chaque solution donne les atomes \texttt{transition\_function\_bit(N,S)}, présents quand le nœud \texttt{N} est actif dans l'état qui suit \texttt{S}, les poids \texttt{w(I,J)} de l'arc \texttt{I}~$\to$~\texttt{J}, et les atomes \texttt{branch\_node/4} et \texttt{leaf\_node/3}, qui décrivent l'arbre de décomposition.
+C'est ce format que lit JPP (\texttt{ClingconUtil.java}), si bien qu'un nouveau programme doit le respecter pour être utilisé par la chaîne.
+% src : ClingconUtil.java (BIT_PATTERN, WEIGHT_PATTERN, buildTree) ; PTBN_undercontrol_taggedtree.lp (#show)

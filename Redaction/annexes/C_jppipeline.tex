@@ -1,0 +1,59 @@
+% ============================================================
+\subsection{JPPipeline : énumération parallèle et statistiques}
+\label{ann:jppipeline}
+% ============================================================
+
+% Brouillon rédigé par Claude le 2026-10-03, à reprendre dans la voix de Quentin. Commandes et
+% comportements vérifiés ce jour-là en exécutant JPP (d = 2 et d = 3) dans un dossier temporaire.
+
+JPP se compile et se lance depuis la racine du dépôt, avec \texttt{clingcon} dans le \texttt{PATH}, que fournit par exemple l'environnement conda du projet (\cref{ann:a-chaine}) :
+{\small
+\begin{verbatim}
+javac -cp JPPipeline/lib/jpp.jar -d JPPipeline/bin \
+      $(find JPPipeline/src/java_src/PSBN -name '*.java')
+java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main \
+      <dim> <lp_enumeratorFile> <setup_btreeFolder> <nSolutions> \
+      <output_path> [includeWeightsAndTransitions]
+\end{verbatim}
+}
+\begin{description}
+\setlength{\itemsep}{0pt}
+\item[\texttt{<dim>}] dimension $d$ des réseaux ;
+\item[\texttt{<lp\_enumeratorFile>}] programme ASP qui énumère les réseaux (\cref{ann:asp}) ;
+\item[\texttt{<setup\_btreeFolder>}] dossier contenant \texttt{setup\_btree\_<d>d.lp} et \texttt{Subdivision.lp}, en pratique \texttt{JPPipeline/src/asp} ;
+\item[\texttt{<nSolutions>}] nombre maximal de solutions par vecteur de décomposition (0 pour toutes) ;
+\item[\texttt{<output\_path>}] dossier où écrire le CSV ;
+\item[{\texttt{[includeWeightsAndTransitions]}}] facultatif, 0 pour omettre les colonnes \texttt{f\_*} et \texttt{w\_*} (1 par défaut).
+\end{description}
+% src : Main.java (args[5] facultatif) ; PipeInput.java (noms des champs) ; EnumeratorPSBNFull.java et
+% EnumeratorPSBN.java (setup_btree_<d>d.lp et Subdivision.lp lus dans setup_btreeFolder) ;
+% conv a5891d3a 2026-06-12 (première version de cette doc)
+Par exemple, la configuration \texttt{Main} de \texttt{.vscode/launch.json}, qu'on peut aussi lancer directement depuis VS Code, correspond à
+{\small
+\begin{verbatim}
+java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 2 \
+      JPPipeline/src/asp/PSBN_undercontrol_taggedtree.lp JPPipeline/src/asp \
+      0 JPPipeline/out 1
+\end{verbatim}
+}
+% src : .vscode/launch.json ; .vscode/settings.json (sourcePaths, referencedLibraries, outputPath)
+
+Le CSV, nommé \texttt{<dim>d\_<programme>\_output.csv}, s'écrit au fur et à mesure dans le dossier \texttt{<output\_path>}, et il vaut mieux le compresser ensuite avec \texttt{gzip}, puisque les pages HTML lisent directement les fichiers \texttt{.csv.gz}.
+% src : Pipe.java (reset) ; DataStringLineCollectorProcessor.java ; sbn-csv.js
+Pour suivre un long calcul, les options \texttt{-Djpp\_monitoring=true} et \texttt{-Djpp\_monitoring.stepTime=5}, placées avant \texttt{-cp} (elles figurent déjà dans \texttt{launch.json}), affichent toutes les cinq secondes l'avancement de chaque étape et la mémoire utilisée.
+% src : .vscode/launch.json (vmArgs) ; conv a5891d3a 2026-06-05 et 2026-06-12 ; test 2026-10-03
+
+L'argument \texttt{<nSolutions>} permet de ne demander à \texttt{clingcon} qu'un nombre limité de solutions par vecteur.
+Comme \texttt{clingcon} est lancé avec une graine fixe, cette énumération partielle redonne les mêmes réseaux d'une exécution à l'autre.
+% src : ClingconUtil.java (--seed=43, --rand-freq 1, --parallel 1) ; test 2026-10-03 (50 solutions par
+% vecteur en d = 3 : mêmes 462 lignes sur deux exécutions, et avec le clingcon du stage)
+Lorsque ce nombre est nul ou dépasse 1000, un garde-fou arrête l'énumération d'un vecteur à 1000 solutions et la relance en tranches, en fixant les premiers bits de la fonction du nœud 1 grâce à \texttt{Subdivision.lp}, pour limiter la mémoire de chaque appel ; le nombre de solutions demandé est alors réparti entre les tranches.
+% src : EnumeratorPSBNFull.java (guardBinds, cap) ; Pipe.java (SUBDIVISION_THRESHOLD = 1000) ;
+% EnumeratorPSBN.java (fixed_bits, quota userN / nombre de préfixes réalisables) ; Subdivision.lp (en-tête)
+Ce seuil de 1000 solutions (\texttt{SUBDIVISION\_THRESHOLD}) et le nombre maximal d'énumérations non subdivisées menées en parallèle (10, par \texttt{setMaximumParallelTasks}) sont codés en dur dans \texttt{Pipe.java}, où il faut les modifier pour les adapter à la machine, les autres étapes utilisant déjà autant de fils d'exécution que la machine a de cœurs.
+% src : Pipe.java (l. 34, 58, 106)
+Limiter ainsi le nombre d'énumérations menées en parallèle évite d'engorger JPP.
+% src : Quentin, 2026-10-03
+
+Pour ajouter une statistique, on la calcule dans la méthode \texttt{process} de \texttt{Statifier.java}, qui reçoit chaque réseau et renvoie sa ligne de CSV, puis on ajoute son nom, à la bonne place, dans l'en-tête que construit la méthode \texttt{reset} de \texttt{Pipe.java} ; les statistiques qui portent sur les attracteurs sont, elles, calculées dans \texttt{SBN.toCsvRow}.
+% src : Statifier.java ; Pipe.java (reset) ; SBN.java (toCsvRow)

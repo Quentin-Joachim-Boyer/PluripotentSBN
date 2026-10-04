@@ -36,3 +36,7 @@ MCSBN/archive/*output.csv
 Redaction/rapport_stage.*
 !Redaction/rapport_stage.tex
 !Redaction/rapport_stage.pdf
+
+# Environnement conda local (pouvant être recréé grâce à environment.yml)
+.conda/
+.conda.old/

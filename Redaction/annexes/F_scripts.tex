@@ -1,0 +1,38 @@
+% ============================================================
+\subsection{Scripts annexes et programmes historiques}
+\label{ann:scripts}
+% ============================================================
+
+% Brouillon rédigé par Claude le 2026-10-03, à reprendre dans la voix de Quentin. « test 2026-10-03 » :
+% w_bound_orbits.py (--max-n 5, environ 6 s) et gen_setup_btree.py (d = 3) lancés ce jour-là.
+
+Pour ce qui est des autres scripts mis au point, ils se limitent au calcul de la borne des poids et à la génération des fichiers \texttt{setup\_btree}.
+La borne des poids $w_{\mathrm{b}}(n)$ et le nombre d'orbites de SBF du \cref{tab:echelles} se calculent avec
+{\small
+\begin{verbatim}
+python3 SBN_pluripotent/w_bound_orbits.py [--max-n <n>] [--big-m <m>]
+\end{verbatim}
+}
+\begin{description}
+\setlength{\itemsep}{0pt}
+\item[\texttt{-{}-max-n <n>}] dimension maximale traitée (5 par défaut), le script étant conçu pour aller jusqu'à 6 ;
+\item[\texttt{-{}-big-m <m>}] borne supérieure des poids dans le programme linéaire en nombres entiers (200 par défaut, largement suffisant).
+\end{description}
+Le script affiche, pour chaque dimension, la borne, le nombre d'orbites et une SBF qui l'atteint.
+% src : w_bound_orbits.py (docstring, argparse) ; w_bound.py (en-tête : « méthode NON exacte [...] voir
+% w_bound_orbits.py pour la version exacte ») ; w_bound_bfs.py (docstring) ; test 2026-10-03 (1, 1, 2, 3, 5 et
+% 2, 4, 10, 36, 224 orbites, comme le tableau des échelles)
+
+Les fichiers \texttt{setup\_btree\_\{1..6\}d.lp}, déjà fournis dans \texttt{JPPipeline/src/asp/}, se régénèrent dans le dossier courant avec
+{\small
+\begin{verbatim}
+python3 SBN_pluripotent/gen_setup_btree.py <d> [<d> ...]
+\end{verbatim}
+}
+% src : gen_setup_btree.py (docstring ; écriture dans ./) ; test 2026-10-03 (fichier d = 3 identique à celui fourni,
+% commentaires mis à part)
+
+Le reste relève des étapes antérieures du stage, à savoir les programmes de Laurent et leurs scripts d'export (\texttt{SBN\_pluripotent\_Laurent/}), l'export \texttt{export\_btree.py} et le comptage de fréquences par ApproxASP (\texttt{JPPipeline/src/asp/freq\_counting/}), que remplace le calcul exact de \texttt{GenotypeCount} dans JPP.
+% src : git ls-files ; count_frequency.lp (en-tête : nombre de SBN réalisant une fonction de transition donnée,
+% soit GenotypeCount) ; count_frequency.py (fichier d'entrée codé en dur, constantes f{j} au lieu de f_{j}) ;
+% Statifier.java (GenotypeCount exact)

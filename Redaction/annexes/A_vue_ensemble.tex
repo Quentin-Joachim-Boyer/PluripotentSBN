@@ -1,0 +1,159 @@
+% ============================================================
+\section{Guide d'utilisation des programmes}
+\label{ann:guide}
+% ============================================================
+
+% Brouillon rédigé par Claude (2026-10-02, repris le 2026-10-03), à reprendre dans la voix
+% de Quentin. « test 2026-10-02 » renvoie aux vérifications faites ce jour-là : exécutions de
+% JPP en d = 2 et d = 3 dans un dossier temporaire, analyse des CSV. Les explications de ce que
+% font les programmes et la définition des statistiques ont été déplacées dans
+% Redaction/brouillons/corps_depuis_annexe_A.tex, pour le corps du rapport.
+
+% Les noms de fichiers en \texttt ne se coupent pas : on autorise un peu plus
+% d'étirement des lignes, pour toute l'annexe.
+\setlength{\emergencystretch}{3em}
+
+Cette annexe explique comment utiliser les programmes au point, avant tout la pipeline JPP, et dans une moindre mesure MCSBN.
+Ses deux premières parties réunissent ce qu'il faut savoir avant de s'en servir, à savoir où ils se trouvent dans le dépôt, comment installer leurs dépendances, et sous quel format ils écrivent les CSV que lisent les visualisations, tandis que les suivantes détaillent l'usage de chacun d'eux.
+
+% ------------------------------------------------------------
+\subsection{Organisation du dépôt et installation}
+\label{ann:a-chaine}
+% ------------------------------------------------------------
+
+La \cref{fig:a-chaine} montre quel programme produit quoi et qui le lit, et le \cref{tab:a-carte} indique où se trouve chacun d'eux dans le dépôt, ainsi que la partie de cette annexe qui en détaille l'usage.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    boite/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, text width=#1},
+    boite/.default=4.2cm,
+    fleche/.style={-{Stealth[length=2.2mm]}, semithick},
+  ]
+  % Production
+  \node[boite] (asp) at (0,2.2) {\textbf{Programmes ASP}\\ (\cref{ann:asp})};
+  \node[boite] (jpp) at (0,0.6) {\textbf{JPPipeline}\\ (\cref{ann:jppipeline})};
+  \node[boite] (mcsbn) at (0,-1.2) {\textbf{MCSBN}\\ (\cref{ann:mcsbn})};
+  % Format pivot et post-traitement
+  \node[boite=3.1cm, very thick, fill=gray!10] (csv) at (5.4,0.05) {\textbf{CSV}\\ \texttt{.csv} ou \texttt{.csv.gz}\\ (\cref{ann:a-csv})};
+  \node[boite=3.1cm] (post) at (5.4,-2.6) {\textbf{Positions dans le métagraphe}\\ (\cref{ann:mcsbn})};
+  % Visualisations
+  \node[boite=3.5cm] (viz) at (10.3,1.2) {\texttt{sbn\_viz.html}};
+  \node[boite=3.5cm] (scatter) at (10.3,0.05) {\texttt{sbn\_scatter.html}};
+  \node[boite=3.5cm] (meta) at (10.3,-1.1) {\texttt{metagraphe.html}};
+  \node[draw, dotted, rounded corners=2pt, inner sep=5pt, fit=(viz)(scatter)(meta),
+        label={above:Visualisations HTML}] {};
+  % Flèches
+  \draw[fleche] (asp) -- node[right] {appel de \texttt{clingcon}} (jpp);
+  \draw[fleche] (jpp.east) -- ([yshift=2mm]csv.west);
+  \draw[fleche] (mcsbn.east) -- ([yshift=-2mm]csv.west);
+  \draw[fleche] ([xshift=-6mm]csv.south) -- ([xshift=-6mm]post.north);
+  \draw[fleche] ([xshift=6mm]post.north) -- ([xshift=6mm]csv.south);
+  \draw[fleche] (csv.east) -- (viz.west);
+  \draw[fleche] (csv.east) -- (scatter.west);
+  \draw[fleche] (csv.east) -- (meta.west);
+\end{tikzpicture}
+\caption{Chaîne de traitement. Le calcul des positions dans le métagraphe est facultatif : il relit un CSV et le réécrit avec deux colonnes de plus.}
+\label{fig:a-chaine}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.9cm} >{\raggedright\arraybackslash}p{5.3cm} >{\raggedright\arraybackslash}p{7.1cm}@{}}
+\toprule
+Partie & Emplacement & Contenu \\
+\midrule
+\ref{ann:asp}. Programmes ASP & \texttt{JPPipeline/src/asp/} & Programmes d'énumération et leurs fichiers d'appui (\texttt{setup\_btree\_\{1..6\}d.lp}, \texttt{Subdivision.lp}). \\
+\ref{ann:jppipeline}. JPPipeline & \texttt{JPPipeline/src/java\_src/}, \texttt{JPPipeline/lib/jpp.jar}, \texttt{.vscode/launch.json} & Pipeline Java, bibliothèque JPP [À VÉRIFIER : auteur et dépôt d'origine] et configurations de lancement ; les CSV sont écrits dans \texttt{JPPipeline/out/}. \\
+\ref{ann:mcsbn}. MCSBN & \texttt{MCSBN/} & Générateur Monte-Carlo en C et en Python, et placement du métagraphe par DRGraph (\texttt{tools/DRGraph/}). \\
+Visualisations & \texttt{html\_visualization\_lib/}, \texttt{*.html} à la racine & Sources des trois pages, et leurs versions autonomes, à régénérer avec \texttt{build\_standalone.py} après toute modification des sources. \\
+\ref{ann:scripts}. Scripts annexes & \texttt{SBN\_pluripotent/}, \texttt{SBN\_pluripotent\_\allowbreak Laurent/}, \texttt{JPPipeline/src/python/} & Calcul des bornes des poids, versions antérieures des programmes et post-traitements abandonnés. \\
+\bottomrule
+\end{tabular}
+\caption{Emplacement dans le dépôt des programmes décrits dans chaque partie de cette annexe.}
+\label{tab:a-carte}
+\end{table}
+% src : git ls-files ; Redaction/CLAUDE.md (copie de référence des .lp : JPPipeline/src/asp/,
+% confirmé par Quentin) ; build_standalone.py (docstring) ; piste pour l'origine de JPP :
+% en-têtes @author defosser (hello_world/) et segretar (DataStringLineCollectorProcessor.java) ;
+% rapport_stage.tex, section Optimisation (« post processing python relativement abandonné »)
+
+JPP et MCSBN écrivent des CSV au même format, à la colonne \texttt{tree} près, que l'on peut compléter par les positions des dynamiques dans le métagraphe avant de les ouvrir dans les pages HTML, lesquelles fonctionnent directement dans le navigateur et lisent aussi les fichiers compressés en gzip.
+% src : mcsbn.c l. 539-546 ; add_metagraph_layout.py (docstring) ; sbn-csv.js ; accept=".csv,.gz"
+Le dépôt ne contient pas ces CSV, que le \texttt{.gitignore} exclut comme les binaires compilés, si bien qu'il faut les régénérer ou se les procurer à part.
+% src : .gitignore ; test 2026-10-02 (JPP en d = 2 et d = 3 redonne les mêmes lignes)
+
+Le fichier \texttt{environment.yml}, à la racine du dépôt, décrit l'environnement conda du projet, qui réunit les dépendances peu courantes (\texttt{clingcon}, les bibliothèques GSL et Boost qu'utilise DRGraph, et celles des scripts Python) ; on le crée puis l'active depuis la racine, ce qui met \texttt{clingcon} dans le \texttt{PATH}, où JPP va le chercher :
+\begin{verbatim}
+conda env create -p .conda -f environment.yml && conda activate ./.conda
+\end{verbatim}
+% src : environment.yml ; ClingconUtil.java l. 37 ; test 2026-10-03 (environnement recréé depuis
+% environment.yml : JPP en d = 2 et d = 3 donne les mêmes CSV qu'avec le clingcon du stage, DRGraph
+% se compile avec build.sh, w_bound.py redonne 1, 1, 2, 3)
+Une passe complète consiste alors à lancer JPP pour chaque couple (programme ASP, dimension) puis MCSBN, à compresser les gros CSV avec \texttt{gzip} et à ajouter au besoin les positions du métagraphe.
+
+Le dépôt contient bien d'autres programmes que ceux référencés ici (essais, versions antérieures, outils abandonnés en cours de route), et rien de ce qui n'est pas présenté comme fonctionnel dans cette annexe n'est garanti sans s'être penché sur le code pour le comprendre.
+Il en va de même des données produites avant la rédaction de cette annexe, dont certaines suivent d'anciennes conventions (noms de colonnes, fonctions écrites en entier, autre règle de mutation) et qu'il vaut mieux régénérer que comparer aux nouvelles.
+% src : commits 074263a (règle de mutation), 440e607 (GenotypeCount), 3704160 (noms de colonnes),
+% 4ca1808 (export_btree.py en bitstrings) ; conv e37f3aaa 2026-07-01 ; analyse des CSV 2026-10-02
+
+% ------------------------------------------------------------
+\subsection{Format des CSV}
+\label{ann:a-csv}
+% ------------------------------------------------------------
+
+Chaque CSV commence par une ligne d'en-tête, et comme les pages HTML repèrent les colonnes par leur nom, des colonnes en plus ne les gênent pas.
+Le \cref{tab:a-colonnes} donne ces colonnes dans l'ordre où JPP les écrit, MCSBN écrivant les mêmes à l'exception de \texttt{tree}.
+% src : sbn-csv.js (parse, parseStream) ; Pipe.java l. 157-175 (en-tête) ; SBNP.java ; mcsbn.c l. 539-546
+
+\begin{table}[htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.3cm} >{\raggedright\arraybackslash}p{11.9cm}@{}}
+\toprule
+Colonne & Contenu \\
+\midrule
+\texttt{v\_}$d$, \dots, \texttt{v\_0} & Vecteur de décomposition $\langle v_d,\dots,v_0\rangle$, où $v_k$ est le nombre de sous-cubes (hyper-faces) de dimension $k$ aux feuilles de l'arbre. \\
+\texttt{tree} & Arbre de décomposition étiqueté par les nœuds de contrôle, entre guillemets (notation ci-dessous) ; vide si le programme ASP ne le fournit pas. \\
+\texttt{f\_1}, \dots, \texttt{f\_}$d$ & Fonction de transition du nœud $j$, en table de vérité de $2^d$ caractères \texttt{0} ou \texttt{1}. \\
+\texttt{"w\_}$i$\texttt{,}$j$\texttt{"} & Poids de l'arc $i \to j$. \\
+\texttt{CycleLenMSQ} & Moyenne, sur les attracteurs, du carré de leur longueur. \\
+\texttt{NumAttractors} & Nombre d'attracteurs, points fixes et cycles. \\
+\texttt{GenotypeCount} & Nombre de matrices de poids qui réalisent la même dynamique. \\
+\texttt{Robustness\_std}, \texttt{Robustness\_mean} & Écart-type et moyenne de la robustesse de ces matrices. \\
+\texttt{Evolvability} & Évolutivité de la dynamique. \\
+\bottomrule
+\end{tabular}
+\caption{Colonnes des CSV, dans l'ordre du fichier ($d$ est la dimension). Les statistiques sont définies dans la section « Statistiques, propriétés, métriques ».}
+\label{tab:a-colonnes}
+\end{table}
+% src : Decomposer.java ; ClingconUtil.java (buildTree) ; SBN.java (toCsvRow, meanSquaredAttractorSize) ;
+% Statifier.java
+
+Les états sont numérotés de $0$ à $2^d-1$, le bit $i-1$ de l'état $s$ valant 1 quand le nœud $i$ est actif (le nœud 1 est donc le bit de poids faible), et le caractère numéro $s$ de \texttt{f\_}$j$, en comptant depuis 0 à partir de la gauche, donne la valeur du nœud $j$ dans l'état qui suit $s$.
+% src : PTBN_undercontrol_taggedtree.lp l. 67 (activated/2) ; SBN.java (toCsvRow, nextState)
+Les poids sont des entiers compris entre $-w_{\mathrm{b}}(d)$ et $w_{\mathrm{b}}(d)$, avec $w_{\mathrm{b}}(d)$ = 1, 1, 2, 3, 5 et 6 pour $d$ allant de 1 à 6 (en $d=6$, cette valeur diffère de la borne du \cref{tab:echelles}).
+% src : SBFStatTable.java (wBound) ; PTBN_undercontrol_taggedtree.lp l. 60 ; Redaction/CLAUDE.md (points connus)
+
+La colonne \texttt{tree} écrit l'arbre de décomposition de façon imbriquée, en notant \texttt{*} une feuille (un sous-cube qui n'est plus découpé) et \texttt{N[A,B]} une coupe selon le nœud de contrôle \texttt{N}, où \texttt{A} est l'arbre de la moitié où \texttt{N} est inactif et \texttt{B} celui de la moitié où il est actif.
+Ainsi \texttt{1[2[*,*],*]} coupe selon le nœud 1 puis recoupe selon le nœud 2 la seule moitié où le nœud 1 est inactif, et l'on retrouve le vecteur en comptant les feuilles, $v_k$ étant le nombre de feuilles à la profondeur $d-k$.
+% src : ClingconUtil.java (serializeTree : cn[off,on]) ; CSV d = 2 de PSBN_undercontrol_taggedtree
+
+Une ligne ne correspond pas à un réseau mais à un couple (dynamique, arbre de décomposition), car les programmes \texttt{undercontrol} produisent une même dynamique une fois par arbre qu'elle vérifie, et le vecteur trivial $\langle 1,0,\dots,0\rangle$, qui n'impose aucune contrainte, les contient toutes ; le CSV $d=3$ de \texttt{PSBN\_undercontrol\_taggedtree} compte ainsi 34\,343 lignes pour seulement 32\,768 dynamiques.
+% src : dedup_dynamics.py (docstring) ; test 2026-10-02
+Les statistiques d'une dynamique sont les mêmes sur toutes ses lignes, alors que ses poids peuvent varier d'une ligne à l'autre, les colonnes \texttt{w\_*} ne donnant qu'une matrice parmi toutes celles qui la réalisent ; pour compter des dynamiques, il faut donc dédoublonner selon $(f_1,\dots,f_d)$, comme le fait \texttt{metagraphe.html}.
+% src : test 2026-10-02 (630 dynamiques du CSV d = 3 ont plusieurs matrices) ; Minimizer.java
+% (identité) ; metagraphe.html (buildGraph)
+
+Le calcul des positions dans le métagraphe ajoute deux colonnes en fin de ligne, \texttt{metagraph\_x} et \texttt{metagraph\_y}, que \texttt{metagraphe.html} utilise pour placer les dynamiques.
+À l'inverse, JPP peut omettre les colonnes \texttt{f\_*} et \texttt{w\_*} (dernier argument à 0), mais seule \texttt{sbn\_scatter.html} peut alors exploiter le fichier.
+% src : add_metagraph_layout.py (docstring) ; metagraphe.html l. 251-255 ; Main.java ;
+% metagraphe.html (buildGraph : sans f_*, pas de graphe) ; sbn_viz.html (transFromRow)
+Les pages HTML lisent par ailleurs la dimension dans le préfixe du nom de fichier (\texttt{2d\_}, \texttt{3d\_}\dots), qu'il vaut donc mieux conserver.
+% src : sbn-csv.js (parseName)
