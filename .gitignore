@@ -43,3 +43,6 @@ Redaction/rapport_stage.*
 
 # Sorties de la passe unifiée (régénérables par Redaction/passe_unifiee/passe.py)
 Redaction/passe_unifiee/sortie/
+
+# Cache Python
+__pycache__/

@@ -36,6 +36,9 @@ import sys
 import time
 from pathlib import Path
 
+# Pas de __pycache__ : il salirait l'arbre de travail, que la passe veut propre.
+sys.dont_write_bytecode = True
+
 REPO = Path(__file__).resolve().parents[2]
 ICI = Path(__file__).resolve().parent
 CONDA_BIN = REPO / ".conda" / "bin"
@@ -77,6 +80,7 @@ def env_conda():
     """Environnement des sous-processus : clingcon de .conda en tête du PATH."""
     env = os.environ.copy()
     env["PATH"] = str(CONDA_BIN) + os.pathsep + env.get("PATH", "")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"  # MCSBN/src/python/__pycache__ est versionné
     return env
 
 
