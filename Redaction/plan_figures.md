@@ -12,7 +12,7 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
 - **T4. Arbre des sorties `treeinsolver`.** *Décidé : capturer la même dynamique depuis le CSV `taggedtree`, qui porte l'arbre.* C'est toujours possible : vecteur par vecteur, `taggedtree` contient toutes les dynamiques de `treeinsolver`.
 - **T5. Doublons de `treeinsolver`.** *Décidé :* cocher « dynamiques uniques » dans `sbn_viz`.
 - **T6. Binaires.** *Décidé (Quentin, 2026-10-04) :* `JPPipeline/bin/` et `MCSBN/bin/` ne sont pas versionnés. La passe recompile donc JPP (`javac`, annexe A.4) et MCSBN (`make`, annexe A.5) depuis les sources du commit dont elle part, au lieu de dépendre d'une compilation locale.
-- **T7. Choix d'une ligne parmi N candidates.** *Décidé (Quentin, 2026-10-04) :* quand une fiche ne fixe pas de critère, la passe retient la candidate qui a le moins de poids non nuls, puis la plus petite somme des |w|, puis la première dans l'ordre trié (T1). Le critère porte sur la ligne affichée dans la capture. Quentin peut changer de ligne au cas par cas en voyant les captures.
+- **T7. Choix d'une ligne parmi N candidates.** *Décidé (Quentin, 2026-10-04) :* quand une fiche ne fixe pas de critère, la passe retient la candidate qui a le moins de poids non nuls, puis la plus petite somme des |w|, puis la première dans l'ordre trié (T1). Le critère porte sur la ligne affichée dans la capture. Quentin peut changer de ligne au cas par cas en voyant les captures. *Décidé (Quentin, 2026-10-04) :* une dynamique retenue par une fiche est écartée des fiches suivantes, dans l'ordre du plan, pour que deux figures ne montrent pas la même (la passe du commit `3b331d8` retenait la même ligne pour C1 et C3, et pour C6 et P2).
 - **T8. Script de la passe.** *Décidé (Quentin, 2026-10-04) :* `Redaction/passe_unifiee/`, sortie dans un dossier non versionné. Pour chaque fiche, la passe écrit un petit CSV ne contenant que les lignes à capturer, préfixé par la dimension (`3d_…`), que les pages HTML lisent dans le nom du fichier.
 
 ## Section Correction
@@ -112,6 +112,7 @@ Vérifié le 2026-10-03 :
 - Données : PSBN `taggedtree`, d = 3, exhaustif ; par exemple 658 candidates en ⟨0,2,0,0⟩ ou 139 en ⟨0,1,2,0⟩ (deux niveaux de coupe).
 - Commande : `java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 3 JPPipeline/src/asp/PSBN_undercontrol_taggedtree.lp JPPipeline/src/asp 0 <sortie> 1`
 - Vue : `sbn_viz`, réseau et hypercube colorié par la décomposition. Elle peut remplacer la figure existante (P0).
+- *Décidé (Quentin, 2026-10-04) :* une dynamique dont ⟨0,2,0,0⟩ est la décomposition la plus fine (pour ne pas recouper C5) et dont les faces sont distinctes, c'est-à-dire la condition de Laurent (sinon le nœud de contrôle ne change rien au reste, comme en C1), puis T7. Pas d'exemple en ⟨0,1,2,0⟩ : en d = 3, aucune des 66 dynamiques dont c'est la décomposition la plus fine n'a de faces distinctes à la coupe intérieure.
 
 ### P2. Décomposable en TBN mais pas en SBN (l. 394)
 - Montre : une dynamique qui admet une décomposition quand on accepte des sous-réseaux quelconques, mais aucune quand on les veut signés.
@@ -124,6 +125,7 @@ Vérifié le 2026-10-03 :
 - Données : seule la famille `undercontrol`, à arbre fixé, existe en version `I`. `PSBNI_undercontrol` donne 216 dynamiques en d = 3, dont 36 en ⟨0,2,0,0⟩.
 - Commande : `java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 3 JPPipeline/src/asp/PSBNI_undercontrol.lp JPPipeline/src/asp 0 <sortie> 1`
 - Vue : `sbn_viz`, réseau (arcs inhibiteurs) et hypercube.
+- *Décidé (Quentin, 2026-10-04) :* au moins un arc inhibiteur entre nœuds distincts (T7 seul donnait une simple boucle 3→3) et des faces distinctes, puis T7.
 
 ### P4. Supports stables et vecteur de décomposition partiel (l. 404)
 - Montre : des faces invariantes qui ne forment pas une décomposition complète (piste non explorée).

@@ -20,7 +20,7 @@
     "[latex]": {
         "editor.wordWrap": "on"
     },
-    "cmake.sourceDirectory": "/home/boyerque/Bureau/asp/PSBN/MCSBN/tools/DRGraph",
+    "cmake.sourceDirectory": "/home/quentin-boyer/Bureau/asp/PSBN/MCSBN/tools/DRGraph/src",
     "latex-workshop.latex.tools": [
 
         {

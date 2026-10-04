@@ -6,7 +6,9 @@ Chaque fiche recalcule ses nombres (attendu / obtenu, les valeurs attendues
 dans un petit CSV préfixé par la dimension (3d_<fiche>_<programme>.csv), que
 les pages HTML ouvrent directement. Sauf critère propre à la fiche, la ligne
 retenue est celle qui a le moins de poids non nuls, puis la plus petite somme
-des |w|, puis la première dans l'ordre trié (décision T7).
+des |w|, puis la première dans l'ordre trié (décision T7). Une dynamique déjà
+retenue par une fiche précédente, dans l'ordre du plan, est écartée des
+suivantes, pour que deux figures ne montrent pas la même.
 
 Conventions (annexe A.2) : l'état s a pour bit i-1 la valeur du nœud i, le
 caractère s de f_j donne le nœud j à l'état suivant, et f_j(s) = 1 si la somme
@@ -168,6 +170,13 @@ def poids_txt(w, d):
 # ---------------------------------------------------------------------------
 # Résultats
 
+DEJA = set()  # dynamiques déjà retenues par une fiche (remis à zéro par toutes())
+
+
+def libres(t, ks):
+    """Les lignes de ks dont la dynamique n'a pas encore été retenue."""
+    return [k for k in ks if t.f[k] not in DEJA]
+
 class Fiche:
     def __init__(self, ident, titre):
         self.r = {"fiche": ident, "titre": titre, "comptes": [], "fichiers": [], "notes": []}
@@ -187,6 +196,7 @@ class Fiche:
     def extraire(self, t, ks, nom, dossier, legende=""):
         """Écrit les lignes ks de t dans dossier/nom (ordre du fichier)."""
         ks = sorted(set(ks))
+        DEJA.update(t.f[k] for k in ks)
         (dossier / nom).write_text("\n".join([t.lignes[0]] + [t.lignes[k + 1] for k in ks]) + "\n")
         self.r["fichiers"].append({
             "fichier": nom, "source": t.nom, "legende": legende,
@@ -229,7 +239,7 @@ def fiche_C1(PU, dossier):
         F.compte("Laurent = les autres dynamiques de ⟨0,2,0,0⟩", L == dyn - identiques, True)
     else:
         F.note("Fichier de Laurent absent (non versionné) : comparaison avec ses 189 dynamiques non refaite.")
-    choix = min(cand, key=PU.t7)
+    choix = min(libres(PU, cand), key=PU.t7)
     F.extraire(PU, [choix], "3d_C1_PSBN_undercontrol.csv", dossier)
     return F
 
@@ -240,7 +250,7 @@ def fiche_C2_C3(PU, PT_u, dossier):
     F2.compte("dynamiques de ⟨0,2,0,0⟩ (PTBN_undercontrol)", len({PT_u.f[k] for k in ks}), 1024)
     hors = {PT_u.f[k] for k in ks} - PU.dyn(V0200)
     F2.compte("dont absentes de PSBN_undercontrol", len(hors), 799)
-    c2 = min((k for k in ks if PT_u.f[k] in hors), key=PT_u.t7)
+    c2 = min(libres(PT_u, [k for k in ks if PT_u.f[k] in hors]), key=PT_u.t7)
     F2.extraire(PT_u, [c2], "3d_C2_PTBN_undercontrol.csv", dossier)
 
     F3 = Fiche("C3", "PSBN_undercontrol : un PSBN proche de celui de C2")
@@ -249,7 +259,7 @@ def fiche_C2_C3(PU, PT_u, dossier):
 
     def l1(k):
         return sum(abs(a - b) for a, b in zip(PU.w[k], PT_u.w[c2]))
-    c3 = min(ks, key=lambda k: (l1(k),) + PU.t7(k))
+    c3 = min(libres(PU, ks), key=lambda k: (l1(k),) + PU.t7(k))
     F3.compte("distance L1 aux poids de C2", l1(c3))
     F3.extraire(PU, [c3], "3d_C3_PSBN_undercontrol.csv", dossier)
     return F2, F3
@@ -295,7 +305,7 @@ def fiche_C5(PS, dossier):
             par_f[PS.f[k]].append(k)
     # Une paire (ligne ⟨0,2,0,0⟩, ligne la plus fine) par dynamique ; on préfère
     # les paires de mêmes poids, pour que les deux captures montrent le même réseau.
-    paires = [(a, b) for ks in par_f.values() for a in ks if PS.v[a] == V0200
+    paires = [(a, b) for ks in par_f.values() for a in libres(PS, ks) if PS.v[a] == V0200
               for b in ks if sum(PS.v[b]) == best[PS.f[b]]]
     a, b = min(paires, key=lambda p: (PS.w[p[0]] != PS.w[p[1]],) + PS.t7(p[0]) + PS.t7(p[1]))
     F.compte("dynamiques dont une ligne ⟨0,2,0,0⟩ et une ligne la plus fine ont les mêmes poids",
@@ -312,7 +322,7 @@ def fiche_C6_C7(PU, PT_u, PS, PT, PS_tis, PT_tis, dossier):
               "et de PTBN_undercontrol", len(cand), 1538)
     ks = [k for k in range(len(PT)) if PT.v[k] == V0200 and PT.f[k] in cand]
     F6.compte("candidates sans ligne ⟨0,2,0,0⟩ dans PTBN_taggedtree (T4)", len(cand - {PT.f[k] for k in ks}), 0)
-    F6.extraire(PT, [min(ks, key=PT.t7)], "3d_C6_PTBN_undercontrol_taggedtree.csv", dossier,
+    F6.extraire(PT, [min(libres(PT, ks), key=PT.t7)], "3d_C6_PTBN_undercontrol_taggedtree.csv", dossier,
                 "capture depuis taggedtree, qui porte l'arbre (T4)")
 
     F7 = Fiche("C7", "PSBN_undercontrol_treeinsolver : décomposable en SBN, autre orientation")
@@ -321,7 +331,7 @@ def fiche_C6_C7(PU, PT_u, PS, PT, PS_tis, PT_tis, dossier):
               len(cand), 433)
     ks = [k for k in range(len(PS)) if PS.v[k] == V0200 and PS.f[k] in cand]
     F7.compte("candidates sans ligne ⟨0,2,0,0⟩ dans PSBN_taggedtree (T4)", len(cand - {PS.f[k] for k in ks}), 0)
-    F7.extraire(PS, [min(ks, key=PS.t7)], "3d_C7_PSBN_undercontrol_taggedtree.csv", dossier,
+    F7.extraire(PS, [min(libres(PS, ks), key=PS.t7)], "3d_C7_PSBN_undercontrol_taggedtree.csv", dossier,
                 "capture depuis taggedtree, qui porte l'arbre (T4)")
     return F6, F7
 
@@ -379,7 +389,7 @@ def fiche_P1(PS, dossier):
            "pas recouper C5) et dont les faces sont distinctes (sinon le nœud de contrôle ne change "
            "rien au reste, comme en C1). Pas de ligne ⟨0,1,2,0⟩ : en d = 3, aucune dynamique dont "
            "c'est le vecteur le plus fin n'a de faces distinctes à la coupe intérieure.")
-    F.extraire(PS, [min(cand, key=PS.t7)], "3d_P1_PSBN_undercontrol_taggedtree.csv", dossier)
+    F.extraire(PS, [min(libres(PS, cand), key=PS.t7)], "3d_P1_PSBN_undercontrol_taggedtree.csv", dossier)
     return F
 
 
@@ -393,7 +403,7 @@ def fiche_P2(PS, PT, dossier):
     F.compte("dynamiques non triviales en PTBN, triviales en PSBN", len(cand), 2319)
     best = plus_fin(PT)
     ks = [k for k in range(len(PT)) if PT.f[k] in cand and sum(PT.v[k]) == best[PT.f[k]]]
-    F.extraire(PT, [min(ks, key=PT.t7)], "3d_P2_PTBN_undercontrol_taggedtree.csv", dossier,
+    F.extraire(PT, [min(libres(PT, ks), key=PT.t7)], "3d_P2_PTBN_undercontrol_taggedtree.csv", dossier,
                "la ligne de sa décomposition la plus fine en TBN")
     return F
 
@@ -413,7 +423,7 @@ def fiche_P3(PI, dossier):
              len({PI.f[k] for k in cand}))
     F.note("Candidates restreintes aux réseaux qui ont au moins un arc inhibiteur entre nœuds "
            "distincts (le minimum de poids seul donne une simple boucle 3→3) et des faces distinctes.")
-    F.extraire(PI, [min(cand, key=PI.t7)], "3d_P3_PSBNI_undercontrol.csv", dossier)
+    F.extraire(PI, [min(libres(PI, cand), key=PI.t7)], "3d_P3_PSBNI_undercontrol.csv", dossier)
     return F
 
 
@@ -430,7 +440,7 @@ def fiche_P4(PS, PT, dossier):
            "et 110 de côté) : ce qui l'écarte est sa partie contrôle (x1, x2) autonome, d'où le "
            "second filtre.")
     ks = [k for k in range(len(PS)) if PS.v[k][0] == 1 and PS.f[k] in sans_pc]
-    choix = min(ks, key=PS.t7)
+    choix = min(libres(PS, ks), key=PS.t7)
     faces = [sorted(etiquette(s, 3) for s in Fc) for Fc in faces_invariantes(PS.f[choix])]
     F.note("Sous-cubes invariants de la ligne retenue (étiquettes x3x2x1), à signaler sur la "
            "capture : " + " ; ".join("{" + ", ".join(fc) + "}" for fc in sorted(faces)))
@@ -549,6 +559,7 @@ def fiche_MCSBN(M4, M5):
 
 def toutes(csvdir, dossier):
     dossier.mkdir(parents=True, exist_ok=True)
+    DEJA.clear()
 
     def T(nom):
         return Table(csvdir / nom)
