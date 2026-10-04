@@ -40,3 +40,6 @@ Redaction/rapport_stage.*
 # Environnement conda local (pouvant être recréé grâce à environment.yml)
 .conda/
 .conda.old/
+
+# Sorties de la passe unifiée (régénérables par Redaction/passe_unifiee/passe.py)
+Redaction/passe_unifiee/sortie/

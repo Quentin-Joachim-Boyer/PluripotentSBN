@@ -2,6 +2,7 @@
 #define GENRANDOM
 
 #include "genrandom.h"
+#include <cstdlib>
 
 genrandom::genrandom() {}
 
@@ -12,7 +13,10 @@ void genrandom::init_gsl (){
     gsl_rng_env_setup();
     T = gsl_rng_default;
     r = gsl_rng_alloc(T);
-    gsl_rng_set(r, time (NULL) * getpid());
+    // MCSBN : graine fixe si GSL_RNG_SEED est defini (lu par gsl_rng_env_setup),
+    // pour un layout reproductible ; sinon graine aleatoire comme a l'origine.
+    if (getenv("GSL_RNG_SEED")) gsl_rng_set(r, gsl_rng_default_seed);
+    else gsl_rng_set(r, time (NULL) * getpid());
     //gsl_rng_set(r, 314159265);
 }
 

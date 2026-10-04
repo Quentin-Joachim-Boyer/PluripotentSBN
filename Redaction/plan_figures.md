@@ -11,6 +11,9 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
 - **T3. Fichiers de Laurent.** Les pages HTML ne gèrent pas les `f_*` écrits en entier : sur les 189 lignes du fichier de Laurent, `sbn-core.js` (exécuté avec `gjs`) calcule une dynamique différente de celle des poids, sur toutes les lignes. Seul le panneau des fonctions décode l'entier. *Sans objet si C1 se fait sur `PSBN_undercontrol` (voir C1).*
 - **T4. Arbre des sorties `treeinsolver`.** *Décidé : capturer la même dynamique depuis le CSV `taggedtree`, qui porte l'arbre.* C'est toujours possible : vecteur par vecteur, `taggedtree` contient toutes les dynamiques de `treeinsolver`.
 - **T5. Doublons de `treeinsolver`.** *Décidé :* cocher « dynamiques uniques » dans `sbn_viz`.
+- **T6. Binaires.** *Décidé (Quentin, 2026-10-04) :* `JPPipeline/bin/` et `MCSBN/bin/` ne sont pas versionnés. La passe recompile donc JPP (`javac`, annexe A.4) et MCSBN (`make`, annexe A.5) depuis les sources du commit dont elle part, au lieu de dépendre d'une compilation locale.
+- **T7. Choix d'une ligne parmi N candidates.** *Décidé (Quentin, 2026-10-04) :* quand une fiche ne fixe pas de critère, la passe retient la candidate qui a le moins de poids non nuls, puis la plus petite somme des |w|, puis la première dans l'ordre trié (T1). Le critère porte sur la ligne affichée dans la capture. Quentin peut changer de ligne au cas par cas en voyant les captures.
+- **T8. Script de la passe.** *Décidé (Quentin, 2026-10-04) :* `Redaction/passe_unifiee/`, sortie dans un dossier non versionné. Pour chaque fiche, la passe écrit un petit CSV ne contenant que les lignes à capturer, préfixé par la dimension (`3d_…`), que les pages HTML lisent dans le nom du fichier.
 
 ## Section Correction
 
@@ -32,6 +35,7 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
 - Données : JPP, `PSBN_undercontrol.lp`, d = 3, exhaustif : **225** dynamiques pour ⟨0,2,0,0⟩.
 - Commande : celle de C1 (même fichier).
 - Vue : comme C2, idéalement un réseau proche de celui de C2 pour la comparaison.
+- *Décidé (Quentin, 2026-10-04) :* le PSBN de ⟨0,2,0,0⟩ dont les poids sont les plus proches de ceux de C2 (distance L1), puis T7 en cas d'égalité.
 
 ### C4. Table « échelles de décomposition » (l. 480)
 - Montre : pourquoi la question des décompositions plus fines « n'est pas si importante ».
@@ -149,7 +153,7 @@ Vérifié le 2026-10-03 :
   - d = 3 : `java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 3 JPPipeline/src/asp/PTBN_undercontrol_taggedtree.lp JPPipeline/src/asp 0 <sortie> 1`, puis `python3 MCSBN/src/python/add_metagraph_layout.py <csv>` ;
   - d = 4 : `python3 src/python/core_then_walk.py -d 4 -M <m> -n <n> -o <csv>` depuis `MCSBN/`, puis la même commande de placement.
 - Vue : `metagraphe.html`, couleur par décomposition (comme l'existant) ou par une statistique.
-- Point de reproductibilité : DRGraph tire au hasard (GSL). Le placement ne sera identique d'une passe à l'autre que si sa graine est fixe. *À vérifier lors de la passe.*
+- Point de reproductibilité : DRGraph tire au hasard (GSL). Le placement ne sera identique d'une passe à l'autre que si sa graine est fixe. *Vérifié le 2026-10-04 :* deux placements du même CSV différaient, pour deux raisons. L'étape multiniveau tirait sa graine de l'heure et du numéro de processus (`genrandom.cpp`), et l'optimisation tourne sur 8 fils qui se partagent un générateur. *Corrigé (décidé par Quentin) :* `add_metagraph_layout.py` et `metagraph_layout` prennent `--seed <s>` (transmis par `GSL_RNG_SEED`, que `genrandom.cpp` respecte désormais) et `--threads <k>`. Avec `--threads 1 --seed 1`, deux placements sont identiques (environ 11 s en d = 3).
 - *Décidé (Quentin, 2026-10-04) :* d = 3 seulement pour l'instant ; le paysage hybride en d = 4 reste une option pour plus tard. Par défaut, comme les captures existantes : `PTBN_undercontrol_taggedtree`, coloration par la décomposition, sauf avis contraire.
 
 ### M3. Équation définissant une arête du métagraphe
@@ -254,12 +258,12 @@ Vérifié le 2026-10-03 :
 
   | d | Dynamiques | ρ | p |
   |---|---:|---:|---:|
-  | 2 | 36 (toutes) | 0,63 | 5·10⁻⁵ |
+  | 2 | 36 (toutes) | 0,62 | 5·10⁻⁵ |
   | 3 | 32 768 (toutes) | 0,81 | < 10⁻³⁰⁰ |
   | 4 | 100 000 (tirées) | 0,78 | < 10⁻³⁰⁰ |
   | 5 | 100 000 (tirées) | 0,69 | < 10⁻³⁰⁰ |
 
-  Avec autant de points, la p-valeur est toujours infime, si bien que c'est ρ qui porte l'information. La corrélation est positive dans les quatre dimensions, ce qui permet de dire plus que « compatible avec Wagner ». L'item « Régression linéaire pour confirmer Wagner » des travaux inachevés (l. 629) serait alors à revoir.
+  En d = 2, ρ = 0,6248 (la passe du 2026-10-04 a corrigé un double arrondi, 0,625 puis 0,63). Avec autant de points, la p-valeur est toujours infime, si bien que c'est ρ qui porte l'information. La corrélation est positive dans les quatre dimensions, ce qui permet de dire plus que « compatible avec Wagner ». L'item « Régression linéaire pour confirmer Wagner » des travaux inachevés (l. 629) serait alors à revoir.
 - Commandes : pour d = 2 et 3, celle de C4 (en changeant la dimension) ; pour d = 4 et 5, `./bin/mcsbn -d <d> -n 100000 -o <sortie>` depuis `MCSBN/` (graine fixe par défaut) ; enfin `scipy.stats.spearmanr` dans le script de la passe.
 - Vue : `sbn_scatter.html`, x = `Robustness_mean`, y = `Evolvability`, une sous-figure par dimension, avec ρ et p dans la légende.
 - Existant, moins adapté parce que non uniforme : `figures/4d_paysage_hybride_Robustness_mean_vs_Evolvability.png` (paysage hybride de `core_then_walk.py`, biaisé vers les pluripotents) et `figures/5d_PSBN_undecomposablePBN_beyond_R_P_mean_vs_E_P.png` (énumération partielle de JPP).

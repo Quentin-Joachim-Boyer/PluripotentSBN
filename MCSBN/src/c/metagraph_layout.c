@@ -292,7 +292,7 @@ static void uf_union(u32 a, u32 b) {
 /* ───────────────────────────────────────────────────────────────────────── */
 int main(int argc, char **argv) {
     const char *in_path = NULL, *out_path = NULL, *vis_bin = NULL;
-    int neg = 5, samples = 400, mode = 1;
+    int neg = 5, samples = 400, mode = 1, threads = 0;  /* threads 0 = defaut de DRGraph (8) */
     double gamma = 0.1, A = 2.0, B = 1.0;
     int do_write = 1, verbose = 0;
 
@@ -305,6 +305,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--mode"))    mode     = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--A"))       A        = atof(argv[++i]);
         else if (!strcmp(argv[i], "--B"))       B        = atof(argv[++i]);
+        else if (!strcmp(argv[i], "--threads")) threads  = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--seed"))    setenv("GSL_RNG_SEED", argv[++i], 1);  /* lu par genrandom.cpp ; avec --threads 1 : layout reproductible */
         else if (!strcmp(argv[i], "--stats-only")) do_write = 0;
         else if (!strcmp(argv[i], "-v"))        verbose  = 1;
         else if (argv[i][0] != '-')             in_path  = argv[i];
@@ -413,10 +415,12 @@ int main(int argc, char **argv) {
             snprintf(vbuf, sizeof(vbuf), "tools/DRGraph/Vis");
             vis = vbuf;
         }
+        char thr[32] = "";
+        if (threads > 0) snprintf(thr, sizeof(thr), " -threads %d", threads);
         char cmd[1200];
         snprintf(cmd, sizeof(cmd),
-                 "%s -input %s -output %s -neg %d -samples %d -gamma %g -mode %d -A %g -B %g%s",
-                 vis, gpath, lpath, neg, samples, gamma, mode, A, B,
+                 "%s -input %s -output %s -neg %d -samples %d -gamma %g -mode %d -A %g -B %g%s%s",
+                 vis, gpath, lpath, neg, samples, gamma, mode, A, B, thr,
                  verbose ? "" : " >/dev/null 2>&1");
         if (verbose) fprintf(stderr, "      %s\n", cmd);
         int rc = system(cmd);

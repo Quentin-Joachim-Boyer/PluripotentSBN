@@ -145,6 +145,8 @@ def run_drgraph(n_nodes, edges, vis_bin, params, env, verbose):
                "-neg", str(params["neg"]), "-samples", str(params["samples"]),
                "-gamma", str(params["gamma"]), "-mode", str(params["mode"]),
                "-A", str(params["A"]), "-B", str(params["B"])]
+        if params["threads"]:
+            cmd += ["-threads", str(params["threads"])]
         if verbose:
             print("[drgraph] " + " ".join(cmd), file=sys.stderr)
         res = subprocess.run(cmd, env=env,
@@ -238,6 +240,11 @@ def main():
     ap.add_argument("--A", type=float, default=2.0, help="parametre a (def 2)")
     ap.add_argument("--B", type=float, default=1.0,
                     help="parametre b, forme de la distribution (def 1)")
+    ap.add_argument("--threads", type=int,
+                    help="fils d'execution de DRGraph (def : celui de DRGraph, 8)")
+    ap.add_argument("--seed", type=int,
+                    help="graine de DRGraph (def : aleatoire) ; avec --threads 1,"
+                         " le layout est reproductible")
     ap.add_argument("--precision", type=int, default=6,
                     help="chiffres significatifs des coords (def 6)")
     ap.add_argument("-v", "--verbose", action="store_true",
@@ -263,9 +270,12 @@ def main():
     else:
         vis_bin = locate_vis(args.vis)
         params = {"neg": args.neg, "samples": args.samples, "gamma": args.gamma,
-                  "mode": args.mode, "A": args.A, "B": args.B}
-        coords = run_drgraph(n_nodes, edges, vis_bin, params,
-                             make_env(), args.verbose)
+                  "mode": args.mode, "A": args.A, "B": args.B,
+                  "threads": args.threads}
+        env = make_env()
+        if args.seed is not None:
+            env["GSL_RNG_SEED"] = str(args.seed)  # lu par genrandom.cpp
+        coords = run_drgraph(n_nodes, edges, vis_bin, params, env, args.verbose)
 
     print("[3/3] reecriture du CSV -> %s" % out_path, file=sys.stderr)
     rewrite_csv(args.input, out_path, fcols, sig_to_node, coords, fmt)
