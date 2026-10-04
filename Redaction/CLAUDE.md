@@ -67,7 +67,7 @@ Le lecteur est compétent : ne pas lui expliquer l'évident (par exemple qu'il f
 
 1. **Guide d'utilisation des programmes** (annexe unique, `annexes/`, une partie à la fois). Il doit permettre à Quentin, puis aux collègues, de relancer chaque programme. Ses parties sont des modes d'emploi des programmes au point (JPP avant tout, MCSBN dans une moindre mesure), pas un historique détaillé de tout ce qui a été fait, ni une cartographie exhaustive du dépôt. Elles se bornent à expliquer comment utiliser les programmes : ce que font les programmes et la définition des statistiques vont dans le corps du rapport. Elles ne rappellent pas ce que le corps du rapport a déjà établi, comme les limites de l'énumération exhaustive. Rien de propre à une machine (HPC, poste du labo) : l'exécution est la même partout. Présenter la version aboutie d'un programme. Ne signaler les versions intermédiaires, en une phrase (objectif atteint ou non, pas maintenues jusqu'au bout), que si le lecteur risque de les confondre avec la version aboutie, comme les programmes ASP du dossier de référence ; sinon, la mise en garde générale de A.1 suffit (ex. : ne pas citer w_bound.py ni w_bound_bfs.py). Regrouper ce qui relève d'une même annexe plutôt que de le disperser.
 2. **Fiches de figures** (décidé le 2026-10-03, terminé le 2026-10-04) : section par section, transformer chaque placeholder du corps en fiche précise (ce que la figure montre, programme, dimension, vecteur, nombre de solutions, page et vue), dans `Redaction/plan_figures.md`. Quentin tranche chaque fiche.
-3. **Passe unifiée** (faite le 2026-10-04, commit `3b331d8`) : `Redaction/passe_unifiee/passe.py` lance toutes les générations décidées dans les fiches, avec des paramètres fixés ; ses résultats (`sortie/resume.md`, non versionné) documenteront toutes les parties du rapport, avec `% src : passe unifiée 3b331d8`.
+3. **Passe unifiée** (faite le 2026-10-04, commit `8ceaedd`) : `Redaction/passe_unifiee/passe.py` lance toutes les générations décidées dans les fiches, avec des paramètres fixés ; ses résultats (`sortie/resume.md`, non versionné) documenteront toutes les parties du rapport, avec `% src : passe unifiée 8ceaedd`.
 4. **Sections manquantes**, une à la fois, à partir de ces résultats.
 5. Résumé et abstract en dernier.
 6. Plus tard : la version UGA condensée.
@@ -88,6 +88,7 @@ Le lecteur est compétent : ne pas lui expliquer l'évident (par exemple qu'il f
   - `4b99165d` : visualisations HTML (22 juin – 3 juillet).
   - `d87eb3ff` : scatter et MCSBN (22 – 26 juin).
   - `27cfe6a9` : rédaction et LaTeX (depuis le 15 juin).
+- **Captures d'écran du stage** : `figures/Captures d’écran/` (45 images, 11 juin – 3 juillet), inventoriées et vérifiées dans `plan_figures.md` (section « Captures d'écran du stage »). Anciennes conventions possibles : vérifier une capture avant de l'utiliser.
 - **Présentation de fin de stage** : `figures/Exploration de la pluripotence dans le paysage des SBN..pdf` (15 diapos, fil narratif validé à l'oral).
 - **Travaux de l'équipe** : `../biblio/` (HDR de Nicolas, thèse et article de Rémi, rapports d'Ai-Ling, de Rémy et de Danwen).
 

@@ -180,6 +180,7 @@ def libres(t, ks):
 class Fiche:
     def __init__(self, ident, titre):
         self.r = {"fiche": ident, "titre": titre, "comptes": [], "fichiers": [], "notes": []}
+        self.dyn = set()  # (dimension, dynamique) retenues
 
     def compte(self, quoi, obtenu, attendu=None, tol=None):
         if attendu is None:
@@ -197,6 +198,7 @@ class Fiche:
         """Écrit les lignes ks de t dans dossier/nom (ordre du fichier)."""
         ks = sorted(set(ks))
         DEJA.update(t.f[k] for k in ks)
+        self.dyn.update((t.d, t.f[k]) for k in ks)
         (dossier / nom).write_text("\n".join([t.lignes[0]] + [t.lignes[k + 1] for k in ks]) + "\n")
         self.r["fichiers"].append({
             "fichier": nom, "source": t.nom, "legende": legende,
@@ -218,6 +220,18 @@ def controle_poids(tables):
         actif = np.einsum("si,nij->njs", B, W) > 0
         f = np.frombuffer("".join("".join(x) for x in t.f).encode(), dtype=np.uint8).reshape(n, d, S) == ord("1")
         F.compte(f"lignes où f ≠ seuil(w), {t.nom}", int((actif != f).any(axis=(1, 2)).sum()), 0)
+    return F
+
+
+def fiche_X2(PS, dossier):
+    F = Fiche("X2", "Motivations : un PSBN dont le nœud 3 est un nœud de contrôle (remplace sbn71)")
+    best = plus_fin(PS)
+    cand = [k for k in range(len(PS)) if PS.v[k] == V0200 and PS.tree[k] == ARBRE_FIXE_0200
+            and best[PS.f[k]] == 2 and faces_distinctes(PS.f[k], PS.tree[k])]
+    F.compte("dynamiques ⟨0,2,0,0⟩ d'arbre 3[*,*], les plus fines, à faces distinctes", len({PS.f[k] for k in cand}))
+    F.note("Mêmes critères que P1, avec le nœud 3 pour nœud de contrôle comme dans la légende actuelle ; "
+           "la fiche passe avant P1, la figure venant plus tôt dans le rapport.")
+    F.extraire(PS, [min(libres(PS, cand), key=PS.t7)], "3d_X2_PSBN_undercontrol_taggedtree.csv", dossier)
     return F
 
 
@@ -397,14 +411,23 @@ def non_triviales(t):
     return {t.f[k] for k in range(len(t)) if t.v[k][0] != 1}
 
 
+SBN71_F = ("00001000", "00100010", "00001111")
+SBN71_W = {(1, 1): -2, (3, 1): 1, (1, 2): -2, (2, 1): -1, (2, 2): 2, (3, 3): 1}
+
+
 def fiche_P2(PS, PT, dossier):
-    F = Fiche("P2", "Décomposable en TBN mais pas en SBN")
+    F = Fiche("P2", "Décomposable en TBN mais pas en SBN : la figure sbn71")
     cand = non_triviales(PT) - non_triviales(PS)
     F.compte("dynamiques non triviales en PTBN, triviales en PSBN", len(cand), 2319)
-    best = plus_fin(PT)
-    ks = [k for k in range(len(PT)) if PT.f[k] in cand and sum(PT.v[k]) == best[PT.f[k]]]
-    F.extraire(PT, [min(libres(PT, ks), key=PT.t7)], "3d_P2_PTBN_undercontrol_taggedtree.csv", dossier,
-               "la ligne de sa décomposition la plus fine en TBN")
+    w71 = tuple(SBN71_W.get((i, j), 0) for i in (1, 2, 3) for j in (1, 2, 3))
+    F.compte("les poids de la figure sbn71 réalisent sa dynamique", seuil(w71, 3) == SBN71_F, True)
+    F.compte("la dynamique de sbn71 est candidate", SBN71_F in cand, True)
+    ks = [k for k in range(len(PT)) if PT.f[k] == SBN71_F and PT.v[k] == V0200]
+    F.compte("arbres ⟨0,2,0,0⟩ de sbn71 en PTBN", sorted(PT.tree[k] for k in ks), ["3[*,*]"])
+    F.compte("la ligne de PTBN_taggedtree a les poids de la figure", any(PT.w[k] == w71 for k in ks))
+    F.note("Figure existante : figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_{reseau,hypercube}.png "
+           "(1er juillet), qui illustrait jusqu'ici les Motivations (remplacée par X2).")
+    F.extraire(PT, [min(ks, key=PT.t7)], "3d_P2_PTBN_undercontrol_taggedtree.csv", dossier)
     return F
 
 
@@ -575,22 +598,21 @@ def toutes(csvdir, dossier):
     M5 = T("5d_MCSBN_variety_100000.csv.gz")
 
     fiches = [controle_poids([PU, PT_u, PI, PS2, PS, PT, PS_tis, PT_tis, M4, M5]),
-              fiche_C1(PU, dossier), *fiche_C2_C3(PU, PT_u, dossier), fiche_C4(PS, dossier),
+              fiche_X2(PS, dossier), fiche_C1(PU, dossier), *fiche_C2_C3(PU, PT_u, dossier), fiche_C4(PS, dossier),
               fiche_C5(PS, dossier), *fiche_C6_C7(PU, PT_u, PS, PT, PS_tis, PT_tis, dossier),
               fiche_C8(PT, dossier), fiche_P0(PS, PT, PS_tis, dossier), fiche_P1(PS, dossier),
               fiche_P2(PS, PT, dossier), fiche_P3(PI, dossier), fiche_P4(PS, PT, dossier),
               fiche_OL1(PS2, PS, M4, M5, dossier), fiche_OL2c(PS, dossier),
               fiche_O2_O3(PS2, PS, PT), fiche_MCSBN(M4, M5)]
-    par_ligne = defaultdict(list)
+    par_dyn = defaultdict(list)
     for F in fiches:
-        for fi in F.r["fichiers"]:
-            for l in fi["lignes"]:
-                par_ligne[(fi["source"], l["n"])].append(F)
-    for (source, n), Fs in par_ligne.items():
+        for dyn in F.dyn:
+            par_dyn[dyn].append(F)
+    for (d, f), Fs in par_dyn.items():
         for F in Fs:
             autres = [G.r["fiche"] for G in Fs if G is not F]
             if autres:
-                F.note(f"La ligne n° {n} de {source} est aussi retenue par {', '.join(autres)}.")
+                F.note(f"La dynamique {' '.join(f)} (d = {d}) est aussi retenue par {', '.join(autres)}.")
     for F in fiches:
         ecarts = [c["quoi"] for c in F.r["comptes"] if c["ok"] is False]
         print(f"  {F.r['fiche']:9s} {'écarts : ' + ' ; '.join(ecarts) if ecarts else 'conforme'}")

@@ -115,6 +115,7 @@ Vérifié le 2026-10-03 :
 - *Décidé (Quentin, 2026-10-04) :* une dynamique dont ⟨0,2,0,0⟩ est la décomposition la plus fine (pour ne pas recouper C5) et dont les faces sont distinctes, c'est-à-dire la condition de Laurent (sinon le nœud de contrôle ne change rien au reste, comme en C1), puis T7. Pas d'exemple en ⟨0,1,2,0⟩ : en d = 3, aucune des 66 dynamiques dont c'est la décomposition la plus fine n'a de faces distinctes à la coupe intérieure.
 
 ### P2. Décomposable en TBN mais pas en SBN (l. 394)
+- *Décidé (Quentin, 2026-10-04) :* la figure existante `sbn71` (l. 159-166), dont le réseau réalise bien l'hypercube et dont la dynamique n'est décomposable qu'en TBN (voir la section « Captures d'écran du stage »). Elle quitte les Motivations, où X2 la remplace. La passe vérifie que ses poids réalisent sa dynamique ; le CSV régénéré en porte une autre réalisation.
 - Montre : une dynamique qui admet une décomposition quand on accepte des sous-réseaux quelconques, mais aucune quand on les veut signés.
 - Données : en d = 3, **2 319** dynamiques ont un vecteur non trivial dans PTBN `taggedtree` et seulement le vecteur trivial dans PSBN `taggedtree`.
 - Commande : comme P1 avec `PTBN_undercontrol_taggedtree.lp` (et P1 pour vérifier l'absence en PSBN).
@@ -245,6 +246,11 @@ Vérifié le 2026-10-03 :
 - Même figure que OL1 (l. 596), qui la détaille.
 - *Décidé (Quentin, 2026-10-04) :* une seule figure, placée dans Observations et limites, à laquelle l. 340 renvoie par `\Cref`.
 
+### X2. Figure des Motivations (l. 159-166), qui remplace `sbn71`
+- Montre : un PSBN dont le nœud 3 est un nœud de contrôle, et sa dynamique aux deux faces invariantes (légende actuelle : « Une structure pluripotente. Le noeud 3 est un noeud de contrôle. »).
+- *Décidé (Quentin, 2026-10-04) :* un vrai PSBN, puisque le texte qui précède parle de sous-dynamiques correspondant à des SBN. Critères de P1 (⟨0,2,0,0⟩ le plus fin, faces distinctes), avec l'arbre `3[*,*]`, puis T7 ; la fiche passe avant P1.
+- Commande : celle de P1. Vue : `sbn_viz`, réseau et hypercube colorié par la décomposition, depuis la même ligne.
+
 ### X1. « [Image issue des simulations] » (contexte, l. 193)
 - Hors génération : c'est une image des simulations d'agents de Corentin Lacaze, à lui demander.
 
@@ -290,3 +296,35 @@ Vérifié le 2026-10-03 :
 
 ## Ressource pour la section « Exploration randomisée : MCSBN » (sans placeholder)
 - Pour « énumération brute puis post processing → on ne récupère quasiment que des non décomposés » (l. 556), un chiffre est disponible : dans un tirage uniforme MCSBN de 100 000 dynamiques, le vecteur est trivial pour 98,9 % d'entre elles en d = 4 et 99,97 % en d = 5 (tirages du 2026-10-04, graine par défaut).
+
+## Captures d'écran du stage (`figures/Captures d’écran/`)
+
+Inventaire du 2026-10-04 : 45 captures, du 11 juin au 3 juillet, numérotées ici dans l'ordre chronologique. Deux repères datent les conventions : la règle de mutation change le 15 juin à 17 h 17 (commit `074263a`), et les colonnes `R_P_*` et `E_P` sont renommées le 22 juin à 17 h 04 (`3704160`). Les captures 1 à 13 précèdent donc la règle de mutation actuelle.
+
+Pour les captures qui montrent un réseau et sa dynamique, j'ai relu les poids, recalculé la dynamique, puis comparé ses statistiques (GenotypeCount, robustesse, attracteurs) et son vecteur à ceux des CSV de la passe `8ceaedd`.
+
+| N° | Date | Contenu | Usage possible | État |
+|---|---|---|---|---|
+| 1-8 | 11 juin | `sbn_scatter`, 1re version, `PSBN_undecomposablePBN_beyond`, d = 3 et 4 | historique des visualisations | ancienne règle de mutation |
+| 9 | 12 juin | moniteur système, 12 cœurs à 100 % | Optimisation (JPP occupe tous les cœurs) | autre machine que la machine distante (Quentin, 2026-10-04) |
+| 10-11 | 12 juin | scatter `PSBNI_undecomposablePBN_beyond`, d = 6, nuages par vecteur | OL2a | ancienne règle ; d = 6 biaisé |
+| 12-13 | 15 juin | scatter d = 5, `R_P_mean` / `R_P_std`, groupes en « doigts » | OL2b, OL2c | ancienne règle |
+| 14-21 | 17-22 juin | panneaux du métagraphe d = 3, un par vecteur | P1 (galerie de vecteurs) | cohérentes : 14, 15, 17, 18, 19, 20 ; à écarter : 16 ; 21 non vérifiée |
+| 22 | 22 juin | scatter d = 4 `treeinsolver` | OL2a | énumération partielle |
+| 23, 25 | 22-24 juin | métagraphe d = 4 `treeinsolver` (382 403 et 68 550 nœuds) | M2, OL4 | énumération partielle |
+| 24 | 24 juin | `sbn_viz` v8, d = 2 | | |
+| 26-27 | 26 juin | métagraphe du paysage hybride d = 4 (80 000 nœuds) | M2 (option d = 4) | |
+| 28-30, 32 | 26-29 juin | métagraphe d = 3 complet (451 584 arêtes), voisins d'une dynamique en étoile ; 28 et 32 : la dynamique constante 0 (GenotypeCount 19 683, robustesse 0,5) | M3 (arête), OL2c (k = 3) | |
+| 31 | 29 juin | scatter du cœur hybride d = 4, `Robustness_mean` / `Robustness_std` | OL2b, OL2c | |
+| 33-35, 45, 36 | 30 juin | dynamique et réseau de la ligne 18036 de `treeinsolver` | déjà dans le rapport (Motivations, l. 137-144) | cohérentes, sans permutation |
+| 37 | 30 juin | hypercube de l'identité (8 points fixes) | ⟨0,0,0,8⟩ | |
+| 38-39 | 30 juin | `sbn_viz`, ⟨0,1,1,2⟩, `treeinsolver` | | à écarter : arbre mal rendu (cases noires) |
+| 40 | 1er juillet | `sbn_viz`, identité | | à écarter : affiche « No decomposition » sous ⟨0,0,0,8⟩ |
+| 41 | 1er juillet | `sbn_viz`, ⟨0,0,1,6⟩ avec statistiques | | cohérente (vecteur admis en TBN seulement) |
+| 42 | 1er juillet | `sbn_viz`, réseau identité | | à écarter : `f_*` écrites dans l'ordre inverse, dynamique fausse |
+| 43 | 1er juillet | `sbn_viz`, ⟨0,0,2,4⟩ PTBN `taggedtree` | C8 | non vérifiée |
+| 44 | 3 juillet | hypercube seul | | origine inconnue |
+
+- La capture 16 (⟨0,2,0,0⟩, GenotypeCount 80) montre une structure qui ne réalise aucune dynamique ayant ses statistiques, quelle que soit la boucle masquée sur le nœud 1.
+- La figure `3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_*` du rapport (l. 159-166, « Une structure pluripotente. Le noeud 3 est un noeud de contrôle. ») a été vérifiée le 2026-10-04 : le réseau réalise exactement l'hypercube affiché, sans permutation. Mais cette dynamique n'est décomposable (⟨0,2,0,0⟩, arbre `3[*,*]`) qu'en TBN : PSBN `taggedtree` et `PSBN_undercontrol` ne lui trouvent que le vecteur trivial. Sur la face x₃ = 1, la sous-dynamique envoie 100 sur 101, ce qu'aucun SBN à seuil nul ne fait (rien n'est actif, la somme vaut 0). Le texte qui précède la figure parle de « sous-dynamiques stables correspondant à des SBN ». *Décidé (Quentin, 2026-10-04) :* la remplacer par un PSBN (fiche X2) et réutiliser celle-ci pour P2.
+
