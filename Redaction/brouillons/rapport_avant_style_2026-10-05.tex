@@ -1,0 +1,1180 @@
+\documentclass[12pt, a4paper]{article}
+
+% ----- Encodage et langue -----
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+
+% ----- Mise en page -----
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ----- Mathématiques -----
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage[normalem]{ulem}
+
+\newtheorem{definition}{Définition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{exemple}{Exemple}[section]
+
+% ----- Figures et tableaux -----
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{array}
+
+% ----- Algorithmes -----
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ----- Liens et références -----
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    citecolor=green!50!black,
+    urlcolor=blue!60!black,
+}
+\usepackage[french]{cleveref}
+
+% ----- cleveref et babel-french -----
+% babel-french rend « : » actif, ce qui casse \cref et \Cref sur les étiquettes de
+% la forme fig:..., tab:..., ann:... (erreur « Missing \endcsname inserted »).
+% On neutralise les caractères actifs le temps de lire les étiquettes ; \protected
+% garde ces commandes utilisables dans les légendes (\caption).
+\makeatletter
+\newcommand*{\psbn@saferef}[2]{\begingroup\@safe@activestrue#1{#2}\endgroup}
+\AtBeginDocument{%
+  \let\psbn@cref\cref \let\psbn@Cref\Cref
+  \let\psbn@crefrange\crefrange \let\psbn@Crefrange\Crefrange
+  \protected\def\cref{\@ifstar{\psbn@saferef{\psbn@cref*}}{\psbn@saferef{\psbn@cref}}}%
+  \protected\def\Cref{\@ifstar{\psbn@saferef{\psbn@Cref*}}{\psbn@saferef{\psbn@Cref}}}%
+  \protected\def\crefrange#1#2{\begingroup\@safe@activestrue\psbn@crefrange{#1}{#2}\endgroup}%
+  \protected\def\Crefrange#1#2{\begingroup\@safe@activestrue\psbn@Crefrange{#1}{#2}\endgroup}%
+}
+\makeatother
+
+% ----- Bibliographie -----
+\usepackage[backend=biber, style=numeric, sorting=none]{biblatex}
+\addbibresource{references.bib}
+
+% ----- Divers -----
+\usepackage{xcolor}
+\usepackage{lipsum} % à supprimer quand tu rédiges
+
+% ----- Schémas -----
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, fit, positioning, shapes.geometric}
+
+% ----- Métadonnées -----
+\title{
+    \vspace{2cm}
+    {\Large Rapport de stage --- M1 AM}\\[0.5cm]
+    \rule{\linewidth}{0.4pt}\\[0.4cm]
+    {\LARGE \textbf{Exploration du paysage des\\
+    Réseaux Booléens à Signe Pluripotents}}\\[0.4cm]
+    \rule{\linewidth}{0.4pt}\\[1cm]
+    {\large Équipe BCM --- Laboratoire TIMC, Grenoble}
+}
+\author{
+    \textbf{Quentin Boyer}\\[0.3cm]
+    \small Encadrants : Nicolas Glade, Laurent Trilling\\
+    \small Université Grenoble Alpes, Grenoble INP ENSIMAG
+}
+\date{\small Mai-Juillet 2026}
+
+% ============================================================
+\begin{document}
+% ============================================================
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+% ----- Résumé -----
+\begin{abstract}
+\noindent
+% FR : ~150 mots
+\textbf{Résumé.}
+[À rédiger en dernier.]
+
+\bigskip
+\noindent
+\textbf{Abstract.}
+[English version of the abstract.]
+
+\bigskip
+\noindent
+\textbf{Mots-clés :} Systèmes biologiques, réseaux booléens à signe (SBN), pluripotence, robustesse, évolutivité,
+Answer Set Programming, calcul parallèle.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+\subsection{Motivations}
+
+Un des intérêts de la modélisation des systèmes biologiques au sens large et à toute échelle (que ce soient des écosystèmes,des cellules, l'expression génétique, des relations symbiotiques, des neurones...) est qu'elle permet suffisamment de simplifications et d'abstractions pour pouvoir isoler (donc clarifier) et forger des concepts sur lesquels on peut facilement travailler (au sens mathématique) et dont on peut évaluer la pertinence (ce qui est un objectif en fin de compte, forger des concepts pertinents pour que ceux qui viennent après s'en emparent). L'étude in vivo (ou juste du vivant ?) ne peut généralement qu'entrapercevoir ces mêmes concepts qu'au milieu du fouillis des particularités biologiques, et encore, souvent au travers du prisme de la vie telle qu'on la connaît (prisme duquel on voudrait s'affranchir s'il est question d'origine du vivant, voire d'exobiologie), là où le modèle ouvre la voie à l'exhaustivité et à la généralisation (on a bien dit ouvre la voie, pas résout le problème). C'est donc dans ce cadre que nous nous plaçons : l'exploration des horizons d'un modèle (celui des Signed Boolean Network SBN) pour observer les contraintes qu'il impose et les lois que celles-ci font émerger (développer l'idée que contraindre permet ?). Il n'est donc pas question ici d'évaluer la validité biologique du modèle (même si nos réflexions à ce sujet guident nos choix) mais de bien modestement (j'ai deux mois, ce n'est pas énorme) en exploiter le potentiel conceptuel (et l'intérêt porté à cette exploitation est en quelque sorte une mesure de sa validité (i.e. utilité) conceptuelle).
+
+La caractéristique du vivant qui sert de point de départ à ce travail est la pluripotence, c'est-à-dire la capacité d'un système unique à présenter différents comportements qui eux-mêmes correspondent à d'autres systèmes similaires mais potentiellement plus "simple", on dit que le système principal les "simule". Typiquement l'expression du code génétique (d'où proviendra souvent par analogie le vocabulaire que nous emploierons) dont la spécification des cellules est un bon exemple, des poils de chat court ou long selon la saison, la génération des pensées par nos neurones... [À fournir et préciser]. 
+
+Le modèle exploré ici pour formaliser ces concepts est donc celui des Réseaux Booléen à Signe $SBN$, formalisé en \Cref{sec:formalisme} et ce qui nous y intéresse particulièrement, c'est l'interprétation des $n$ nœuds du réseau comme une STRUCTURE (ou un programme, un code, un plan...) possédant différent états, et dont l'évolution déterministe génère une DYNAMIQUE (ou une exécution, une expression, une construction...) dans l'espace du graphe de transition de ces états (hypercube à n dimensions). 
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/structure_3d_PSBN_undercontrol_treeinsolver_18036.png}
+        \caption{Une structure quelconque}
+        \label{fig:structure-3d}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/dynamique_3d_PSBN_undercontrol_treeinsolver_18036.png}
+        \caption{Sa dynamique}
+        \label{fig:dynamique-3d}
+    \end{subfigure}
+    \caption{Un réseau et son graphe de transition en dimension 3.}
+    \label{fig:reseau-3d}
+\end{figure}
+
+Le concept de pluripotence est volontairement suffisamment général et flou pour pouvoir capter les différentes interprétations que le vivant peut en faire. Elle pourrait ainsi prendre sens dans le formalisme des SBN comme la présence de sous-dynamiques stables correspondant à des SBN sur des supports pouvant être encodé par une dimension inférieure. Mais ce n'est pas la seule manière, on pourrait aussi (et c'est plutôt ce qui est fait ici comme première approche plus simple) rechercher des sous-dynamiques disjointes sur des supports identifiés par un unique noeud (dit "de contrôle"). Le choix des mots est important et il nous appartient d'être clair sur l'aspect de la pluripotence que l'on met en évidence (\Cref{sec:paysage}).
+
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        % Capture à faire (fiche X2, Claude 2026-10-04) : la figure sbn71 n'était décomposable qu'en TBN
+        % et passe en section « Quel paysage ». Ligne n° 33 227 de fiches/3d_X2_PSBN_undercontrol_taggedtree.csv
+        % (⟨0,2,0,0⟩, arbre 3[*,*], poids 1->2 : +1, 3->2 : -2, 3->3 : +1). Fichiers attendus :
+        % figures/3d_X2_PSBN_undercontrol_taggedtree_{reseau,hypercube}.png
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche X2)}}
+        \caption{Une structure pluripotente. Le noeud 3 est un noeud de contrôle.}
+        \label{fig:structure-pluripotente-3d}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche X2)}}
+        \caption{Sa dynamique possède des hyper-faces disjointes (marquées par différentes couleurs).}
+        \label{fig:dynamique-pluripotente-3d}
+    \end{subfigure}
+    \caption{Un réseau pluripotent et son graphe de transition.}
+    \label{fig:reseau-pluripotent-3d}
+\end{figure}
+
+
+\subsection{Positionnement dans les travaux de l'équipe}
+
+Le présent travail n'est pas isolé, il s'intègre dans une réflexion plus large menée de longue date par Nicolas Glade sur le vivant, et à laquelle ont participé (et participe) de nombreux chercheurs et étudiants (souvent dans l'équipe BCM du TIMC). Consulter leurs écrits s'est avéré très instructif (le lecteur y est largement invité) et aura permis en quelque sorte de "Se tenir sur les épaules des géants et voir plus loin, voir dans l'invisible, à travers l'espace et à travers le temps." - Jean-Claude Ameisen. 
+
+En voici une liste (non exhaustive, mais rassemblant les principaux).
+
+- HDR de Nicolas Glade : la bible donnant le cadre général~\cite{glade2022}.
+
+- Thèse de Rémi Segretain : réflexions générales sur les SBN et développement de la Java Parallel Pipeline (JPP)~\cite{segretain2023} (\Cref{sec:optimisation})
+
+- Rapports d'Ai-Ling Bonnet et de Rémy Defossez : approfondissement des travaux de Rémi~\cite{bonnet2023,defossez2021} (\Cref{sec:stats,sec:metagraphes}).
+
+- Rapport de Danwen Wu : Démonstration mathématique de l'équivalence entre l'existence de dynamiques séparées sur deux hyper-faces disjointes et de contraintes sur les poids du réseau~\cite{wu2024} (\Cref{sec:paysage}).
+
+- Programmes de Laurent Trilling : le point de départ de ce travail, l'énumération en Answer Set Programming (ASP) des réseaux pluripotents sous nœud de contrôle via la dynamique (\Cref{sec:correction}).
+
+Pour ce qui est des travaux encore en cours au moment de la rédaction, Corentin Lacaze s'occupe de la simulation d'agents dont les comportements sont intégralement générés par des SBN. L'objectif étant de les mettre en compétition pour observer des phénomènes évolutifs et comprendre comment cela se traduit en termes de SBN. La complémentarité entre l'aspect théorique du présent travail d'un côté et l'aspect expérimental des simulations de l'autre aura alimenté nos échanges qui nous auront permis l'un l'autre de nous guider mutuellement.
+
+[Image issue des simulations]
+
+
+\subsection{Contributions de ce stage}
+
+L'apport principal de ce travail est la recherche de la pluripotence dans les SBN. L'enjeu principal a donc été d'abord d'énumérer efficacement les SBN qui nous intéressent, la définition de ce qui nous intéresse étant souvent guidé par l'exigence d'efficacité (recherche de symétries). L'efficacité mémoire et temporelle est cruciale, les espaces de recherche explosent combinatoirement avec le nombre de noeuds du réseau et avec nos méthodes, il n'est en pratique pas raisonnable d'espérer l'exhaustivité à partir de 4 noeuds, où même d'avoir des données représentatives à partir de 5 noeuds (\Cref{tab:echelles}). Une bonne partie du temps de travail a donc été dédié à l'optimisation du code pour essayer de récolter le maximum d'information avec un minimum de calculs.  
+
+Dans un second temps l'objectif a été de créer des visualisations utiles et pratiques, à la fois pour vérifier la justesse de nos programmes, mais aussi pour apprécier intuitivement l'espace des réseaux à travers différents angles et différentes métriques. Cela se matérialise par les trois scripts hmtl/javascript présents à la racine du git, permettant tous les trois de charger des fichiers CSV générés indépendamment et d'en afficher de manière concise le contenu. 
+
+- sbn\_viz.html : structures et dynamiques détaillés.
+
+- sbn\_scatter.html : nuages des dynamiques placées selon différentes métriques.
+
+- metagraphe.html : nuages des dynamiques placées les unes par rapport aux autres selon des règles de mutations. 
+
+Ce stage aura aussi donné l'occasion de rédiger un article (i.e. plus ou moins ce papier) synthétisant un bout de chemin parcouru sur la longue route qu'est la réflexion sur les SBN ?
+
+
+% ============================================================
+\section{Formalisme des Réseaux Booléens à Signe}
+\label{sec:formalisme}
+% ============================================================
+
+\subsection{Structure et dynamique}
+\label{sec:structure-dynamique}
+
+[Cf. rapport Ai-Ling]
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin.
+Nous reprenons ici le formalisme tel que le présente le rapport d'Ai-Ling~\cite{bonnet2023}.
+% src : bonnet2023, sections 2.1 et 2.2
+Un SBN de dimension $n$ est un graphe orienté dont les $n$ nœuds prennent des valeurs booléennes et dont chaque arc $i \to j$ porte un poids entier $w_{i,j}$, activateur s'il est positif et inhibiteur s'il est négatif, un poids nul revenant à l'absence d'arc (choix sur lequel nous reviendrons en \Cref{sec:sbf}).
+C'est la matrice des poids $W = (w_{i,j}) \in \mathbb{Z}^{n \times n}$ qui constitue la STRUCTURE du réseau, telle que la représente la \Cref{fig:structure-3d} (c'est la transposée de celle du rapport d'Ai-Ling, qui note $g_{ij}$ le poids de l'arc $j \to i$).
+% src : bonnet2023, section 2.1.2 ; ici, comme dans le code, la colonne j est la SBF du nœud j
+% (annexe A.2 ; SBN.java ; sbn-core.js)
+
+Un état du réseau est un vecteur $\mathbf{x} \in \{0,1\}^n$, où $x_i = 1$ quand le nœud $i$ est actif, et chaque nœud $j$ calcule sa valeur suivante en sommant les poids des arcs qui lui viennent des nœuds actifs :
+\begin{equation}
+f_j(\mathbf{x}) = 1 \iff \sum_{i=1}^{n} w_{i,j}\, x_i > 0 ,
+\end{equation}
+si bien qu'il s'allume quand les influences qu'il reçoit sont au total activatrices, et s'éteint sinon.
+% src : PTBN_undercontrol_taggedtree.lp l. 70-71 ; sbn-core.js (transitionsFromW) ;
+% brouillons/corps_depuis_annexe_A.tex
+La fonction $f_j$ ne dépend donc que de la colonne $j$ de $W$, et c'est une fonction booléenne à seuil (SBF), l'objet de la section suivante.
+Les nœuds étant tous mis à jour en même temps, le réseau définit une fonction de transition
+\begin{equation}
+F : \{0,1\}^n \to \{0,1\}^n, \qquad \mathbf{x} \mapsto \big(f_1(\mathbf{x}), \dots, f_n(\mathbf{x})\big),
+\end{equation}
+% src : SBN.java (nextState : tous les bits recalculés depuis le même état)
+qui constitue sa DYNAMIQUE.
+On la représente par son graphe de transition, où chaque état $\mathbf{x}$ pointe vers $F(\mathbf{x})$ et où les $2^n$ états sont placés aux sommets de l'hypercube de dimension $n$, deux états voisins sur l'hypercube ne différant que par la valeur d'un nœud (\Cref{fig:dynamique-3d}, où un état s'écrit $x_n \cdots x_1$, le nœud 1 à droite).
+% src : sbn_viz.html l. 1783 (étiquette s.toString(2), bit de poids fort à gauche) ; figure 1
+% recalculée depuis ses poids le 2026-10-04 (001 -> 111 -> 000, point fixe 000)
+
+Comme chaque état a un unique successeur et que les états sont en nombre fini, toute trajectoire finit par entrer dans un attracteur (un point fixe ou un cycle), et les états qui y mènent forment son bassin d'attraction.
+% src : SBN.java (calcul des bassins, javadoc)
+Le passage de la structure à la dynamique n'est pas injectif, puisqu'il y a une infinité de matrices de poids pour un nombre fini de dynamiques (dont le \Cref{tab:echelles} donne le compte), si bien qu'une même dynamique est en général réalisée par de nombreuses structures, ce sur quoi s'appuient les notions de robustesse et d'évolutivité de la \Cref{sec:stats}.
+% src : bonnet2023, section 2.2 (« plusieurs SBN peuvent avoir le même comportement »)
+
+
+\subsection{Fonctions booléennes à seuil (SBF)}
+\label{sec:sbf}
+
+[Cf. rapport Ai-Ling]
+
+% Réécriture complète proposée par Claude (2026-10-04) à la demande de Quentin, à reprendre
+% dans sa voix. L'ancienne version de juillet, avec les colonnes retirées du tableau, est dans
+% brouillons/sbf_version_juillet.tex.
+Nous appelons SBF de dimension $n$ toute fonction $f_w$ qui vaut 1 en $\mathbf{x}$ si et seulement si $\sum_i w_i x_i > 0$, pour un vecteur de poids $w \in \mathbb{Z}^n$ (une colonne de $W$), et notons $\mathcal{T}_n = \{ f_w : w \in \mathbb{Z}^n \}$ leur ensemble.
+Toutes les fonctions booléennes ne sont pas des SBF, loin de là, car le seuil étant nul, une SBF vaut toujours 0 dans l'état $\mathbf{0}$, et certaines fonctions qui respectent cette condition échappent encore au seuil, comme $x_1 \wedge x_2$, qui demanderait à la fois $w_1 \le 0$, $w_2 \le 0$ et $w_1 + w_2 > 0$.
+Il ne reste ainsi que 6 SBF parmi les 16 fonctions de deux variables (\Cref{tab:sbf2}).
+
+\begin{table}[H]
+\centering
+\caption{Les 6 SBF distinctes en dimension $2$. $f(\mathbf{x}) = 1$ ssi $\sum_i w_i x_i > 0$, avec $w_i \in \{-1, 0, 1\}$.}
+\label{tab:sbf2}
+\begin{tabular}{cccccl}
+\toprule
+$(w_1,\,w_2)$ repr. & $f(0,0)$ & $f(1,0)$ & $f(0,1)$ & $f(1,1)$ & Expression \\
+\midrule
+$(-1,-1)$ & 0 & 0 & 0 & 0 & $0$ \\
+$(1,-1)$  & 0 & 1 & 0 & 0 & $x_1 \wedge \neg x_2$ \\
+$(-1,\;1)$  & 0 & 0 & 1 & 0 & $\neg x_1 \wedge x_2$ \\
+$(1,\;0)$   & 0 & 1 & 0 & 1 & $x_1$ \\
+$(0,\;1)$   & 0 & 0 & 1 & 1 & $x_2$ \\
+$(1,\;1)$   & 0 & 1 & 1 & 1 & $x_1 \vee x_2$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Nous ne retenons d'une SBF que sa table de vérité, ce qui nous écarte de deux façons des classes d'équivalence de SBF de la thèse de Rémi~\cite{segretain2023} et de la HDR de Nicolas~\cite{glade2022}, et explique que le \Cref{tab:echelles} ne retrouve pas leurs comptes.
+D'une part, ces classes regroupent les SBF qui ne diffèrent que par une permutation de leurs poids, c'est-à-dire les orbites de $\mathcal{T}_n$ sous l'action du groupe $S_n$ des permutations des $n$ entrées, dont nous notons $\mathcal{T}_n/S_n$ l'ensemble, alors que nous comptons ces SBF séparément (le tableau donne aussi le nombre d'orbites).
+D'autre part, Rémi fait d'un poids nul l'absence de l'arc qui le porte, de sorte qu'une SBF dont un poids est nul est la projection d'une SBF de dimension inférieure, et forme une classe distincte de celle d'une SBF de même table de vérité sans poids nul, alors que nous ne distinguons pas un arc absent d'un arc présent mais sans effet sur la table de vérité.
+Cette distinction a pourtant un sens du point de vue de l'évolution, où une interaction sans effet forme un potentiel évolutif~\cite{segretain2023}, et la prendre en compte serait un chemin à exploiter, que nous n'avons pas suivi.
+% src : segretain2023, sections 3.1 et 3.3 et tableau 5 ; glade2022, tableau 8.34. Leurs classes
+% « innées » (sans poids nul, à permutation près : 2, 4, 10, 36, 224, 3024) sont exactement nos
+% orbites, car toute SBF se réalise sans poids nul (remplacer les poids nuls par -1 après avoir
+% multiplié les autres par n ne change le signe d'aucune somme), et leurs classes « cumulées »
+% (3, 7, 17, 53, 277, 3301) en sont les sommes partielles ; leurs « layouts » (2, 6, 32 pour
+% n = 1 à 3) sont nos |T_n|.
+
+Le \Cref{tab:echelles} rassemble ces comptes, ainsi que le nombre de dynamiques, celui des dynamiques pluripotentes au sens de la \Cref{sec:paysage}, et la borne des poids $B_n$, plus petit entier tel que toute SBF de dimension $n$ se réalise avec des poids pris dans $[-B_n, B_n]$, dont le calcul est expliqué plus bas.
+Le nombre de dynamiques découle directement de celui des SBF, car chaque nœud ayant sa propre SBF et les colonnes de $W$ se choisissant indépendamment, tout $n$-uplet de SBF est la dynamique d'un réseau, si bien qu'il y a $|\mathcal{T}_n|^n$ dynamiques en dimension $n$, soit 32\,768 en dimension 3 mais déjà $1{,}9 \cdot 10^{10}$ en dimension 4, ce qui met l'énumération exhaustive hors de portée à partir de là.
+% src : CSV d = 3 de la passe unifiée ae10d77 (32 768 dynamiques) ; Redaction/CLAUDE.md (points connus)
+
+\begin{table}[H]
+\centering
+\caption{Ordres de grandeur des SBF et des dynamiques selon la dimension $n$.}
+\label{tab:echelles}
+\begin{tabular}{rrrrrr}
+\toprule
+$n$ & SBF & Orbites & Borne des poids & Dynamiques & Décomposables \\
+ & $|\mathcal{T}_n|$ & $|\mathcal{T}_n/S_n|$ & $B_n$ & $|\mathcal{T}_n|^n$ & en PSBN \\
+\midrule
+1 & 2 & 2 & 1 & 2 & 1 \\
+2 & 6 & 4 & 1 & 36 & 5 \\
+3 & 32 & 10 & 2 & 32\,768 & 658 \\
+4 & 370 & 36 & 3 & $1{,}87 \cdot 10^{10}$ & $1{,}19 \cdot 10^{7}$ \\
+5 & 11\,292 & 224 & 5 & $1{,}84 \cdot 10^{20}$ & $4{,}76 \cdot 10^{14}$ \\
+6 & 1\,066\,044 & 3\,024 & 9 & $1{,}47 \cdot 10^{36}$ & $1{,}22 \cdot 10^{27}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+% src : w_bound_orbits.py (orbites et borne, n = 1 à 6, relancé le 2026-10-04) ; |T_n| par parcours
+% des chambres (conv a5891d3a 2026-07-02) et par force brute sur les poids (2026-10-04 : en
+% augmentant B, le nombre de SBF réalisables avec |w_i| <= B se stabilise à |T_n| pour
+% B = 1, 1, 2, 3, 5, 9, et n'augmente plus jusqu'à B + 2, ou B + 1 pour n = 6) ; décomposables en PSBN :
+% comptage par colonnes du 2026-10-05 (restriction de chaque SBF aux faces x_c = 1, puis
+% inclusion-exclusion sur les nœuds de contrôle), qui redonne 5 et 658, comptes de JPP en d = 2 et 3
+
+Pour énumérer des réseaux, il faut borner leurs poids, et une borne inférieure à $B_n$ ferait manquer des dynamiques, d'où l'importance de son calcul.
+Pour une SBF $f$, notons $P$ et $N$ les ensembles d'états où elle vaut 1 et 0, et $W(f) = \min\{ \|w\|_\infty : w \in \mathbb{Z}^n,\ f_w = f \}$ le plus petit poids maximal qui la réalise.
+Les poids étant entiers, la condition stricte $\sum_i w_i x_i > 0$ équivaut à $\sum_i w_i x_i \ge 1$, ce qui permet d'écrire le calcul de $W(f)$ comme un programme linéaire en nombres entiers :
+\begin{equation}
+\begin{aligned}
+W(f) = \min_{w \in \mathbb{Z}^n,\ b \in \mathbb{Z}_{\ge 0}}\quad & b\\
+\text{s.c.}\quad
+& \textstyle\sum_i w_i x_i \ge 1 && \forall\, \mathbf{x} \in P,\\
+& \textstyle\sum_i w_i x_i \le 0 && \forall\, \mathbf{x} \in N,\\
+& -b \le w_i \le b && \forall\, i \in \{1,\dots,n\},
+\end{aligned}
+\end{equation}
+dont les deux premières familles de contraintes imposent la table de vérité de $f$, et la dernière fait de $b$ le plus grand des $|w_i|$.
+La borne $B_n$ est alors le pire cas $\max_{f \in \mathcal{T}_n} W(f)$, qu'il faut donc calculer sur toutes les SBF.
+% src : w_bound_orbits.py (milp)
+
+Tester les $2^{2^n}$ fonctions booléennes n'est pas raisonnable à partir de $n = 5$, et nous n'avons pas trouvé de borne a priori assez petite pour passer par les poids, si bien que nous parcourons $\mathcal{T}_n$ en largeur, deux SBF étant voisines quand elles ne diffèrent que sur un état, ce qui revient, dans l'espace des poids, à traverser un seul des $2^n - 1$ hyperplans $H_{\mathbf{x}} = \{ w : \sum_i w_i x_i = 0 \}$, $\mathbf{x} \neq \mathbf{0}$.
+Chaque voisin candidat se teste alors par un simple problème de faisabilité linéaire (la thèse de Rémi~\cite{segretain2023}, chapitres 3 et 4, énumère les SBF autrement, mais ses illustrations de l'espace des poids aident à se représenter ce parcours).
+% src : w_bound_orbits.py (docstring, is_realizable) ; segretain2023, chapitres 3 et 4
+
+Ce parcours ne manque aucune SBF.
+Les hyperplans $H_{\mathbf{x}}$ découpent l'espace des poids en régions ouvertes, les chambres, sur chacune desquelles le signe de chaque somme $\sum_i w_i x_i$ est constant, et chaque chambre correspond donc à une SBF (et réciproquement, car diminuer très légèrement tous les poids d'un vecteur posé sur des hyperplans le fait entrer dans une chambre sans changer sa SBF), et deux chambres séparées par une seule facette à deux SBF qui ne diffèrent que sur un état.
+Or deux poids quelconques se relient par un chemin qui ne traverse jamais deux hyperplans à la fois (quitte à le perturber légèrement), et la suite des chambres qu'il traverse relie leurs deux SBF de voisine en voisine.
+Le graphe des SBF est donc connexe, et un parcours parti de $f = 0$ les atteint toutes, là où une recherche par force brute sur des poids bornés peut manquer sans avertissement une SBF qui exigerait de plus gros poids.
+
+Enfin, deux SBF qui ne diffèrent que par une permutation de leurs entrées ont la même borne $W$, puisque permuter les poids ne change pas leur maximum, et il suffit donc de résoudre le programme sur un représentant par orbite.
+Le parcours lui-même peut se restreindre aux orbites, car retourner un bit d'une SBF puis la permuter revient à la permuter d'abord puis à retourner le bit correspondant, de sorte que les voisins d'un seul représentant donnent déjà toutes les orbites voisines, ce qui divise le calcul par un facteur qui peut aller jusqu'à $n!$.
+% src : w_bound_orbits.py (docstring) ; durée 2026-10-04 : 3 min 49 s pour n = 1 à 6
+
+\subsection{Quel paysage des réseaux explore-t-on ?}
+\label{sec:paysage}
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin. Il suit les puces
+% de Quentin dans leur ordre ; les captures sont à faire (fiches P0 à P5 de plan_figures.md).
+La pluripotence, telle que définie en introduction, peut prendre plusieurs formes dans le formalisme des SBN.
+Il s'agit ici de les présenter, de celle que ce travail explore le plus à celles qu'il laisse de côté.
+
+La première passe par les nœuds de contrôle.
+Un nœud $c$ est dit de contrôle quand il garde toujours sa valeur, c'est-à-dire $f_c(\mathbf{x}) = x_c$ pour tout état $\mathbf{x}$.
+Cela rend invariantes les deux faces $x_c = 0$ et $x_c = 1$ de l'hypercube, et chacune contient alors une sous-dynamique de dimension $n-1$ que le réseau « simule » selon la valeur de $c$ (\Cref{fig:reseau-pluripotent-3d}).
+% Fiche P1 supprimée (Quentin, 2026-10-04) : doublon de la figure X2 des Motivations.
+Le rapport de Danwen~\cite{wu2024} permet de lire cette propriété directement sur les poids : $c$ est un nœud de contrôle si et seulement si
+\begin{equation}
+\sum_{i \neq c} \max(0, w_{i,c}) \le 0
+\qquad \text{et} \qquad
+w_{c,c} + \sum_{i \neq c} \min(0, w_{i,c}) > 0 ,
+\end{equation}
+c'est-à-dire si aucun autre nœud ne peut l'allumer (ses arcs entrants sont inhibiteurs ou absents) ni l'éteindre (sa boucle l'emporte sur toutes les inhibitions réunies).
+% src : wu2024, définitions 1.7 à 1.10 et proposition 4.1 (closure constraints, écrites avec |w_ic|,
+% équivalentes puisque la première condition impose w_ic <= 0) ; PTBN_undercontrol.lp (pos_w, neg_w)
+Rien n'empêche chaque face d'avoir à son tour un nœud de contrôle parmi les nœuds restants, et ainsi de suite.
+Une dynamique se décompose donc selon un arbre, dont chaque nœud interne est une coupe selon un nœud de contrôle et chaque feuille un sous-cube invariant qui n'est plus coupé.
+Dans le vecteur de décomposition $\langle v_n, \dots, v_0 \rangle$, $v_k$ est le nombre de feuilles de dimension $k$.
+Il va du vecteur trivial $\langle 1, 0, \dots, 0 \rangle$, qui ne coupe rien, à $\langle 0, \dots, 0, 2^n \rangle$, où tous les états sont des points fixes.
+Ces décompositions sont dites complètes, car leurs feuilles recouvrent tout l'hypercube, et ce sont elles qui sont énumérées par les programmes de la \Cref{sec:correction}.
+
+
+Ces sous-dynamiques ne sont pas toujours des SBN.
+Sur la face $x_c = 0$, le nœud $c$ éteint ne contribue à rien : la sous-dynamique est celle du réseau restreint aux autres nœuds, donc celle d'un SBN.
+Mais sur la face $x_c = 1$, chaque nœud $j$ reçoit toujours le poids $w_{c,j}$, qui joue le rôle d'un seuil.
+Il s'agit donc d'un réseau de fonctions à seuil quelconques (TBN, pour \emph{Threshold Boolean Network}), qui n'est pas forcément un SBN.
+L'appellation est celle de la HDR de Nicolas~\cite{glade2022}, où une fonction booléenne à seuil (TBF) vaut 1 quand la somme pondérée de ses entrées dépasse strictement un seuil propre au nœud.
+La HDR montre aussi que toute TBF peut être simulée par une SBF qui reçoit d'un nœud toujours allumé un arc de poids opposé au seuil, et c'est le rôle que joue ici le nœud de contrôle.
+% src : glade2022, section 8.3.3.2.c, p. 161-162 (équation 1, figure 8.30 : nœud auto-activé initialisé à 1,
+% arc de poids -theta) ; même construction dans segretain2023, introduction, figure 3
+On appelle donc PTBN un réseau pluripotent dont les sous-dynamiques sont des TBN, et PSBN un réseau dont chaque sous-dynamique est celle d'un SBN de dimension inférieure.
+Cela demande, pour la face $x_c = 1$, l'existence de poids $w'_{i,j}$ tels que
+\begin{equation}
+\sum_{i \neq c} w_{i,j}\, x_i + w_{c,j} > 0
+\iff
+\sum_{i \neq c} w'_{i,j}\, x_i > 0
+\qquad \forall\, j \neq c,\ \forall\, \mathbf{x} \text{ tel que } x_c = 1 ,
+\end{equation}
+et de même à chaque niveau de l'arbre, avec la somme des poids venant des nœuds de contrôle allumés.
+% src : PSBN_undercontrol.lp (offset et poids w(I,J,context) des sous-réseaux) ; wu2024, section 5
+Comme un SBN ne peut pas sortir de l'état où tous ses nœuds sont éteints (aucune somme n'y est positive), il faut en particulier $w_{c,j} \le 0$ pour tout $j \neq c$~\cite{wu2024}.
+C'est ce qui manque à la dynamique de la \Cref{fig:ptbn-3d}, dont la face $x_3 = 1$ envoie l'état 100 sur 101.
+% src : wu2024, proposition 5.1 (« in particular w_nj <= 0 ») ; plan_figures.md (vérification de sbn71)
+L'écart entre les deux notions est grand : en dimension 3, 2\,977 dynamiques ont au moins un nœud de contrôle, mais 658 seulement se décomposent en SBN.
+Il est possible de compter ces dynamiques sans les énumérer.
+L'indépendance des colonnes de $W$ permet en effet de se contenter de savoir, pour chaque SBF, si sa restriction à une face $x_c = 1$ est encore une SBF, puis de compter les $n$-uplets de SBF qui ont au moins un nœud de contrôle dont toutes les autres colonnes passent ce test.
+Il apparaît ainsi que la pluripotence devient vite rare (\Cref{tab:echelles}) : les dynamiques décomposables en SBN ne représentent que 2~\% des dynamiques en dimension 3, 0,06~\% en dimension 4 et 0,0003~\% en dimension 5.
+% src : comptage par colonnes du 2026-10-05 (5 et 658 en d = 2 et 3, comme les CSV de JPP)
+% src : passe unifiée ae10d77 (fiches C4 et P2 : 658 dynamiques non triviales en PSBN, 2 319 non
+% triviales en PTBN seulement) ; 2 977 = 32^3 - 31^3
+
+% Fiche P2 : figure existante (1er juillet), vérifiée le 2026-10-04 : le réseau réalise exactement
+% l'hypercube, et la dynamique n'a que le vecteur trivial en PSBN. Elle illustrait jusqu'ici les
+% Motivations, où la fiche X2 la remplace.
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_reseau.png}
+        \caption{La structure.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/3d__0_2_0_0__PTBN_undercontrol_taggedtree_sbn71_hypercube.png}
+        \caption{Sa dynamique, coloriée par la décomposition.}
+    \end{subfigure}
+    \caption{Une dynamique décomposable en TBN mais pas en SBN. Le nœud 3 est un nœud de contrôle, mais sur la face $x_3 = 1$ l'état 100 va vers 101, ce qu'aucun SBN ne fait.}
+    \label{fig:ptbn-3d}
+\end{figure}
+
+Une contrainte sur le domaine des poids eux-mêmes a aussi été tentée avec les PSBNI (I pour inhibiteurs), des PSBN dont les arcs entre nœuds distincts sont inhibiteurs ou absents, soit $w_{i,j} \le 0$ pour $i \neq j$, les boucles restant libres.
+Cette piste n'a pas été maintenue jusqu'au bout : elle n'existe qu'avec un arbre de décomposition fixé, sans version à arbre étiqueté (\Cref{sec:correction}).
+Elle soulève pourtant un questionnement intéressant.
+La contrainte semble physiquement raisonnable, car on pourrait imaginer des contextes dans lesquels les arcs inhibiteurs seraient suffisamment distingués de ceux qui sont activateurs pour être discriminés positivement.
+Elle revient aussi à imposer à tous les nœuds la condition que les nœuds de contrôle vérifient déjà sur leurs arcs entrants.
+Les propriétés des poids qu'exige la pluripotence y seraient donc beaucoup plus probables, et la contrainte pourrait apporter beaucoup en termes de pluripotence.
+C'est ce que suggère la dimension 3, où le nœud 3 est un nœud de contrôle (avec des sous-réseaux SBN) pour 36 des 216 dynamiques de ce régime, contre 225 des 32\,768 dynamiques sans restriction.
+% src : Quentin, 2026-10-04 (motivation) ; passe unifiée ae10d77 (fiches C1 et P3 : 225 dynamiques
+% ⟨0,2,0,0⟩ en PSBN_undercontrol, 36 sur 216 en PSBNI_undercontrol, toutes les 216 sur le vecteur trivial)
+% src : PTBNI_undercontrol.lp (domaine -Wb..0 pour I != J) ; JPPipeline/src/asp/ (seuls PSBNI_undercontrol.lp
+% et PTBNI_undercontrol.lp) ; Quentin, 2026-10-05 (tentative non maintenue, plausibilité physique) ;
+% Quentin, conv a5891d3a 2026-06-12
+% (« pluripotent SBN inhibiteurs pour lesquels les arcs sortant des noeuds ne peuvent être que négatifs »)
+
+% Emplacement de figure (fiche P3) : fiches/3d_P3_PSBNI_undercontrol.csv (n° 235, ⟨0,2,0,0⟩,
+% poids 1->1 : +1, 3->1 : -1, 3->3 : +1).
+% Fichiers attendus : figures/3d_P3_PSBNI_undercontrol_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche P3)}}
+        \caption{La structure.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche P3)}}
+        \caption{Sa dynamique, coloriée par la décomposition.}
+    \end{subfigure}
+    \caption{Un PSBNI, dont le seul arc entre nœuds distincts, de 3 vers 1, est inhibiteur, et dont le nœud 3 est un nœud de contrôle.}
+    \label{fig:psbni-3d}
+\end{figure}
+
+Une décomposition peut aussi n'être que partielle, quand certains sous-cubes de l'hypercube sont invariants sans que le reste se laisse découper.
+C'est le cas dans la \Cref{fig:partielle-3d} : l'arête $\{000, 001\}$ et la face $x_3 = 1$ sont invariantes, mais les états 010 et 011 n'appartiennent à aucune des deux.
+Cette forme de pluripotence n'a pas été explorée ici (aucun des programmes n'énumère ces décompositions partielles).
+Elle concerne pourtant la plupart des dynamiques : en dimension 3, 25\,697 des 29\,791 dynamiques qui n'admettent aucune décomposition, même en TBN, ont un sous-cube invariant de dimension au moins 1.
+% src : passe unifiée ae10d77, fiche P4 (sous-cubes de dimension 1 à n - 1, points fixes exclus) ;
+% 29 791 = 32 768 - 2 977 ; présentation de fin de stage, diapo 6 (« non fait »)
+
+% Emplacement de figure (fiche P4) : fiches/3d_P4_PSBN_undercontrol_taggedtree.csv (n° 13 392,
+% ⟨1,0,0,0⟩, poids 1->2 : -1, 2->1 : +1, 2->3 : +1, 3->2 : +1, 3->3 : +1). Sous-cubes invariants à
+% signaler à la main sur la capture : {000, 001} et {100, 101, 110, 111}.
+% Fichiers attendus : figures/3d_P4_PSBN_undercontrol_taggedtree_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche P4)}}
+        \caption{La structure.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche P4)}}
+        \caption{Sa dynamique et ses deux sous-cubes invariants.}
+    \end{subfigure}
+    \caption{Une dynamique sans décomposition complète, dont l'arête $\{000, 001\}$ et la face $x_3 = 1$ sont pourtant invariantes.}
+    \label{fig:partielle-3d}
+\end{figure}
+
+Les sous-dynamiques peuvent enfin être décrites par plusieurs coordonnées plutôt que par un seul bit de contrôle.
+Dans la dynamique de la \Cref{fig:pcpo-3d}, les nœuds 1 et 2 évoluent seuls, comme un réseau de dimension 2 qui échange leurs valeurs.
+Le nœud 3, lui, suit leur état : il garde sa valeur quand ils sont tous deux éteints, et s'éteint sinon.
+Il est possible d'y voir, comme dans l'architecture d'un processeur, une partie contrôle (les nœuds 1 et 2) qui pilote une partie opérative (le nœud 3).
+L'hypercube se partage alors en trois supports invariants, un par attracteur de la partie contrôle : $\{000, 100\}$, $\{011, 111\}$ et $\{001, 010, 101, 110\}$, ce dernier n'étant pas un sous-cube.
+Aucun arbre à un seul bit de contrôle ne capte cette organisation, et la dynamique n'a donc que le vecteur trivial.
+On parle alors d'offuscation, par analogie avec l'offuscation d'un code, qui en rend le comportement difficile à lire : les sous-dynamiques existent bien, mais comme la partie contrôle compte plusieurs nœuds, elles ne se distinguent plus selon les faces de l'hypercube.
+Cette piste des nœuds contrôlés, à peine esquissée pendant le stage, n'a pas été explorée.
+% src : Quentin, 2026-10-04 (sens de « offuscation ») ; Quentin, conv 12941938 2026-10-03 (sous-dynamiques décrites par plusieurs coordonnées ;
+% analogie PC/PO, sans allusion personnelle, Quentin 2026-10-05) ; passe unifiée ae10d77, fiche P0/P5 (vecteur trivial en PSBN et PTBN, nœuds
+% autonomes 1 et 2) ; présentation de fin de stage, diapo 6 (« non fait, mais réfléchi un peu »)
+
+% Emplacement de figure (fiches P0 et P5) : refait la figure sbn6374 du 1er juillet, dont la
+% structure ne réalisait pas l'hypercube (bug des poids de treeinsolver, corrigé depuis).
+% fiches/3d_P0_PSBN_undercontrol_treeinsolver.csv (n° 84 298, poids 1->2 : +2, 1->3 : -2,
+% 2->1 : +2, 2->2 : -1, 2->3 : -1, 3->3 : +1) ; réseau et hypercube depuis la même ligne.
+% Fichiers attendus : figures/3d_P0_PSBN_undercontrol_treeinsolver_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiches P0 et P5)}}
+        \caption{La structure, dont les nœuds 1 et 2 forment la partie contrôle et le nœud 3 la partie opérative.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiches P0 et P5)}}
+        \caption{Sa dynamique, dont les supports invariants suivent l'attracteur de la partie contrôle.}
+    \end{subfigure}
+    \caption{Un réseau organisé en partie contrôle et partie opérative.}
+    \label{fig:pcpo-3d}
+\end{figure}
+
+\subsection{Statistiques, propriétés, métriques}
+\label{sec:stats}
+
+Donner des mesures fait parties des moyens que l'on a pour former des groupes, des relations d'équivalence, des relations d'ordre, bref pour se faire des intuitions sans avoir à éplucher l'intégralité de l'information contenue dans chaque réseau (ce qui est impossible, donc on fait une sorte de modèle dans le modèle). C'est pourquoi en plus d'énumérer les réseaux, nous calculons des métriques associés qui sont bien utiles pour visualiser les réseaux dans différents espaces. Le choix des statistiques calculées est motivé par les travaux de Rémi~\cite{segretain2023} et Ai-Ling~\cite{bonnet2023}, mais reviennent aussi beaucoup au papier de Wagner~\cite{wagner2008}. Un axe d'amélioration du présent travail serait les calculs d'autres statistiques, ce qui permettrait d'élargir l'horizon observable (dans les limites du passage à l'échelle nécessaire). 
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin. Le paragraphe
+% ci-dessus est celui de Quentin, inchangé ; la suite suit ses puces dans leur ordre.
+Le papier de Wagner~\cite{wagner2008} part d'un paradoxe, puisqu'un système robuste aux mutations semble ne plus pouvoir produire de variation, alors que la robustesse paraît favoriser l'évolutivité.
+Il le résout, sur les séquences d'ARN et leurs structures secondaires, en distinguant le génotype (la séquence) du phénotype (la structure), car si robustesse et évolutivité s'opposent à l'échelle du génotype, elles vont de pair à l'échelle du phénotype, un phénotype robuste étant porté par un vaste ensemble de génotypes dont les voisinages, réunis, donnent accès à beaucoup de phénotypes différents.
+% src : wagner2008, résumé et section 2(a)-(c)
+Son raisonnement repose sur le fait qu'un même phénotype est réalisé par de nombreux génotypes, en nombres très inégaux, et les SBN partagent cette propriété avec l'ARN, ce qui rend ses mesures transposables.
+% src : Quentin (section Observations et limites : « les SBN possédant la même propriété que les
+% séquences d'ARN sur les fréquences d'apparitions de phénotypes ») ; CSV d = 3 de la passe unifiée
+% ae10d77 : de 1 à 19 683 génotypes par dynamique, médiane 20
+
+Le génotype est alors la matrice des poids, prise parmi les matrices dont les poids sont bornés par $B_n$ (\Cref{sec:sbf}), et le phénotype est la dynamique $P = (f_1, \dots, f_n)$, dont nous notons $G(P)$ l'ensemble des génotypes qui la réalisent.
+Une mutation remplace un seul poids par une autre valeur de $[-B_n, B_n]$, si bien que chaque génotype a $K = 2B_n n^2$ mutants, et elle est neutre quand le mutant réalise encore $P$ (c'est la règle de mutation dont il est question en \Cref{sec:metagraphes}).
+% src : Statifier.java (javadoc) ; SBFStatTable.java (neighborCount = n·2·w_bound ; K = n·neighborCount)
+La robustesse d'un génotype $g$ est la part $r(g)$ de ses $K$ mutants qui sont neutres, et celle d'une dynamique est la moyenne de $r$ sur $G(P)$ (\texttt{Robustness\_mean}), dont nous donnons aussi l'écart-type (\texttt{Robustness\_std}), qui dit si les génotypes d'une même dynamique sont également robustes.
+L'évolutivité d'une dynamique (\texttt{Evolvability}) est le nombre de dynamiques différentes de $P$ qu'atteint au moins un mutant d'au moins un génotype de $G(P)$, c'est-à-dire le nombre de dynamiques nouvelles à une mutation de $P$ (nous ne calculons pas, en revanche, les analogues de ces deux mesures à l'échelle d'un seul génotype).
+Wagner doit estimer ces quantités par échantillonnage, alors que nous les calculons exactement, car $f_j$ ne dépendant que de la colonne $j$ de $W$, $G(P)$ est le produit des ensembles de colonnes qui réalisent chaque $f_j$ et une mutation ne touche qu'une colonne, si bien que toutes ces statistiques se déduisent de tables établies une fois par dimension.
+% src : Statifier.java (javadoc : calcul exact, sans échantillonnage) ; SBFStatTable.java ;
+% brouillons/corps_depuis_annexe_A.tex (vérifié par force brute en d = 2 le 2026-10-02)
+
+Nous retrouvons, dans chacune des dimensions étudiées, la corrélation positive entre robustesse et évolutivité des dynamiques que Wagner observe sur l'ARN (\Cref{sec:observations}).
+% Fiche S1 : la figure est dans Observations et limites (OL1), y renvoyer quand elle existera.
+% src : passe unifiée ae10d77, OL1 (ρ de Spearman 0,62 ; 0,81 ; 0,78 ; 0,69 pour n = 2 à 5)
+
+D'autres statistiques complètent celles de Wagner.
+Le nombre de génotypes d'une dynamique, $|G(P)|$ (\texttt{GenotypeCount}), que Wagner appelle la fréquence d'une structure, mesure sa rareté, et la thèse de Rémi propose de rapporter la complexité d'un objet à sa rareté, un objet complexe étant coûteux à produire et donc rare~\cite{segretain2023} (Rémi l'applique aux SBF, en mesurant la part de l'espace des poids qu'occupe chacune, et nous l'appliquons ici à la dynamique entière).
+% src : wagner2008, section 2(b) (« frequency » : nombre de séquences qui adoptent la structure) ;
+% segretain2023, section 7.1.1
+Nous calculons aussi deux statistiques des attracteurs de la dynamique (\Cref{sec:structure-dynamique}), leur nombre (\texttt{NumAttractors}), qui est aussi celui des bassins d'attraction, et la moyenne sur les attracteurs du carré de leur longueur (\texttt{CycleLenMSQ}), un point fixe comptant pour 1, le carré devant faire ressortir les cas extrêmes (un choix qui, avec le recul, n'est pas pertinent).
+% src : SBN.java (computeAttractionBasins, meanSquaredAttractorSize) ; Quentin, 2026-10-04 (raison du carré
+% et jugement rétrospectif)
+
+Toutes ces statistiques ne dépendent que de la dynamique, mais elles dépendent aussi de la borne des poids, puisqu'elles se calculent dans l'espace des matrices bornées par $B_n$, et une borne plus large les modifierait, comme le choix de l'intervalle des poids modifie la rareté des SBF chez Rémi~\cite{segretain2023}.
+% src : segretain2023, section 7.1.1.2 ; Statifier.java et SBFStatTable.java (w_bound)
+Une statistique de la structure elle-même, comme la somme des poids que nous avons un temps calculée, demanderait de choisir une réalisation canonique de chaque dynamique, par exemple celle de poids minimaux, ce que nous n'avons pas fait, si bien que les poids que nous donnons pour une dynamique (dans les figures comme dans les CSV) en sont une réalisation quelconque.
+% src : conv a5891d3a 2026-06-08 et 2026-06-11 (SumWeights ajoutée puis retirée) ; Minimizer.java
+% (identité) ; Quentin, conv a5891d3a 2026-06-19 (« la minimisation n'est pas implémentée, c'est
+% donc une réalisation quelconque »)
+
+
+\subsection{Métagraphes dynamiques et structurels, règles de mutation}
+\label{sec:metagraphes}
+
+Une approche proposée dans la thèse de Rémi (et mise en œuvre par Ai-Ling, à partir des distances formalisées par Rémy) a été de construire des méta-graphes dans lesquels deux réseaux sont reliés s'ils sont voisins en termes de distances (pouvant répondre à différentes définitions) et dont la position est calculée par un algorithme de type Force-directed.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\linewidth]{figures/robustesse_eps1_delta0.png}
+    \caption{Métagraphe structurel des 60 réseaux de dimension 2, deux réseaux étant reliés quand ils sont à distance structurelle 1, coloré selon la robustesse de chaque réseau, de 0 (violet) à 1 (jaune). Figure tirée du rapport d'Ai-Ling~\cite{bonnet2023}.}
+    % Brouillon de légende par Claude (2026-10-04). src : bonnet2023, figure 14 et section 5.5
+    % (epsilon = 1, delta = 0, distances HSTR et HDYN ; les 60 nœuds sont ses classes de réseaux)
+    \label{fig:métagraphe-Ailing}
+\end{figure}
+
+À noter qu'ici, les noeuds du graphe sont des réseaux entiers, là où ceux des graphes rencontrés jusqu'ici étaient les nœuds d'un réseau (dans les figures de structure) ou ses états (dans les graphes de transition), d'où le préfixe « méta », et dans les métagraphes que nous construisons plus loin, ce seront des dynamiques.
+Ces réseaux ne peuvent pas être identifiés à leurs dynamiques, car Ai-Ling distingue, comme Rémi (\Cref{sec:sbf}), deux réseaux de même dynamique dont les arcs fixés à zéro diffèrent, qui forment alors deux nœuds distincts, avec leurs propres voisins et leur propre robustesse (il y a ainsi 60 réseaux pour 36 dynamiques en dimension 2).
+% Fin de phrase complétée par Claude (2026-10-04) à la demande de Quentin. « réseaux » plutôt que
+% « dynamiques » : les 60 nœuds de la figure d'Ai-Ling sont ses classes de réseaux (tables de vérité
+% et arcs nuls), pour 36 dynamiques en dimension 2 (bonnet2023, sections 2.3 et 3.4.1).
+% Robustesse d'un nœud : part de ses voisins à distance HSTR <= epsilon (somme des |g_ij - g'_ij| entre
+% représentants) qui gardent la dynamique (bonnet2023, sections 3.2.1 et 3.4.2) ; elle dépend donc du
+% représentant, arcs nuls compris.
+
+Il a été essayé de reproduire les mêmes méta-graphes en réutilisant les définitions de distances, en particulier la distance DA agrégeant les changements des cycles limites. Mais si le calcul exhaustif de ces distances reste faisable en dimension 3 (de l'ordre de 1e9 paires), le graphe obtenu y est trop dense pour être lisible, et ce calcul est difficilement concevable en dimension 4 (de l'ordre de 4e20 paires), si bien qu'il n'a pas été poursuivi.
+% src : segretain2023, section 8.2 (note : figures d'Ai-Ling, méthode mise au point avec Rémi) ; Quentin
+% (l'idée venait de Rémi) ; defossez2021 (distances, aucun métagraphe) ; conv a5891d3a 2026-06-16
+% (PairwiseDA.java : ~4,5e8 paires en d = 3 en quelques minutes ; graphe trop dense, chaque réseau à
+% distance DA nulle de plusieurs centaines d'autres) ; 32 768^2 ≈ 1,1e9 et (1,87e10)^2 ≈ 3,5e20.
+Il est sans doute possible de trouver des manières de contourner cette difficulté qui n'est que technique, et de construire des méta-graphes similaires sémantiquement. En tout cas cette piste (qui existe) n'a pas été exploré plus avant ici.
+
+Cependant l'idée de construire des méta-graphes Force-directed n'a pas été totalement mise de côté, nous nous sommes juste plus modestement limités à des méta-graphes structurels (ou les dynamiques sont liées si elles possèdent des structures voisines). Cela nous permet notamment de faire un lien direct avec les simulations de Corentin Lacaze, car les règles de mutations qui dirige l'évolution des agents dans ce contexte sont des relations de voisinages entre structures. L'exploration contrainte par l'évolution des agents se traduit alors par un chemin (avec de potentiels embranchements, donc un arbre) dans le méta-graphe, et cela permet de poser des questions du type "Est-ce que certaines propriétés des dynamiques favorise le passage des chemins", "Certaines zones sont-elles plus viables que d'autres ? C'est-à-dire est-ce que les chemins préfèrent certaines zones ?" "Pour arriver à un phénotype cible, est-ce que plusieurs chemins sont possibles, si oui en quoi sont-ils différents ?" .
+
+% Emplacement de figure (Claude, 2026-10-04) : capture à faire, fiche M2 de plan_figures.md.
+% Fichier attendu : figures/3d_M2_PTBN_undercontrol_taggedtree_metagraphe.png, depuis metagraphe.html
+% sur csv/3d_PTBN_undercontrol_taggedtree_output_metagraph.csv.gz (passe unifiée ae10d77,
+% placement DRGraph --threads 1 --seed 1), couleur par décomposition.
+\begin{figure}[H]
+    \centering
+    \fbox{\parbox[c][6cm][c]{0.8\linewidth}{\centering Capture à faire (fiche M2)}}
+    \caption{Métagraphe structurel des 32\,768 dynamiques de dimension 3, coloré selon leur décomposition la plus fine en PTBN.}
+    \label{fig:metagraphe-3d}
+\end{figure}
+
+La règle de mutation considérée en premier a donc été simplement celle d'un changement de poids quelconque (dans les limites de la borne inf des poids permettant d'exprimer toutes les dynamiques) sur un seul arc du réseau. Il serait intéressant de proposer d'autres règles de mutation pour observer les différences de résultats selon le prisme qu'elles constituent, et notamment des règles pouvant faire varier la dimension des réseaux : l'ajout ou la suppression de noeuds permettrait de prendre du recul par rapport à la dimension (qui reste un carcan solide dans cette étude). 
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin.
+Avec les notations de la \Cref{sec:stats}, deux dynamiques $P$ et $P'$ sont donc reliées dans le métagraphe quand une mutation fait passer de l'une à l'autre :
+\begin{equation}
+P \sim P' \iff P \neq P' \text{ et } \exists\, g \in G(P),\ \exists\, g' \in G(P') \text{ tels que } g \text{ et } g' \text{ ne diffèrent que par un poids.}
+\end{equation}
+Comme une mutation ne touche qu'une colonne de $W$, deux dynamiques reliées ne diffèrent que par la fonction d'un seul nœud, et le degré d'une dynamique dans le métagraphe n'est autre que son évolutivité.
+% src : add_metagraph_layout.py (docstring) ; sbf.get_neighbor_map ; metagraphe.html (sbfNeighbors) ;
+% passe unifiée ae10d77 : 451 584 arêtes en d = 3, soit la moitié de la somme des évolutivités
+Changer de règle de mutation demande de modifier ensemble les quatre endroits où elle est codée, \texttt{SBFStatTable.java} pour la robustesse et l'évolutivité calculées par JPP, \texttt{mcsbn.c} et \texttt{sbf.py} pour MCSBN et le placement du métagraphe, et \texttt{metagraphe.html} pour les arêtes affichées.
+% src : plan_figures.md, fiche M4 (décidé par Quentin : à dire dans le corps, pas dans l'annexe)
+
+% ============================================================
+\section{Méthodes et outils}
+% ============================================================
+
+Comme souvent dans l'écriture de code, les enjeux des phases de développement ont toujours été dans un premier temps d'arriver au résultat attendu (la correction) puis d'optimiser pour passer à l'échelle (la terminaison, idéalement rapide). Mais comme la correction dans notre cas nécessite surtout de bien savoir ce que l'on cherche, et que pour cela, il faut avoir des visualisations efficaces, les étapes de correction, d'optimisation et d'évaluation des rendus se sont succédé en cycles. Les sections suivantes ne reflètent donc pas nécessairement fidèlement la chronologie du développement.
+
+
+\subsection{Correction}
+\label{sec:correction}
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin. Les phrases de
+% Quentin sont gardées telles quelles ; ses puces sont étoffées dans leur ordre. Captures à faire :
+% fiches C1 à C8 de plan_figures.md (C4 reportée).
+L'objectif originel du stage était de prendre en main le language Answer Set Programming (ASP) pour parvenir à comprendre et améliorer les programmes existant (dossier \texttt{SBN\_pluripotent\_Laurent/} du dépôt).
+
+L'ASP est un paradigme de programmation déclarative, où l'on décrit ce que l'on cherche par des règles et des contraintes logiques plutôt que la manière de le trouver, un solveur se chargeant d'énumérer les modèles (les \emph{answer sets}) qui les satisfont.
+Ce cadre convient bien à notre problème, car les propriétés que nous imposons aux réseaux (nœuds de contrôle, sous-réseaux SBN, forme de l'arbre) s'écrivent directement comme des contraintes, et le solveur peut projeter ses solutions sur les seules fonctions de transition, si bien qu'il énumère des dynamiques et non toutes les matrices de poids qui les réalisent.
+% src : ClingconUtil.java (appel de clingcon avec --project)
+Nous avons utilisé \texttt{clingo}, le solveur ASP de Potassco\footnote{\url{https://potassco.org}}, à travers son extension \texttt{clingcon}~\cite{banbara2017}\footnote{\url{https://github.com/potassco/clingcon}}, qui ajoute des contraintes linéaires sur des variables entières et permet donc de manipuler les poids et leurs sommes, ainsi qu'un temps ApproxASP~\cite{kabir2022}\footnote{\url{https://github.com/meelgroup/ApproxASP}}, un compteur approché de modèles, pour compter les génotypes d'une dynamique avant que ce comptage ne devienne exact (\Cref{sec:stats}).
+% src : plan_figures.md, fiche O5 ; annexe A (GenotypeCount exact)
+
+Le programme de Laurent travaille sur la dynamique, puisqu'il énumère directement les fonctions booléennes des nœuds, sous forme de tables de vérité, en imposant que les faces désignées par l'arbre de décomposition soient invariantes, puis restreint ces fonctions à des SBF par des contraintes sur des poids.
+% src : SBN_pluripotent_Laurent/Fonctions-bool-Cont-cloture-11-12-2023.lp et
+% SBF-cpath-constraints-12-06-2024.lp (en-têtes) ; manuscrit « Pluripotent Boolean network with
+% respect to sub-networks » (L. Trilling et al., 2 septembre 2024), hors du dépôt, dont la section
+% « Restriction aux SBNs » est vide
+J'ai d'abord systématisé ses appels et exporté ses solutions en CSV avec le script \texttt{export\_decomposition.py}, pour les visualiser dans \texttt{sbn\_viz} et mieux les apprécier.
+Il génère les réseaux pluripotents à un nœud de contrôle par coupe, dont les sous-réseaux sont des SBN, pour un arbre de décomposition complet fixé, et dont les hyper-faces sont distinctes, c'est-à-dire que les deux faces de chaque coupe portent des sous-dynamiques différentes, mais ce calcul est lourd et peu scalable, utilisable en temps et ressources raisonnables, dans le cas général, jusqu'en dimension 3 seulement (\Cref{sec:optimisation}).
+% src : Quentin ; plan_figures.md, fiche O1 (189 dynamiques sur ⟨0,2,0,0⟩ en 2,5 s sur la machine de
+% Laurent ; en d = 4, 18 solutions sur ⟨0,0,3,2,0⟩ en 88 à 101 s, presque tout en grounding :
+% un vecteur rapide ne rend pas le cas général raisonnable, Quentin 2026-10-04) ; pas de citation du
+% manuscrit de Laurent, non publié (Quentin)
+
+Le rapport de Danwen prouvant qu'il est possible de caractériser cette famille de réseaux en ne travaillant que sur les poids, c'est dans cette direction que nous sommes partis, aboutissant au fichiers :
+\texttt{PTBN\_undercontrol.lp} génère les réseaux pluripotents d'arbre de décomposition fixé, en imposant à chaque nœud de coupe les conditions de Danwen (\Cref{sec:paysage}) sans rien demander aux sous-réseaux, qui sont donc des TBN à cause du contrôle.
+L'arbre de chaque vecteur y est pris dans une seule orientation, les coupes se faisant selon les nœuds d'indice le plus élevé (le nœud 3, puis le nœud 2 dans ses faces, en dimension 3).
+% src : PTBN_undercontrol.lp (control_node(D,O) : le nœud de contrôle est le plus haut indice) ;
+% setup_btree_3d.lp ; conv a5891d3a 2026-06-17
+\texttt{PSBN\_undercontrol.lp} étend le programme précédent en imposant que les sous-réseaux soient bien des SBN, par l'existence des poids $w'$ de la \Cref{sec:paysage}.
+Sur $\langle 0,2,0,0\rangle$ en dimension 3, le premier trouve 1\,024 dynamiques et le second 225, qui sont les 189 de Laurent et 36 dynamiques dont les deux faces portent la même sous-dynamique (\Cref{fig:laurent-ecarte}).
+% src : passe unifiée ae10d77, fiches C1 et C2 (1 024 dont 799 absentes de PSBN_undercontrol ;
+% 225 dont 36 à faces identiques ; les 189 de Laurent sont exactement les autres)
+
+% Emplacement de figure (fiche C1) : fiches/3d_C1_PSBN_undercontrol.csv (n° 32 776, poids 1->2 : +1,
+% 2->2 : -1, 3->3 : +1). Fichiers attendus : figures/3d_C1_PSBN_undercontrol_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C1)}}
+        \caption{La structure.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C1)}}
+        \caption{Sa dynamique, coloriée par la décomposition.}
+    \end{subfigure}
+    \caption{Une dynamique de $\langle 0,2,0,0\rangle$ que le programme de Laurent écarte, ses deux faces $x_3 = 0$ et $x_3 = 1$ portant la même sous-dynamique.}
+    \label{fig:laurent-ecarte}
+\end{figure}
+
+% Emplacement de figure (fiches C2 et C3) : fiches/3d_C2_PTBN_undercontrol.csv (n° 32 774, poids
+% 1->2 : -1, 3->2 : +2, 3->3 : +1) et fiches/3d_C3_PSBN_undercontrol.csv (n° 32 772, poids 2->2 : +1,
+% 3->1 : -1, 3->2 : -1, 3->3 : +1), le PSBN le plus proche de C2 (distance L1 de 6 sur les poids).
+% Fichiers attendus : figures/3d_C2_PTBN_undercontrol_{reseau,hypercube}.png et
+% figures/3d_C3_PSBN_undercontrol_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C2)}}
+        \caption{Un réseau dont le sous-réseau de la face $x_3 = 1$ n'est pas un SBN, le nœud 2 s'y allumant depuis l'état 100.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C3)}}
+        \caption{Un PSBN proche du précédent.}
+    \end{subfigure}
+    \caption{Deux réseaux de $\langle 0,2,0,0\rangle$, trouvés par \texttt{PTBN\_undercontrol.lp} (à gauche) et par \texttt{PSBN\_undercontrol.lp} (à droite).}
+    \label{fig:ptbn-psbn-undercontrol}
+\end{figure}
+
+La propriété d'avoir différentes hyper-faces nous a semblé peu essentielle (notre grille de lecture est au niveau des dynamiques, pas des sous-dynamiques, et un réseau qui simule deux fois le même sous-réseau n'a pas les mêmes potentialités, ou peut les utiliser pour deux usages différents) au regard des rendus que l'on voulait afficher par la suite et a donc été laissée de côté. (\texttt{PSBN\_distinct\_faces\_HS.lp} a quand même été développé dans l'idée de confirmer que nos résultats correspondaient à ceux des programmes initiaux, ce qui a été le cas pour une seule configuration : les 189 $\langle 0,2,0,0\rangle$ en $d=3$).
+% src : Quentin, 2026-10-04 (grille de lecture ; une seule configuration) ; plan_figures.md, fiche O1
+% (⟨0,1,2,0⟩ : 11 contre 6 chez Laurent ; d = 4, ⟨0,0,3,2,0⟩ : 193 contre 18)
+
+Une dynamique décomposable selon un arbre l'est souvent aussi selon un arbre plus fin, si bien qu'elle apparaît sous plusieurs vecteurs (\Cref{fig:trop-decomposable}), ce qui fausse les comptes et les visualisations par vecteur.
+\texttt{PSBN\_undecomposablePBN\_beyond.lp} devait n'énumérer chaque dynamique que sous son vecteur le plus fin, en interdisant aux feuilles de l'arbre de se décomposer davantage, mais ce fut un échec, puisqu'il perdait des dynamiques (29\,920 lignes seulement en dimension 3, pour 32\,768 dynamiques), celles qui ne se décomposent que selon une autre orientation de l'arbre que celle fixée pour leur vecteur.
+Nous ne l'avons pas prolongé, car en termes de calcul il ne retirait qu'une infime partie de ce qu'il y a à énumérer, les dynamiques décomposables étant très minoritaires (\Cref{tab:echelles}).
+% src : Quentin, conv a5891d3a 2026-06-17 (« undercontrol » donne des doublons, « undecomposable_beyond »
+% loupe des dynamiques, « identiques modulo une permutation des noeuds ») ; conv a5891d3a 2026-06-16
+% (29 920 lignes en d = 3, 27 au lieu de 36 en d = 2) ; cause confirmée par Quentin le 2026-10-04
+
+% Placeholder « table des échelles de décomposition » remplacé (Quentin, 2026-10-05) par la colonne des
+% dynamiques décomposables du tableau des échelles et la phrase précédente.
+
+% Emplacement de figure (fiche C5) : fiches/3d_C5_PSBN_undercontrol_taggedtree.csv (n° 33 224, arbre
+% 3[*,*], et n° 34 014, arbre 3[2[*,*],2[*,*]] ; poids 2->2 : +1, 3->3 : +1 sur les deux lignes).
+% Fichiers attendus : figures/3d_C5_PSBN_undercontrol_taggedtree_{0200,0040}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C5)}}
+        \caption{Coupée selon le nœud 3 ($\langle 0,2,0,0\rangle$).}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C5)}}
+        \caption{Coupée selon le nœud 3 puis le nœud 2 ($\langle 0,0,4,0\rangle$).}
+    \end{subfigure}
+    \caption{Une même dynamique, énumérée sous le vecteur $\langle 0,2,0,0\rangle$ alors qu'elle admet une décomposition plus fine.}
+    \label{fig:trop-decomposable}
+\end{figure}
+
+Nous avons alors laissé le solveur chercher l'arbre lui-même.
+\texttt{PTBN\_undercontrol\_treeinsolver.lp} accepte n'importe quel arbre de décomposition d'un vecteur donné, quelle que soit son orientation, ce qui prend en compte les permutations des nœuds du réseau principal, mais pas celles des nœuds des sous-réseaux, et \texttt{PSBN\_undercontrol\_treeinsolver.lp} l'étend, de la même manière qu'avec les programmes à arbre fixé, en imposant que les sous-réseaux soient des SBN.
+Sur $\langle 0,2,0,0\rangle$ en dimension 3, ils trouvent 433 PSBN que l'arbre fixé manquait (\Cref{fig:treeinsolver}, à droite), et 1\,538 dynamiques de plus qui ne se décomposent qu'en TBN (à gauche).
+% src : passe unifiée ae10d77, fiches C6 (1 538 dans PTBN_treeinsolver, absentes de PSBN_treeinsolver
+% et de PTBN_undercontrol) et C7 (433 dans PSBN_treeinsolver, absentes de PSBN_undercontrol)
+
+% Emplacement de figure (fiches C6 et C7), capturées depuis les CSV taggedtree, qui portent l'arbre
+% (décision T4) : fiches/3d_C6_PTBN_undercontrol_taggedtree.csv (n° 33 806, arbre 2[*,*], poids
+% 2->2 : +1, 2->3 : +1) et fiches/3d_C7_PSBN_undercontrol_taggedtree.csv (n° 32 771, arbre 1[*,*],
+% poids 1->1 : +1, 1->2 : -2, 1->3 : -2, 3->3 : +1 ; faces distinctes, critère ajouté le 2026-10-05,
+% 370 candidates sur 433). Fichiers attendus :
+% figures/3d_C6_PTBN_undercontrol_taggedtree_{reseau,hypercube}.png et
+% figures/3d_C7_PSBN_undercontrol_taggedtree_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C6)}}
+        \caption{Coupée selon le nœud 2, décomposable en TBN seulement.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C7)}}
+        \caption{Coupée selon le nœud 1, décomposable en SBN.}
+    \end{subfigure}
+    \caption{Deux dynamiques de $\langle 0,2,0,0\rangle$ que seule une autre orientation de l'arbre révèle.}
+    \label{fig:treeinsolver}
+\end{figure}
+
+Enfin, \texttt{PTBN\_undercontrol\_taggedtree.lp} et sa variante \texttt{PSBN\_undercontrol\_taggedtree.lp}, la version aboutie de nos programmes (\Cref{ann:asp}), prennent aussi en compte les permutations des nœuds des sous-réseaux, en cherchant un arbre dont chaque coupe est étiquetée par le numéro de son nœud de contrôle, si bien que les deux moitiés d'une coupe peuvent être recoupées selon des nœuds différents (\Cref{fig:taggedtree}).
+Comme ils énumèrent chaque dynamique une fois par arbre qu'elle admet, son vecteur le plus fin se déduit après coup, ce qui contourne la question des décompositions plus fines sur laquelle \texttt{PSBN\_undecomposablePBN\_beyond.lp} avait échoué.
+% src : annexe A (une ligne par couple dynamique-arbre) ; metagraphe.html (couleur par le vecteur le
+% plus fin) ; annexe B (version aboutie)
+
+% Emplacement de figure (fiche C8) : fiches/3d_C8_PTBN_undercontrol_taggedtree.csv. Prendre la ligne
+% n° 38 774 (arbre 2[1[*,3[*,*]],3[*,1[*,*]]], poids 1->1 : +2, 2->1 : +1, 2->2 : +1, 3->1 : -1,
+% 3->3 : +1) et non la n° 38 773, qui est la dynamique identité (tous les nœuds sont de contrôle) et
+% admet donc tous les arbres. Fichiers attendus :
+% figures/3d_C8_PTBN_undercontrol_taggedtree_{reseau,hypercube}.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C8)}}
+        \caption{La structure.}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][4cm][c]{0.9\linewidth}{\centering Capture à faire (fiche C8)}}
+        \caption{Sa dynamique, coloriée par la décomposition.}
+    \end{subfigure}
+    \caption{Une dynamique de $\langle 0,0,2,4\rangle$ coupée selon le nœud 2, puis selon le nœud 1 dans la moitié $x_2 = 0$ et selon le nœud 3 dans la moitié $x_2 = 1$, ce que seul l'étiquetage des coupes permet d'exprimer.}
+    \label{fig:taggedtree}
+\end{figure}
+
+Nos résultats se recoupent de plusieurs façons indépendantes.
+Les poids de chaque solution réalisent bien ses fonctions de transition, les 189 dynamiques de Laurent sont retrouvées, et les nombres de dynamiques qui ont un nœud de contrôle ou qui se décomposent en SBN coïncident avec ceux du comptage par colonnes de la \Cref{sec:paysage}.
+MCSBN, écrit indépendamment de l'ASP, retrouve en dimension 3 les mêmes vecteurs et les mêmes statistiques que JPP, ces statistiques coïncident en dimension 2 avec un recalcul par force brute sur les 81 matrices de poids, et la borne $B_n$ est obtenue par deux méthodes indépendantes (\Cref{sec:sbf}).
+% src : passe unifiée ae10d77 (contrôle f = seuil(w) : 0 écart sur tous les CSV ; fiches C1, P2) ;
+% comptage par colonnes du 2026-10-05 ; conv a5891d3a 2026-06-23 (MCSBN contre JPP en d = 3) ;
+% brouillons/corps_depuis_annexe_A.tex (force brute en d = 2, 2026-10-02) ; force brute et
+% w_bound_orbits.py pour B_n (2026-10-04)
+
+L'usage de ces programmes est décrit en annexe (\Cref{ann:asp}), et chacune des figures de cette section se régénère en lançant JPP (\Cref{ann:jppipeline}) en dimension 3 avec le programme qu'elle illustre,
+\begin{verbatim}
+java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main \
+      3 JPPipeline/src/asp/<programme>.lp JPPipeline/src/asp 0 <sortie> 1
+\end{verbatim}
+où \texttt{<sortie>} est le dossier où écrire le CSV.
+% src : plan_figures.md, décision T2 (les liens deviennent la commande qui génère le fichier) ;
+% annexe C (synopsis)
+L'évolution de la formulation de \texttt{taggedtree} est présentée en \Cref{sec:optimisation}.
+% Remplace « [explication du fonctionnement précis du code en annexe ?] » : l'annexe donne l'usage,
+% pas le fonctionnement (fiche « Placeholders de Correction hors génération »).
+
+\subsection{Optimisation}
+\label{sec:optimisation}
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin. Il suit les puces de
+% Quentin dans leur ordre (fiches O1 à O6 de plan_figures.md). Mesures : même ordinateur portable,
+% AMD Ryzen 7 5800H (16 cœurs logiques, 15 Go), clingcon 5.2.1, sauf le temps de Laurent.
+Du côté de l'ASP, les contraintes sur les poids se sont révélées bien plus efficaces que les contraintes sur les fonctions booléennes qu'emploie le programme de Laurent.
+Sur le seul cas où nous retrouvons exactement son énumération, les 189 dynamiques de $\langle 0,2,0,0\rangle$ en dimension 3 (\Cref{sec:correction}), \texttt{PSBN\_distinct\_faces\_HS.lp} les trouve en 0,014 s contre 2,5 s pour son programme, soit environ 180 fois plus vite, un écart que la différence de machines (son temps a été mesuré sur la sienne) ne suffit pas à expliquer.
+% src : passe unifiée ae10d77, O1a (2,517 s : sortie clingcon de Laurent du 15-07-2024, transmise par
+% Quentin ; 0,014 s : médiane de 5 essais)
+La formulation compte aussi beaucoup, comme le montre l'histoire de \texttt{PSBN\_undercontrol\_taggedtree.lp} (\Cref{tab:formulations}).
+Sa première version plaçait les sommes de poids de \texttt{clingcon} dans le corps des règles, ce qui saturait la mémoire avant la moindre solution, une version intermédiaire, jamais versionnée, les remplaçait par des atomes auxiliaires au prix de copies des poids, et la version finale calcule dès le grounding quels nœuds appartiennent à chaque chaîne de coupes, sans copie, ce qui la rend cinq fois plus rapide que la précédente sur $\langle 0,2,0,0\rangle$.
+La base PTBN, réécrite de la même façon, passe de 17 s à 0,8 s sur l'énumération complète de dimension 3.
+% src : commits 88ccf0e et 7dc415c ; version intermédiaire récupérée du transcript
+% (Redaction/sources/PSBN_undercontrol_taggedtree_intermediaire_2026-07-03.lp) ; passe unifiée
+% ae10d77, O1b (mémoire bornée à 4 000 Mo ; PTBN global : 17,21 s puis 0,788 s, 39 020 lignes) ;
+% mesures de juillet concordantes (conv e37f3aaa)
+
+\begin{table}[H]
+\centering
+\small
+\caption{Trois formulations successives de \texttt{PSBN\_undercontrol\_taggedtree.lp}, en dimension 3.}
+\label{tab:formulations}
+\begin{tabular}{lrr}
+\toprule
+Version & $\langle 0,2,0,0\rangle$ (675 lignes) & Lignes en 60 s (énumération complète) \\
+\midrule
+Première (2 juillet) & mémoire saturée & mémoire saturée \\
+Intermédiaire (3 juillet) & 2,6 s & 4\,120 \\
+Finale (3 juillet) & 0,50 s & 33\,013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{clingcon} sait aussi paralléliser sa recherche, mais son rendement décroît vite avec le nombre de fils (\Cref{tab:parallelisme}), si bien que pour passer à l'échelle, j'ai bâti une pipeline Java (dossier \texttt{JPPipeline/}) sur la bibliothèque JPP de Rémi~\cite{segretain2023}, qui parallélise le calcul à un plus haut niveau, pour mieux tirer parti des différents cœurs de la machine et mieux gérer l'utilisation de la mémoire.
+JPP organise un calcul en une chaîne d'étapes, les processeurs, qui transforment chacun une donnée d'entrée en une donnée de sortie, et un ensemble de fils d'exécution choisit en permanence, selon les données disponibles, quel processeur exécuter, plusieurs fils pouvant exécuter le même processeur sur des données différentes, si bien que la machine reste occupée sans que l'on ait à écrire soi-même de code concurrent.
+% src : segretain2023, section 6.2.1 (documentation : https://rsegretain.gitlab.io/jpp/)
+
+Ma pipeline enchaîne cinq processeurs (\Cref{fig:pipeline}).
+Pour une dimension donnée, elle énumère les vecteurs de décomposition, confie chacun à \texttt{clingcon} avec le programme ASP choisi, fait passer chaque solution par une étape de minimisation des poids, restée l'identité (\Cref{sec:stats}), calcule ses statistiques, puis l'écrit dans le CSV au fur et à mesure.
+% src : Pipe.java (Decomposer, EnumeratorPSBNFull, EnumeratorPSBN, Minimizer, Statifier,
+% DataStringLineCollectorProcessor ; setMaximumParallelTasks(10) sur l'énumération complète) ;
+% ligne d'exemple : brouillons/corps_depuis_annexe_A.tex, CSV d = 2 de la passe unifiée ae10d77
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    boite/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, text width=3.4cm},
+    fleche/.style={-{Stealth[length=2.2mm]}, semithick},
+    ex/.style={right, align=left, text width=9.2cm, font=\scriptsize},
+    compte/.style={left, align=right, font=\scriptsize\itshape},
+    node distance=1.5cm,
+  ]
+  \node[boite] (dec) {\textbf{Décomposition}};
+  \node[boite, below=of dec] (enum) {\textbf{Énumération}\\ (\texttt{clingcon}, au plus 10 vecteurs à la fois)};
+  \node[boite, dashed, below=of enum] (min) {\textbf{Minimisation}\\ (identité)};
+  \node[boite, below=of min] (stat) {\textbf{Statistiques}};
+  \node[boite, below=of stat] (csv) {\textbf{Écriture du CSV}};
+  \draw[fleche] ([yshift=0.8cm]dec.north) node[above, font=\scriptsize] {$n = 2$} -- (dec);
+  \draw[fleche] (dec) -- node[compte] {4 vecteurs} node[ex] {les vecteurs $\langle 1,0,0\rangle$, $\langle 0,2,0\rangle$, $\langle 0,1,2\rangle$ et $\langle 0,0,4\rangle$} (enum);
+  \draw[fleche] (enum) -- node[compte] {50 solutions} node[ex] {une solution par couple (dynamique, arbre), par exemple, pour $\langle 0,2,0\rangle$, l'arbre coupé selon le nœud 1, avec $f_1 = \texttt{0101}$, $f_2 = \texttt{0000}$ et le seul poids non nul $w_{1,1} = 1$} (min);
+  \draw[fleche] (min) -- node[ex] {la même solution} (stat);
+  \draw[fleche] (stat) -- node[compte] {50 lignes} node[ex] {\texttt{0,2,0,"1[*,*]",0101,0000,1,0,0,0,1.0,2,4,0.0,0.25,7}} (csv);
+\end{tikzpicture}
+\caption{La pipeline et ce qui circule entre ses étapes, en dimension 2 avec \texttt{PSBN\_undercontrol\_taggedtree.lp}.}
+\label{fig:pipeline}
+\end{figure}
+
+L'énumération d'un vecteur passe par un garde-fou (\Cref{fig:garde-fou}).
+JPP demande d'abord au plus 1\,000 solutions à \texttt{clingcon}, et s'il en obtient moins, le vecteur est traité, mais s'il en obtient 1\,000, il les jette, si bien que ce premier appel est perdu, et découpe le vecteur en tranches, chacune fixant les valeurs de $f_1$ dans les états 0 à $n-1$, parmi les seuls préfixes réalisables par des poids, ce qui fait 2, 4, 6, 12 et 18 tranches pour $n$ allant de 2 à 6.
+Chaque tranche est un appel indépendant, dont les solutions partent une à une vers la suite de la pipeline sans être accumulées, ce qui borne la mémoire.
+L'usage de la pipeline est décrit en annexe (\Cref{ann:jppipeline}).
+% src : Pipe.java (SUBDIVISION_THRESHOLD = 1000) ; EnumeratorPSBNFull.java ; EnumeratorPSBN.java ;
+% RealizableSbfPrefixes.java ; Subdivision.lp ; plan_figures.md, fiche O3 ; passe unifiée ae10d77, O2/O3
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    font=\footnotesize,
+    boite/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, text width=3.6cm},
+    test/.style={draw, diamond, aspect=2, align=center, inner sep=2pt, font=\scriptsize},
+    fleche/.style={-{Stealth[length=2.2mm]}, semithick},
+    ex/.style={below, align=center, font=\scriptsize\itshape, text width=4.2cm},
+  ]
+  \node[boite] (vec) at (0,0) {un vecteur};
+  \node[boite] (appel) at (0,-1.3) {\texttt{clingcon}, au plus 1\,000 solutions};
+  \node[test] (seuil) at (0,-3.0) {moins de\\ 1\,000 ?};
+  \node[boite] (tranches) at (4.6,-4.4) {solutions jetées, découpage en tranches (préfixes réalisables de $f_1$)};
+  \node[boite] (sous) at (4.6,-6.2) {un appel \texttt{clingcon} par tranche, solutions transmises une à une};
+  \node[boite] (ok) at (-4.6,-6.2) {solutions vers la minimisation};
+  \draw[fleche] (vec) -- (appel);
+  \draw[fleche] (appel) -- (seuil);
+  \draw[fleche] (seuil) -| node[pos=0.25, above] {oui} (ok);
+  \draw[fleche] (seuil) -| node[pos=0.25, above] {non} (tranches);
+  \draw[fleche] (tranches) -- (sous);
+  \draw[fleche] (sous) -- (ok);
+  \node[ex] at (ok.south) {en dimension 3, les 9 vecteurs autres que $\langle 1,0,0,0\rangle$ (1\,575 solutions)};
+  \node[ex] at (sous.south) {$\langle 1,0,0,0\rangle$, en 4 tranches de 6\,144, 10\,240, 10\,240 et 6\,144 solutions};
+\end{tikzpicture}
+\caption{Le garde-fou de l'énumération, avec les comptes de \texttt{PSBN\_undercontrol\_taggedtree.lp} en dimension 3.}
+\label{fig:garde-fou}
+\end{figure}
+
+Le \Cref{tab:parallelisme} compare, sur l'énumération complète des PSBN de dimension 3 avec \texttt{PSBN\_undercontrol\_taggedtree.lp} (34\,343 lignes), la parallélisation propre de \texttt{clingcon} et JPP, sur un même ordinateur portable à 16 cœurs logiques.
+Le rendement de \texttt{clingcon} décroît avec le nombre de fils, alors que JPP va 17 fois plus vite qu'un seul fil, un gain qui dépasse le nombre de cœurs logiques et que le seul parallélisme n'explique donc pas, le découpage du problème en un appel par vecteur, ou par tranche, accélérant aussi le calcul lui-même.
+% src : passe unifiée ae10d77, O1c ; les mesures de plus de 10 s, faites une fois, ont varié d'environ
+% 20 % entre deux passes (82 s puis 66 s pour --parallel 1), d'où les valeurs arrondies
+
+\begin{table}[H]
+\centering
+\small
+\caption{Énumération complète des PSBN de dimension 3 (34\,343 lignes), selon le moteur. Les durées de plus de 10 s, mesurées une fois, varient d'environ 20~\% d'une exécution à l'autre.}
+\label{tab:parallelisme}
+\begin{tabular}{lrr}
+\toprule
+Moteur & Durée & Accélération \\
+\midrule
+\texttt{clingcon}, 1 fil & 66 s & $\times 1$ \\
+\texttt{clingcon}, 2 fils & 35 s & $\times 1{,}9$ \\
+\texttt{clingcon}, 4 fils & 21 s & $\times 3{,}2$ \\
+\texttt{clingcon}, 8 fils & 15 s & $\times 4{,}4$ \\
+JPP & 3,8 s & $\times 17$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Le post-traitement en Python, qui calculait les statistiques après coup, a été relativement abandonné ici, les statistiques étant désormais calculées exactement dans la pipeline (\Cref{sec:stats}).
+% src : plan_figures.md, fiche O5 ; annexe F (post-traitements abandonnés de JPPipeline/src/python/)
+J'ai enfin utilisé, à partir du 12 juin, une machine de calcul distante, à laquelle je n'ai plus accès et dont je n'ai gardé ni les spécifications ni les mesures, mais qui accélérait de mémoire les exécutions d'un facteur 4 à 10.
+% src : commit d23b6ff (12 juin, « SSH HPC machine ») ; Quentin, de mémoire, 2026-10-04 (fiche O6)
+
+\subsection{Visualisation}
+\label{sec:observation}
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin : brève introduction
+% des enjeux (puces de Quentin), puis ce que fait chacune des trois pages (demande de Quentin).
+Les trois pages HTML, à la racine du dépôt, lisent les CSV de JPP et de MCSBN (\Cref{ann:a-csv}), et c'est à travers elles que nous avons regardé nos résultats, pour vérifier la justesse de nos programmes autant que pour apprécier l'espace des réseaux.
+Les construire a posé beaucoup de questions de forme, de lisibilité (palette de couleurs, style des points, fonctions interactives, ordre d'affichage), de fluidité (WebGL, lecture des fichiers en flux, rafraîchissement partiel) et d'ergonomie (lecture des différentes conventions de CSV mises en place pendant le développement), mais aussi beaucoup de questions de fond : comment organiser la légende, quelles statistiques afficher, comment donner le plus d'information possible, faut-il des barres d'erreur, quelle décomposition mettre en valeur ?
+
+\texttt{sbn\_viz.html} montre un réseau à la fois, avec sa structure (les arcs colorés selon le signe de leur poids), les tables de vérité de ses fonctions, ses statistiques, son arbre de décomposition et sa dynamique sur l'hypercube des états, que l'on peut faire tourner, dont les attracteurs sont mis en évidence et dont les sous-cubes sont coloriés selon la décomposition.
+C'est elle qui a produit la plupart des figures de réseaux et de dynamiques de ce rapport.
+% src : sbn_viz.html (panneaux Functions, Statistics, Decomposition ; feuilles colorées depuis tree ;
+% attractor-glow ; rotation de l'hypercube) ; brouillons/annexe_visualisations_retiree.tex
+
+\texttt{sbn\_scatter.html} place les dynamiques dans le plan de deux statistiques choisies, par exemple la robustesse et l'évolutivité, en regroupant celles qui tombent au même endroit avec le même vecteur en un disque dont la taille croît avec leur nombre de génotypes et dont la couleur dit le vecteur.
+La légende regroupe les vecteurs selon leur premier coefficient non nul, c'est-à-dire selon la dimension de leur plus grande hyper-face, les dynamiques les plus décomposées sont dessinées par-dessus les autres, et quand un axe est une moyenne, comme \texttt{Robustness\_mean}, l'écart-type correspondant peut s'afficher en barres d'erreur.
+Cliquer sur un disque donne la liste des dynamiques qu'il regroupe, et c'est la seule des trois pages qui se contente des statistiques, sans les fonctions ni les poids.
+% src : sbn_scatter.html (pointMap : clé position|vecteur ; sizeKey = GenotypeCount ; legend groups ;
+% toggleErrorBars, colonnes *_mean / *_std ; detail-panel) ; plan_figures.md, fiches OL2a et OL2b
+
+\texttt{metagraphe.html} dessine en WebGL le métagraphe structurel de la \Cref{sec:metagraphes}, avec un nœud par dynamique distincte, relié aux dynamiques qu'une mutation permet d'atteindre.
+Les nœuds sont placés par un algorithme de type force-directed, calculé à l'avance par DRGraph~\cite{zhu2020} (\Cref{ann:mcsbn}) ou, à défaut, dans le navigateur, et colorés selon leur décomposition la plus fine, leur degré (c'est-à-dire leur évolutivité) ou une statistique.
+Cliquer sur un nœud affiche ses statistiques, sa dynamique et sa structure, et fait ressortir ses voisins.
+% src : metagraphe.html (WebGL ; worker force-directed ; positions metagraph_x/y ; color-by ;
+% selNeighbors) ; add_metagraph_layout.py ; plan_figures.md, fiche M2
+
+
+\subsection{Usage des grands modèles de langage en recherche}
+
+- Possibilités permises, rapidité de développement.
+
+- Usage différencié selon les parties du projet.
+
+- Claude code en version pro. Utilisation relativement naïve, il est probablement possible de l'utiliser encore plus efficacement.
+
+\subsection{Exploration Randomisée : MCSBN}
+\label{sec:mcsbn}
+
+% Brouillon rédigé par Claude (2026-10-04), à reprendre dans la voix de Quentin (court, à sa demande).
+Le dossier \texttt{MCSBN/} (en C et en Python) est une tentative, menée en véritable vibe code (en autorisant le modèle de langage à écrire sans me demander de permission), d'explorer le paysage sans passer par l'ASP, pour voir si c'est plus efficace et quelles en sont les limites.
+MCSBN tire des dynamiques au hasard, chaque fonction étant prise uniformément parmi les SBF distinctes, de sorte que toutes les dynamiques sont équiprobables, puis calcule lui-même leur décomposition et leurs statistiques, et retrouve exactement, en dimension 3 où il peut tout énumérer, les vecteurs et les statistiques de JPP.
+% src : annexe D (--measure variety, --exhaustive) ; conv a5891d3a 2026-06-23 (validation d = 3 : même
+% distribution des vecteurs, aucun écart sur les statistiques)
+Ce tirage est rapide (100\,000 dynamiques en moins de 2 s en dimension 5), mais il ne récupère quasiment que des dynamiques non décomposées, 98,9~\% en dimension 4 et 99,97~\% en dimension 5, si bien qu'il donne un bon échantillon des dynamiques mais presque rien sur les pluripotentes.
+% src : passe unifiée ae10d77 (générations MCSBN : 0,98 s et 1,88 s ; fiche MCSBN : 98,89 % et 99,97 %)
+Le script \texttt{core\_then\_walk.py} prend le problème à l'envers, en énumérant un cœur de dynamiques très décomposées puis leur voisinage par marche aléatoire, ce qui donne un paysage où le métagraphe a des arêtes, mais biaisé vers la pluripotence, et illustre bien que la manière de générer est déterminante pour ce que l'on observe.
+% src : annexe D ; plan_figures.md, fiches M2 et OL1 (paysage hybride biaisé vers les pluripotents)
+Enfin, DRGraph~\cite{zhu2020} précalcule rapidement le placement force-directed du métagraphe (\Cref{sec:observation}), en une dizaine de secondes pour les 32\,768 dynamiques de la dimension 3.
+% src : plan_figures.md, fiche M2 (environ 11 s en d = 3, --threads 1 --seed 1)
+
+% ============================================================
+\section{Résultats}
+\label{sec:observations}
+% ============================================================
+
+Un des objectifs du projet étant son utilisation par autrui, j'essaie de présenter ici les moyens de (\sout{s'amuser avec}) s'en servir sans avoir à s'y plonger trop avant. 
+
+% Brouillon rédigé par Claude (2026-10-04) : réduit à un renvoi aux annexes, qui couvrent désormais
+% tous les points de la liste de Quentin (fiche G1 de plan_figures.md).
+Tout ce qu'il faut pour générer les CSV est réuni en \Cref{ann:guide}, qu'il s'agisse de lancer la pipeline et d'en changer les arguments, en ligne de commande ou par le \texttt{launch.json} de VS Code, de modifier le garde-fou ou le nombre d'énumérations menées en parallèle, codés en dur, d'ajouter une statistique dans \texttt{Statifier.java} (\Cref{ann:jppipeline}), d'y brancher un autre programme ASP, qui doit garder le même format de sortie (\Cref{ann:asp}), ou d'utiliser MCSBN (\Cref{ann:mcsbn}).
+Les pages HTML lisent aussi les CSV compressés en gzip, ce qui vaut la peine pour les gros fichiers (\Cref{ann:a-chaine}).
+% src : annexes A à D (launch.json, SUBDIVISION_THRESHOLD et setMaximumParallelTasks, Statifier.java,
+% format transition_function_bit/w, MCSBN, gzip)
+
+
+Dans un premier temps, il est rassurant d'observer que nos graphiques retrouvent les résultats de Wagner~\cite{wagner2008}. Les SBN possédant la même propriété que les séquences d'ARN sur les fréquences d'apparitions de phénotypes, on retrouve bien une corrélation positive entre évolutivité et robustesse phénotypiques. 
+
+% Brouillon rédigé par Claude (2026-10-04) pour ce qui suit les phrases de Quentin, à reprendre dans sa
+% voix (fiches OL1 à OL4 de plan_figures.md).
+La corrélation de rang de Spearman entre la robustesse et l'évolutivité des dynamiques, la statistique qu'emploie Wagner, est positive et très significative dans chacune des dimensions étudiées (\Cref{tab:spearman,fig:robustesse-evolutivite}), et du même ordre que le $\rho = 0{,}55$ ($p < 10^{-17}$) qu'il obtient sur l'ARN, calculée sur toutes les dynamiques en dimension 2 et 3, et sur 100\,000 dynamiques tirées uniformément par MCSBN (\Cref{sec:mcsbn}) en dimension 4 et 5.
+% src : passe unifiée ae10d77, OL1 (OL1_spearman.csv : rho = 0,6248, 0,8128, 0,7819, 0,6898 ; p = 4,6e-5
+% puis 0 numériquement) ; wagner2008, p. 93-94
+
+\begin{table}[H]
+\centering
+\small
+\caption{Corrélation de Spearman entre la robustesse et l'évolutivité des dynamiques.}
+\label{tab:spearman}
+\begin{tabular}{rrrr}
+\toprule
+$n$ & Dynamiques & $\rho$ & $p$ \\
+\midrule
+2 & 36 (toutes) & 0,62 & $5 \cdot 10^{-5}$ \\
+3 & 32\,768 (toutes) & 0,81 & $< 10^{-300}$ \\
+4 & 100\,000 (tirées) & 0,78 & $< 10^{-300}$ \\
+5 & 100\,000 (tirées) & 0,69 & $< 10^{-300}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Emplacement de figure (fiche OL1) : sbn_scatter.html, x = Robustness_mean, y = Evolvability, une
+% capture par dimension, depuis csv/2d_ et 3d_PSBN_undercontrol_taggedtree_output.csv.gz et
+% csv/4d_ et 5d_MCSBN_variety_100000.csv.gz. Fichiers attendus :
+% figures/{2,3}d_OL1_PSBN_undercontrol_taggedtree.png et figures/{4,5}d_OL1_MCSBN_variety.png
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][3.5cm][c]{0.9\linewidth}{\centering Capture à faire (fiche OL1)}}
+        \caption{$n = 2$}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][3.5cm][c]{0.9\linewidth}{\centering Capture à faire (fiche OL1)}}
+        \caption{$n = 3$}
+    \end{subfigure}
+
+    \medskip
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][3.5cm][c]{0.9\linewidth}{\centering Capture à faire (fiche OL1)}}
+        \caption{$n = 4$ (tirage uniforme)}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\linewidth}
+        \centering
+        \fbox{\parbox[c][3.5cm][c]{0.9\linewidth}{\centering Capture à faire (fiche OL1)}}
+        \caption{$n = 5$ (tirage uniforme)}
+    \end{subfigure}
+    \caption{Évolutivité en fonction de la robustesse des dynamiques, en dimension 2 à 5.}
+    \label{fig:robustesse-evolutivite}
+\end{figure}
+
+Malgré nos limitations à des dimensions faibles, il est possible d'observer des tendances dont l'explication pourrait éventuellement permettre de généraliser aux dimensions supérieures.
+% Les figures des trois assertions sont à annoter de flèches par Quentin (fiches OL2a à OL2c).
+
+- La décomposition d'un SBN en sous-dynamiques distinctes est déterminante dans le calcul de ses autres propriétés. (La pluripotence n'est pas décorrélée de tout) (\Cref{fig:ol2a}).
+
+% Emplacement de figure (fiche OL2a) : sbn_scatter.html sur csv/3d_PSBN_undercontrol_taggedtree_output.csv.gz,
+% x = Robustness_mean, y = Evolvability, couleur par vecteur (par défaut). Fichier attendu :
+% figures/3d_OL2a_PSBN_undercontrol_taggedtree.png, annoté par Quentin.
+\begin{figure}[H]
+    \centering
+    \fbox{\parbox[c][5cm][c]{0.8\linewidth}{\centering Capture à faire (fiche OL2a)}}
+    \caption{Évolutivité en fonction de la robustesse en dimension 3, colorée selon le vecteur de décomposition.}
+    \label{fig:ol2a}
+\end{figure}
+
+- Les propriétés d'un PSBN semblent être très liés à la dimension de sa plus grande hyper-face non décomposable. Notamment la variance de la robustesse génotypique pour chaque phénotype (Robustness\_std) (\Cref{fig:ol2b}).
+
+% Emplacement de figure (fiche OL2b) : sbn_scatter.html sur le même CSV, x = Robustness_mean,
+% y = Robustness_std ; la légende regroupe les vecteurs selon leur premier coefficient non nul.
+% Fichier attendu : figures/3d_OL2b_PSBN_undercontrol_taggedtree.png, annoté par Quentin.
+\begin{figure}[H]
+    \centering
+    \fbox{\parbox[c][5cm][c]{0.8\linewidth}{\centering Capture à faire (fiche OL2b)}}
+    \caption{Écart-type de la robustesse en fonction de sa moyenne en dimension 3, coloré selon le vecteur de décomposition.}
+    \label{fig:ol2b}
+\end{figure}
+
+- Des SBF particulières forment des groupes dans le graphique de l'écart-type contre la moyenne de la robustesse, typiquement la fonction constante 0 (\Cref{fig:robustesse-k}). En dimension 3, le nombre $k$ de nœuds dont la fonction est la constante 0 range presque les dynamiques selon leur robustesse moyenne, de 0 à 0,25 pour $k = 0$, de 0,17 à 0,33 pour $k = 1$, de 0,33 à 0,42 pour $k = 2$, et 0,5 pour l'unique dynamique où $k = 3$, car la fonction constante 0 a une robustesse de 1/2 (ses réalisations sont les colonnes de poids tous négatifs ou nuls, et la moitié des mutations de chacun de ces poids le laissent négatif ou nul) alors qu'aucune autre SBF ne dépasse 1/4, et que la robustesse d'une dynamique est la moyenne de celles de ses colonnes. L'écart-type moyen baisse aussi quand $k$ augmente (0,022 ; 0,017 ; 0,010 ; 0).
+% src : passe unifiée ae10d77, OL2c ; Statifier.java (R_P_mean = somme des colonnes / K, K = n · voisins
+% d'une colonne) ; robustesse 1/2 de la constante 0 : B poids neutres sur 2B pour chaque poids <= 0
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\linewidth]{figures/3d_OL2c_robustesse_k.pdf}
+    \caption{Écart-type de la robustesse en fonction de sa moyenne en dimension 3, selon le nombre $k$ de nœuds dont la fonction est la constante 0.}
+    \label{fig:robustesse-k}
+\end{figure}
+
+Dans le contexte de mutations sur les poids (\Cref{sec:metagraphes}) :
+
+- Les PSBN sont plutôt proches les uns des autres, notamment au sein d'une même orientation (élément d'une orbite de permutation). Les PSBN les plus décomposés (que les permutations affectent moins, \Cref{fig:metagraphe-3d}) font en quelque sortent le lien entre ces différentes orientations.
+% Fiche OL4 : la figure du métagraphe (M2), sur laquelle Quentin entoure à la main les groupes d'orientation.
+
+Ces conclusions résument les observations sur les visualisations générées, tentent d'en trouver des explications qui nous permettent d'oser une généralisation, mais peuvent difficilement dépasser en précision les visualisations elles-mêmes. C'est pourquoi le lecteur est fortement invité à les tester par lui-même (et qui sait, peut-être trouver de tendances que l'on aurait manquée).
+
+% ============================================================
+\section{Conclusion, travaux inachevés et ouverture}
+% ============================================================
+
+L'objectif principal était de montrer ce que le formalisme des SBN permettait. Et à cet égard le présent travail semble nous indiquer qu'il parvient assez bien à donner des interprétations claires de concepts généraux (comme la pluripotence), et qu'il est suffisamment pratique et riche pour que l'exploration de ses possibilités soit faisable et porteuse de sens.
+
+\vspace{5pt}
+Travaux inachevés (évoqués au fil du papier, mais rassemblés ici) :
+
+% Puces étoffées par Claude (2026-10-04), à reprendre dans la voix de Quentin.
+- Affichage d'arbre généalogique issu des simulations, qui dessinerait dans le métagraphe les chemins d'évolution des agents de Corentin (\Cref{sec:metagraphes}).
+% src : texte de Quentin en section Métagraphes (chemins avec embranchements, donc arbres)
+
+- Minimisation de poids, restée l'identité dans la pipeline, alors qu'une réalisation canonique de chaque dynamique permettrait des statistiques sur la structure elle-même (\Cref{sec:stats}).
+
+- PluripotentSignedBooleanNetworkInhibiteur, qui n'existent qu'avec un arbre fixé, alors qu'ils sont, en dimension 3, bien plus souvent pluripotents que les autres (\Cref{sec:paysage}).
+% src : JPPipeline/src/asp/ (seuls PSBNI_undercontrol.lp et PTBNI_undercontrol.lp) ; plan_figures.md, fiche P3
+
+- La partie génotypique du résultat de Wagner, qui trouve robustesse et évolutivité antagonistes à l'échelle d'un seul génotype, alors que nous n'avons mesuré que la corrélation entre dynamiques (\Cref{sec:observations}).
+% Remplace « Régression linéaire pour confirmer Wagner » : la corrélation est désormais mesurée (rho de
+% Spearman, section Observations et limites) ; src : wagner2008, section 2(b) ; section Statistiques
+
+- Exploration dirigée (MCSBN), puisqu'un tirage uniforme ne donne presque aucun réseau pluripotent et que le paysage hybride est biaisé (\Cref{sec:mcsbn}).
+
+- Meilleure FrontEnd (toujours améliorable), par exemple pour colorer le métagraphe par orientation ou montrer les sous-cubes invariants d'une décomposition partielle, que nous avons dû signaler à la main.
+% src : plan_figures.md, fiches OL4 (coloration par orientation reportée) et P4 (annotation à la main)
+
+\vspace{5pt}
+Idée futures : 
+
+- Gestion des arêtes non existantes (et pas juste de poids nuls), à la manière des SBF innées et projetées de Rémi (\Cref{sec:sbf}), avec des règles de mutation qui créent ou suppriment des arcs.
+
+- Comparaison des dimensions entre elles, par exemple à travers des règles de mutation qui ajoutent ou retirent des nœuds (\Cref{sec:metagraphes}).
+
+- Explorer d'autres aspects de la pluripotence : noeuds contrôlés, offuscation et vecteurs de décomposition partiels (\Cref{sec:paysage}).
+
+- Exploitation plus aboutie des résultats, dont les tendances de la \Cref{sec:observations} reposent pour la plupart sur la lecture des graphiques et demanderaient à être mesurées.
+
+
+
+% ============================================================
+\newpage
+\nocite{*}
+\printbibliography[title={Références}]
+% ============================================================
+
+% ============================================================
+\newpage
+\appendix
+\input{annexes/A_vue_ensemble}
+\input{annexes/B_asp}
+\input{annexes/C_jppipeline}
+\input{annexes/D_mcsbn}
+\input{annexes/F_scripts}
+% ============================================================
+
+\end{document}

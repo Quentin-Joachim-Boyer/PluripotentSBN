@@ -68,7 +68,7 @@ La \cref{fig:a-chaine} montre quel programme produit quoi et qui le lit, et le \
 Partie & Emplacement & Contenu \\
 \midrule
 \ref{ann:asp}. Programmes ASP & \texttt{JPPipeline/src/asp/} & Programmes d'énumération et leurs fichiers d'appui (\texttt{setup\_btree\_\{1..6\}d.lp}, \texttt{Subdivision.lp}). \\
-\ref{ann:jppipeline}. JPPipeline & \texttt{JPPipeline/src/java\_src/}, \texttt{JPPipeline/lib/jpp.jar}, \texttt{.vscode/launch.json} & Pipeline Java, bibliothèque JPP [À VÉRIFIER : auteur et dépôt d'origine] et configurations de lancement ; les CSV sont écrits dans \texttt{JPPipeline/out/}. \\
+\ref{ann:jppipeline}. JPPipeline & \texttt{JPPipeline/src/java\_src/}, \texttt{JPPipeline/lib/jpp.jar}, \texttt{.vscode/launch.json} & Pipeline Java, bibliothèque JPP de Rémi~\cite{segretain2023} et configurations de lancement ; les CSV sont écrits dans \texttt{JPPipeline/out/}. \\
 \ref{ann:mcsbn}. MCSBN & \texttt{MCSBN/} & Générateur Monte-Carlo en C et en Python, et placement du métagraphe par DRGraph (\texttt{tools/DRGraph/}). \\
 Visualisations & \texttt{html\_visualization\_lib/}, \texttt{*.html} à la racine & Sources des trois pages, et leurs versions autonomes, à régénérer avec \texttt{build\_standalone.py} après toute modification des sources. \\
 \ref{ann:scripts}. Scripts annexes & \texttt{SBN\_pluripotent/}, \texttt{SBN\_pluripotent\_\allowbreak Laurent/}, \texttt{JPPipeline/src/python/} & Calcul des bornes des poids, versions antérieures des programmes et post-traitements abandonnés. \\
@@ -78,8 +78,8 @@ Visualisations & \texttt{html\_visualization\_lib/}, \texttt{*.html} à la racin
 \label{tab:a-carte}
 \end{table}
 % src : git ls-files ; Redaction/CLAUDE.md (copie de référence des .lp : JPPipeline/src/asp/,
-% confirmé par Quentin) ; build_standalone.py (docstring) ; piste pour l'origine de JPP :
-% en-têtes @author defosser (hello_world/) et segretar (DataStringLineCollectorProcessor.java) ;
+% confirmé par Quentin) ; build_standalone.py (docstring) ; JPP : segretain2023, section 6.2
+% (documentation : https://rsegretain.gitlab.io/jpp/ ; paquet com.gitlab.jpp de jpp.jar) ;
 % rapport_stage.tex, section Optimisation (« post processing python relativement abandonné »)
 
 JPP et MCSBN écrivent des CSV au même format, à la colonne \texttt{tree} près, que l'on peut compléter par les positions des dynamiques dans le métagraphe avant de les ouvrir dans les pages HTML, lesquelles fonctionnent directement dans le navigateur et lisent aussi les fichiers compressés en gzip.

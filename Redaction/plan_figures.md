@@ -7,13 +7,16 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
 ## Décisions transverses
 
 - **T1. Ordre des lignes.** *Décidé : tri dans le script.* Les pages HTML ne trient pas les lignes : `sbn_viz` les affiche dans l'ordre du fichier, et ne trie que la liste des fichiers chargés. Or JPP écrit les lignes dans un ordre qui change d'une exécution à l'autre. Le script de la passe triera donc chaque CSV (par vecteur, arbre puis dynamique), pour qu'une capture désigne « la solution n° k » de façon reproductible.
-- **T2. Liens vers les fichiers.** *Décidé (Quentin, 2026-10-03) :* les « [Lien vers un fichier utilisable] » deviennent la commande qui génère le fichier. Elle est donnée dans chaque fiche, `<sortie>` désignant le dossier de sortie.
+- **T2. Liens vers les fichiers.** *Décidé (Quentin, 2026-10-03) :* les « [Lien vers un fichier utilisable] » deviennent la commande qui génère le fichier. Elle est donnée dans chaque fiche, `<sortie>` désignant le dossier de sortie. Dans le rapport, en revanche, pas de commande : un renvoi à l'annexe (Quentin, 2026-10-06).
 - **T3. Fichiers de Laurent.** Les pages HTML ne gèrent pas les `f_*` écrits en entier : sur les 189 lignes du fichier de Laurent, `sbn-core.js` (exécuté avec `gjs`) calcule une dynamique différente de celle des poids, sur toutes les lignes. Seul le panneau des fonctions décode l'entier. *Sans objet si C1 se fait sur `PSBN_undercontrol` (voir C1).*
 - **T4. Arbre des sorties `treeinsolver`.** *Décidé : capturer la même dynamique depuis le CSV `taggedtree`, qui porte l'arbre.* C'est toujours possible : vecteur par vecteur, `taggedtree` contient toutes les dynamiques de `treeinsolver`.
 - **T5. Doublons de `treeinsolver`.** *Décidé :* cocher « dynamiques uniques » dans `sbn_viz`.
 - **T6. Binaires.** *Décidé (Quentin, 2026-10-04) :* `JPPipeline/bin/` et `MCSBN/bin/` ne sont pas versionnés. La passe recompile donc JPP (`javac`, annexe A.4) et MCSBN (`make`, annexe A.5) depuis les sources du commit dont elle part, au lieu de dépendre d'une compilation locale.
 - **T7. Choix d'une ligne parmi N candidates.** *Décidé (Quentin, 2026-10-04) :* quand une fiche ne fixe pas de critère, la passe retient la candidate qui a le moins de poids non nuls, puis la plus petite somme des |w|, puis la première dans l'ordre trié (T1). Le critère porte sur la ligne affichée dans la capture. Quentin peut changer de ligne au cas par cas en voyant les captures. *Décidé (Quentin, 2026-10-04) :* une dynamique retenue par une fiche est écartée des fiches suivantes, dans l'ordre du plan, pour que deux figures ne montrent pas la même (la passe du commit `3b331d8` retenait la même ligne pour C1 et C3, et pour C6 et P2).
 - **T8. Script de la passe.** *Décidé (Quentin, 2026-10-04) :* `Redaction/passe_unifiee/`, sortie dans un dossier non versionné. Pour chaque fiche, la passe écrit un petit CSV ne contenant que les lignes à capturer, préfixé par la dimension (`3d_…`), que les pages HTML lisent dans le nom du fichier.
+
+- **T9. Production des figures (2026-10-06).** Exports par le bouton « Export » des pages, en thème clair (PNG ×3) ; pour `sbn_viz`, l'hypercube dézoomé d'un cran, sans quoi la boucle du sommet 000 sort du cadre. `Redaction/passe_unifiee/ranger_figures.py` copie les exports de `~/Téléchargements` sous les noms attendus par le rapport et rogne les marges vides des hypercubes. Captures de page entière (V1 à V3) : vue adaptative de Firefox, 1440 × 900, densité 2, sur la dynamique de X2 (nœud 677 du métagraphe, disque (0,25 ; 32) du nuage). C2 et C3 : réseau au-dessus de l'hypercube dans chaque sous-figure (à confirmer par Quentin).
+- **T10. Annotations (2026-10-06, à la demande de Quentin).** `Redaction/passe_unifiee/annoter_figures.py` annote P4, OL2a et OL2b à partir des originaux gardés dans `figures/non_annotees/` (relançable sans cumul). P4 : arêtes de la face x₃ = 1 soulignées et sommets cerclés en orange, arête {000, 001} en vert ; pas d'aplat, car 001 tombe en projection dans le quadrilatère de la face. OL2a : rectangle pointillé des 658 décomposables (robustesse ≤ 0,375, évolutivité ≤ 38) et légende des couleurs. OL2b : planchers de `Robustness_std` selon la dimension de la plus grande hyper-face non décomposable (dim. 2 : 0,0241 ; dim. 1 : 0,0340 ; identité : 0,0417 ; non décomposables : jusqu'à 0) et légende. Les légendes sont ajoutées dans un panneau à droite (la page ne les exporte pas), couleurs relevées dans l'image selon l'ordre de tracé de `sbn_scatter` ; ⟨0,0,2,4⟩ n'y figure pas, car il n'est visible en aucun point.
 
 ## Section Correction
 
@@ -58,6 +61,51 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
   - En d = 4 et d = 5, les proportions devront donc être estimées sur un échantillon. Or une énumération partielle de JPP n'est pas un échantillon uniforme (c'est l'ordre de `clingcon`), et MCSBN, qui tire uniformément les dynamiques, ne donne qu'un vecteur par dynamique (le plus fin pour le génotype tiré), pas la liste des vecteurs qu'elle admet.
   - Il faut donc choisir un estimateur, par exemple : tirer des dynamiques avec MCSBN, puis tester chacune avec `taggedtree`, en lui ajoutant des contraintes qui fixent la dynamique (le programme n'a pas de constantes pour cela), pour savoir quels vecteurs elle admet.
 - Commande (d = 3) : `java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 3 JPPipeline/src/asp/PSBN_undercontrol_taggedtree.lp JPPipeline/src/asp 0 <sortie> 1`
+- *Table en d = 4 (2026-10-05, hors passe, à la demande de Quentin).* Énumération complète des PSBN décomposables en d = 4 par `treeinsolver`, dont les poids sont corrigés depuis le 3 octobre. Le vecteur trivial est écarté par `JPPipeline/src/asp/PSBN_undercontrol_treeinsolver_nontrivial.lp` (contrainte qui le rend insatisfiable, non commité au 2026-10-05). `taggedtree` est inutilisable en d = 4 : les vecteurs fins n'y rendent aucune solution en 10 min.
+  - Commande : `java -cp <bin>:JPPipeline/lib/jpp.jar PSBN.Main 4 JPPipeline/src/asp/PSBN_undercontrol_treeinsolver_nontrivial.lp JPPipeline/src/asp 0 JPPipeline/out 1`, 7 h 43 sur la machine locale, 73 984 512 lignes (12,8 Go) dans `JPPipeline/out/4d_PSBN_undercontrol_treeinsolver_nontrivial_output.csv`. La table vient de `JPPipeline/out/4d_nontrivial_analyse/` (`c4_d4.sh`, `table_c4_d4.py`, `C4_table_d4.csv`), même définition qu'en d = 3.
+  - Contrôles : ⟨0,2,0,0,0⟩ a 11 923 831 dynamiques distinctes, exactement le nombre de PSBN décomposables calculé par inclusion-exclusion sur les nœuds de contrôle ; ses 71 663 616 lignes sont exactement 3! × 4 × 144³, une par nœud de contrôle possible et par ordre des autres nœuds ; les 743 007 dynamiques des vecteurs plus fins y figurent toutes ; les effectifs des 34 vecteurs que l'énumération du 22 juin couvrait en entier (`JPPipeline/archive/4d_PSBN_undercontrol_treeinsolver_output.csv.gz`) sont identiques.
+  - Réserve : c'est la notion de `treeinsolver`, qui donne en d = 3 exactement les dynamiques de `taggedtree` vecteur par vecteur ; en d = 4, l'égalité n'est pas vérifiée (`taggedtree` y est impraticable).
+  - Version dédoublonnée (2026-10-05, `4d_nontrivial_analyse/dedoublonner.sh`) : `JPPipeline/out/4d_PSBN_undercontrol_treeinsolver_nontrivial_dedup.csv.gz`, 12 995 663 lignes (une par couple vecteur, dynamique ; la réalisation gardée est la première dans l'ordre T1), 149 Mo. Les poids de toutes les lignes réalisent leur dynamique (`verifier_poids.py`).
+  - Échantillon affichable (2026-10-05, `4d_nontrivial_analyse/echantillon.py`, graine 42) : `JPPipeline/out/4d_PSBN_undercontrol_treeinsolver_nontrivial_echantillon_1M.csv.gz`, 1 000 000 de dynamiques tirées uniformément parmi les 11 923 831, une ligne par dynamique (son vecteur le plus fin ; 36 dynamiques ont deux vecteurs de même somme maximale, départagés par l'ordre T1), 15,7 Mo (173 Mo décompressé). Proportions conformes à la table (vecteur le plus fin ⟨0,2,0,0,0⟩ : 93,81 % contre 93,77 % attendu).
+
+  | Vecteur | Dynamiques | Plus finement décomposables |
+  |---|---:|---:|
+  | ⟨1,0,0,0,0⟩ | 18 741 610 000 | 11 923 831 |
+  | ⟨0,2,0,0,0⟩ | 11 923 831 | 743 007 |
+  | ⟨0,1,2,0,0⟩ | 743 007 | 157 077 |
+  | ⟨0,1,1,2,0⟩ | 144 117 | 69 165 |
+  | ⟨0,1,1,1,2⟩ | 52 949 | 30 485 |
+  | ⟨0,1,1,0,4⟩ | 27 049 | 12 217 |
+  | ⟨0,1,0,4,0⟩ | 28 491 | 15 411 |
+  | ⟨0,1,0,3,2⟩ | 14 567 | 12 107 |
+  | ⟨0,1,0,2,4⟩ | 11 743 | 5 263 |
+  | ⟨0,1,0,1,6⟩ | 4 411 | 2 167 |
+  | ⟨0,1,0,0,8⟩ | 1 659 | 395 |
+  | ⟨0,0,4,0,0⟩ | 19 337 | 6 377 |
+  | ⟨0,0,3,2,0⟩ | 6 377 | 4 193 |
+  | ⟨0,0,3,1,2⟩ | 3 241 | 2 689 |
+  | ⟨0,0,3,0,4⟩ | 1 821 | 1 521 |
+  | ⟨0,0,2,4,0⟩ | 3 341 | 2 525 |
+  | ⟨0,0,2,3,2⟩ | 2 389 | 2 077 |
+  | ⟨0,0,2,2,4⟩ | 2 001 | 1 293 |
+  | ⟨0,0,2,1,6⟩ | 1 041 | 633 |
+  | ⟨0,0,2,0,8⟩ | 473 | 275 |
+  | ⟨0,0,1,6,0⟩ | 899 | 767 |
+  | ⟨0,0,1,5,2⟩ | 763 | 691 |
+  | ⟨0,0,1,4,4⟩ | 687 | 519 |
+  | ⟨0,0,1,3,6⟩ | 507 | 363 |
+  | ⟨0,0,1,2,8⟩ | 351 | 195 |
+  | ⟨0,0,1,1,10⟩ | 179 | 71 |
+  | ⟨0,0,1,0,12⟩ | 59 | 17 |
+  | ⟨0,0,0,8,0⟩ | 77 | 73 |
+  | ⟨0,0,0,7,2⟩ | 73 | 69 |
+  | ⟨0,0,0,6,4⟩ | 69 | 57 |
+  | ⟨0,0,0,5,6⟩ | 57 | 45 |
+  | ⟨0,0,0,4,8⟩ | 45 | 29 |
+  | ⟨0,0,0,3,10⟩ | 29 | 17 |
+  | ⟨0,0,0,2,12⟩ | 17 | 5 |
+  | ⟨0,0,0,1,14⟩ | 5 | 1 |
+  | ⟨0,0,0,0,16⟩ | 1 | 0 |
 
 ### C5. Un PSBN « trop décomposable » sur ⟨0,2,0,0⟩ (l. 482)
 - Montre : une dynamique énumérée avec ⟨0,2,0,0⟩ alors qu'elle admet une décomposition plus fine.
@@ -76,9 +124,11 @@ Les nombres de candidats viennent des CSV d = 3 régénérés le 2026-10-03 (con
 - Données : **433** candidates en ⟨0,2,0,0⟩ (dans `PSBN_treeinsolver`, absentes de `PSBN_undercontrol`).
 - Commande : comme C6, avec `PSBN_undercontrol_treeinsolver.lp` puis `PSBN_undercontrol_taggedtree.lp` (T4).
 - Vue : comme C6.
+- *Décidé (Quentin, 2026-10-05) :* une dynamique à faces distinctes (la première retenue, n° 32 781, avait des faces identiques, comme C1). `fiches.py` l'impose désormais : 370 candidates sur 433, ligne n° 32 771 (arbre `1[*,*]`, poids 1→1 : +1, 1→2 : −2, 1→3 : −2, 3→3 : +1). Le fichier de `sortie/fiches/` est régénéré, mais `resume.md` garde l'ancienne ligne tant que la passe n'est pas relancée.
 
 ### C8. `PTBN_undercontrol_taggedtree` sur ⟨0,0,2,4⟩ (l. 500, placeholder inachevé : « montrant ]»)
 - *Décidé (Quentin, 2026-10-03) :* un arbre dont les deux moitiés sont coupées selon des nœuds de contrôle différents, ce que seul l'étiquetage permet. Par exemple `2[1[*,3[*,*]],3[*,1[*,*]]]` (2 dynamiques) ou `3[1[*,2[*,*]],2[1[*,*],*]]` (2 dynamiques).
+- *Changé (Quentin, 2026-10-07) :* la ligne retenue (n° 38 774) avait bien un arbre étiqueté, mais sa décomposition la plus fine, ⟨0,0,1,6⟩ (coupes 2, puis 3, puis 1), s'écrit sans étiquetage. Nouveau critère : une dynamique dont la décomposition la plus fine est ⟨0,0,2,4⟩ et qu'aucun arbre sans étiquetage (même nœud à chaque profondeur) n'atteint. En d = 3, 24 dynamiques PTBN sont dans ce cas (12 en ⟨0,0,2,4⟩, 12 en ⟨0,0,3,2⟩), et aucune PSBN. Choix T7 : n° 38 790, arbre `2[1[3[*,*],*],3[*,1[*,*]]]`, seul arbre qui atteint sa décomposition la plus fine. `fiches.py` modifié et fiche C8 régénérée seule dans `sortie/fiches/` (une ligne) ; `resume.md` n'est pas relancé.
 - Commande : `java -cp JPPipeline/bin:JPPipeline/lib/jpp.jar PSBN.Main 3 JPPipeline/src/asp/PTBN_undercontrol_taggedtree.lp JPPipeline/src/asp 0 <sortie> 1`
 - Vue : `sbn_viz`, décomposition et hypercube.
 
@@ -240,6 +290,25 @@ Vérifié le 2026-10-03 :
 - *Décidé (Quentin, 2026-10-04) :* il n'y a plus accès, et n'a ni ses spécifications ni ses mesures. De mémoire, elle accélérait les exécutions d'un facteur au moins 4, et jusqu'à 10. On l'évoque rapidement dans le corps, pour montrer qu'un outil de ce type a été employé. Rien à générer.
 - Pour la rédaction : le facteur se cite comme un souvenir (`% src : Quentin, de mémoire, 2026-10-04`), sans spécifications inventées.
 
+## Section Visualisation
+
+*Décidé (Quentin, 2026-10-06) :* une capture de la page entière pour chacune des trois pages, à la suite du paragraphe qui la décrit. Les autres figures du rapport n'en montrent que des vues recadrées, et le lecteur ne voit jamais l'interface décrite. Chaque capture reprend les données d'une fiche déjà décidée.
+
+### V1. Page entière de `sbn_viz`
+- Montre : tous les panneaux à la fois (structure, tables de vérité, statistiques, arbre de décomposition, hypercube colorié par la décomposition).
+- Données : la ligne de X2, n° 33 227 de `fiches/3d_X2_PSBN_undercontrol_taggedtree.csv` (⟨0,2,0,0⟩, arbre `3[*,*]`).
+- Fichier attendu : `figures/3d_V1_sbn_viz_page.png`.
+
+### V2. Page entière de `sbn_scatter`
+- Montre : la légende regroupée, les barres d'erreur et le panneau de détail ouvert sur un disque (de préférence un disque qui regroupe plusieurs dynamiques).
+- Données : `csv/3d_PSBN_undercontrol_taggedtree_output.csv.gz`, axes de OL2a (`Robustness_mean` contre `Evolvability`). Pas ceux de OL2b, comme proposé d'abord : avec `Robustness_std` en ordonnée, les barres d'erreur de `Robustness_mean` redoubleraient l'axe.
+- Fichier attendu : `figures/3d_V2_sbn_scatter_page.png`.
+
+### V3. Page entière de `metagraphe`
+- Montre : un nœud cliqué, avec son panneau (statistiques, dynamique, structure) et ses voisins mis en évidence.
+- Données : celles de M2, `csv/3d_PTBN_undercontrol_taggedtree_output_metagraph.csv.gz`, couleur par décomposition.
+- Fichier attendu : `figures/3d_V3_metagraphe_page.png`.
+
 ## Placeholders antérieurs aux sections déjà traitées
 
 ### S1. « [Scatter robustesse evolutivité] » (section Statistiques, l. 340)
@@ -253,6 +322,7 @@ Vérifié le 2026-10-03 :
 
 ### X1. « [Image issue des simulations] » (contexte, l. 193)
 - Hors génération : c'est une image des simulations d'agents de Corentin Lacaze, à lui demander.
+- *Abandonné (Quentin, 2026-10-07) :* placeholder retiré du rapport, pas d'image des simulations.
 
 ### G1. « [donner pseudo doc en annexe] » (Guide de génération des CSV, l. 572)
 - Hors génération : un renvoi à l'annexe (`\Cref{ann:jppipeline}`). Pour la rédaction, tous les points de cette sous-section (arguments, changement d'énumérateur, garde-fou et parallélisme codés en dur, statistiques, gzip) sont désormais dans les annexes A.3 et A.4, si bien qu'elle pourra se réduire à ce renvoi.
@@ -284,6 +354,7 @@ Vérifié le 2026-10-03 :
 - **OL2c.** Des SBF particulières forment des groupes dans le graphique variance/moyenne de la robustesse (l. 606).
   - *Précisé (Quentin, 2026-10-04) :* ce sont généralement des groupes qui ont en commun une SBF particulière, typiquement celle des poids tous nuls, c'est-à-dire la fonction constante 0.
   - En d = 3 (toutes les dynamiques, 2026-10-04), le nombre k de nœuds dont la fonction est la constante 0 sépare presque les dynamiques selon `Robustness_mean` : de 0 à 0,25 pour k = 0 (29 791 dynamiques), de 0,17 à 0,33 pour k = 1 (2 883), de 0,33 à 0,42 pour k = 2 (93), et 0,5 pour k = 3 (1). La moyenne de `Robustness_std` baisse quand k augmente (0,022 ; 0,017 ; 0,010 ; 0).
+  - En d = 4, sur l'échantillon uniforme de 1 M PSBN décomposables (voir C4, 2026-10-05) : même ordre selon k, avec plus de recouvrement. k = 0 : 97,9 %, `Robustness_mean` de 0,033 à 0,212 ; k = 1 : 2,1 %, de 0,158 à 0,278 ; k = 2 : 149 dynamiques, de 0,283 à 0,343 ; k = 3 : 2, à 0,408. `Robustness_std` moyen décroissant (0,0230 ; 0,0218 ; 0,0206 ; 0,0191). Au-dessus de 0,17, 93 % des dynamiques ont k ≥ 1. Population différente de d = 3 (décomposables seulement, contre toutes les dynamiques). Pas de figure d = 4 (Quentin, 2026-10-06).
   - `sbn_scatter.html` ne colore que par vecteur. *Décidé (Quentin, 2026-10-04), si c'est facilement faisable :* le script de la passe trace lui-même ce nuage (matplotlib, `Robustness_mean` contre `Robustness_std`, couleur selon k), et Quentin l'annote comme les autres. Sinon, on en reparle.
 
 ### OL3. « [Cf. règles de mutations] » (l. 608)
@@ -293,6 +364,7 @@ Vérifié le 2026-10-03 :
 - Montre : dans le métagraphe, les PSBN se regroupent par orientation (le nœud de contrôle choisi, à permutation près), et les plus décomposés, que les permutations affectent moins, relient ces groupes.
 - `metagraphe.html` colore par décomposition (le vecteur le plus fin de chaque dynamique), par degré ou par une statistique, mais pas par orientation.
 - *Décidé (Quentin, 2026-10-04) :* reprendre la figure de M2 (d = 3, PTBN `taggedtree`, couleur par décomposition), sur laquelle Quentin entoure à la main les groupes d'orientation. Une coloration par orientation demanderait de modifier la page : *reporté*.
+- *Abandonné (Quentin, 2026-10-07) :* l'annotation de M2 ; la figure reste telle quelle.
 
 ## Ressource pour la section « Exploration randomisée : MCSBN » (sans placeholder)
 - Pour « énumération brute puis post processing → on ne récupère quasiment que des non décomposés » (l. 556), un chiffre est disponible : dans un tirage uniforme MCSBN de 100 000 dynamiques, le vecteur est trivial pour 98,9 % d'entre elles en d = 4 et 99,97 % en d = 5 (tirages du 2026-10-04, graine par défaut).

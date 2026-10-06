@@ -345,23 +345,47 @@ def fiche_C6_C7(PU, PT_u, PS, PT, PS_tis, PT_tis, dossier):
               len(cand), 433)
     ks = [k for k in range(len(PS)) if PS.v[k] == V0200 and PS.f[k] in cand]
     F7.compte("candidates sans ligne ⟨0,2,0,0⟩ dans PSBN_taggedtree (T4)", len(cand - {PS.f[k] for k in ks}), 0)
+    # Faces distinctes (Quentin, 2026-10-05) : sinon la figure ressemble à C1, que Laurent écarte.
+    ks = [k for k in ks if faces_distinctes(PS.f[k], PS.tree[k])]
+    F7.compte("dont les faces sont distinctes", len({PS.f[k] for k in ks}))
     F7.extraire(PS, [min(libres(PS, ks), key=PS.t7)], "3d_C7_PSBN_undercontrol_taggedtree.csv", dossier,
-                "capture depuis taggedtree, qui porte l'arbre (T4)")
+                "capture depuis taggedtree, qui porte l'arbre (T4) ; faces distinctes")
     return F6, F7
 
 
-C8_ARBRES = ["2[1[*,3[*,*]],3[*,1[*,*]]]", "3[1[*,2[*,*]],2[1[*,*],*]]"]
+def coupes_uniformes(arbre):
+    """Vrai si toutes les coupes d'une même profondeur se font selon le même nœud,
+    c'est-à-dire si l'arbre s'écrit sans étiquetage."""
+    par_prof = defaultdict(set)
+
+    def rec(noeud, p):
+        if noeud != "*":
+            n, g, h = noeud
+            par_prof[p].add(n)
+            rec(g, p + 1)
+            rec(h, p + 1)
+    rec(lire_arbre(arbre), 0)
+    return all(len(s) == 1 for s in par_prof.values())
+
+
+V0024 = (0, 0, 2, 4)
 
 
 def fiche_C8(PT, dossier):
-    F = Fiche("C8", "PTBN_undercontrol_taggedtree sur ⟨0,0,2,4⟩ : moitiés coupées selon des nœuds différents")
-    ks = []
-    for a in C8_ARBRES:
-        ka = [k for k in range(len(PT)) if PT.tree[k] == a]
-        F.compte(f"lignes de l'arbre {a}", len(ka), 2)
-        ks += ka
-    F.extraire(PT, ks, "3d_C8_PTBN_undercontrol_taggedtree.csv", dossier,
-               "les lignes des deux arbres cités dans la fiche, au choix")
+    # Critère changé le 2026-10-07 (Quentin) : l'ancienne ligne n° 38 774 avait un arbre étiqueté,
+    # mais sa décomposition la plus fine, ⟨0,0,1,6⟩, s'écrit sans étiquetage.
+    F = Fiche("C8", "PTBN_undercontrol_taggedtree sur ⟨0,0,2,4⟩ : décomposition la plus fine qui exige l'étiquetage")
+    fin = plus_fin(PT)
+    arbres_fins = defaultdict(list)  # dynamique -> lignes qui atteignent sa décomposition la plus fine
+    for k in range(len(PT)):
+        if sum(PT.v[k]) == fin[PT.f[k]]:
+            arbres_fins[PT.f[k]].append(k)
+    exige = {f for f, ks in arbres_fins.items() if not any(coupes_uniformes(PT.tree[k]) for k in ks)}
+    F.compte("dynamiques dont la décomposition la plus fine exige l'étiquetage", len(exige), 24)
+    ks = [k for k in range(len(PT)) if PT.f[k] in exige and PT.v[k] == V0024]
+    F.compte("dont la décomposition la plus fine est ⟨0,0,2,4⟩", len({PT.f[k] for k in ks}), 12)
+    F.extraire(PT, [min(libres(PT, ks), key=PT.t7)], "3d_C8_PTBN_undercontrol_taggedtree.csv", dossier,
+               "décomposition la plus fine qui exige l'étiquetage (Quentin, 2026-10-07)")
     return F
 
 

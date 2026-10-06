@@ -57,3 +57,7 @@ Limiter ainsi le nombre d'énumérations menées en parallèle évite d'engorger
 
 Pour ajouter une statistique, on la calcule dans la méthode \texttt{process} de \texttt{Statifier.java}, qui reçoit chaque réseau et renvoie sa ligne de CSV, puis on ajoute son nom, à la bonne place, dans l'en-tête que construit la méthode \texttt{reset} de \texttt{Pipe.java} ; les statistiques qui portent sur les attracteurs sont, elles, calculées dans \texttt{SBN.toCsvRow}.
 % src : Statifier.java ; Pipe.java (reset) ; SBN.java (toCsvRow)
+Pour calculer la statistique, il est souvent possible de s'appuyer sur les tables par SBF de \texttt{SBFStatTable.java}, que \texttt{Statifier} calcule une fois par dimension : elles donnent, pour chaque SBF, le nombre de colonnes de poids bornés qui la réalisent, le nombre moyen de mutations neutres de ces colonnes et sa variance, et les SBF qu'une mutation permet d'atteindre.
+Comme les colonnes de $W$ sont indépendantes, une statistique qui se décompose par colonnes s'obtient alors en combinant les valeurs de ces tables pour $f_1, \dots, f_d$, sans parcourir les matrices de poids, ce que fait déjà \texttt{process} pour \texttt{GenotypeCount}, la robustesse et l'évolutivité.
+% src : SBFStatTable.java (columnSetSize, neutralCountMean/Var, neighborPhenotypes,
+% nbDistinctNeighborPhenotypes) ; Statifier.java (tablesByDimension, process) ; Quentin, 2026-10-07
