@@ -5,14 +5,14 @@ Relire ce fichier avant toute séance de rédaction (rapport ou annexes).
 ## Contexte
 
 - Rapport de stage M1 AM (UGA, Grenoble INP Ensimag) de Quentin Boyer, équipe BCM du laboratoire TIMC (Grenoble), encadré par Nicolas Glade et Laurent Trilling.
-- Stage commencé le 11 mai 2026 ; développement tracé par le git (commits du 17 mai au 3 juillet 2026). Rédaction reprise en octobre 2026 : les souvenirs de Quentin sont certes un peu émoussés, mais il a encore en tête pas mal d'élément, mais surtout les traces font foi.
+- Stage du 11 mai au 3 juillet 2026 (dates officielles, confirmées par Quentin le 2026-10-07, sur la page de titre) ; développement tracé par le git (commits du 17 mai au 3 juillet 2026). Rédaction reprise en octobre 2026 : les souvenirs de Quentin sont certes un peu émoussés, mais il a encore en tête pas mal d'élément, mais surtout les traces font foi.
 - Sujet : exploration du paysage des réseaux booléens à signe (SBN) pluripotents. Énumération (ASP/clingcon, pipeline Java JPP, Monte-Carlo MCSBN), statistiques à la Wagner, visualisations HTML.
 - Fichiers : `rapport_stage.tex` (compilation pdflatex, biber, pdflatex), `references.bib`, `figures/`, `annexes/` (une seule annexe, « Guide d'utilisation des programmes », dont chaque partie est dans un fichier : `A_vue_ensemble.tex` pour l'organisation du dépôt et le format des CSV, puis `B_asp.tex`, `C_jppipeline.tex`, `D_mcsbn.tex` et `F_scripts.tex` ; la partie sur les visualisations a été retirée), `sources/` (traces et outils), `brouillons/` (passages écartés des annexes, à reprendre dans le corps ; non compilés).
 
 ## Lecteurs et versions
 
 1. **Version « sans limite » pour les collègues du labo** (prioritaire) : ceux qui reprendront le sujet et le code. Le but est de faire avancer le sujet : ce qui a été fait, comment le refaire, ce qui reste ouvert. La reproductibilité compte plus que la longueur.
-2. **Version condensée selon les consignes UGA**, plus tard, à partir de la première.
+2. **Version condensée selon les consignes UGA**, à partir de la première (commencée le 2026-10-07). Consignes dans `sources/consignes_UGA.pdf`, parties 1 et 2 (« stage assistant ingénieur ») : 15 à 20 pages hors garde et table des matières, 12 pt, marges ≤ 2,5 cm, interligne simple, page de garde du modèle de l'intranet (mention « stage assistant ingénieur », enseignant membre du jury, adresse de la structure, dates et durée), problématique lisible par un non-spécialiste, sigles explicités, titres sans sigles seuls, synthèse et non récit chronologique, contribution personnelle sans ambiguïté, contexte de la structure d'accueil (2 p. max), bilan personnel (1 p.) et obstacles, pas d'abus d'illustrations. Fichier : `rapport_uga.tex`, copie du rapport labo (2026-10-10). Décisions de Quentin (2026-10-10) : modifier le texte le moins possible, donc condenser en coupant ou en déplaçant en annexe plutôt qu'en réécrivant ; style impersonnel conservé, la contribution étant dite par une seule phrase en 1.3 ; le bilan personnel est la conclusion. Ce qui est gardé se discute point par point : `plan_uga.md`.
 
 La phrase de 1.3 sur un futur article a été supprimée (Quentin, 2026-10-06) : le rapport n'en parle pas.
 
@@ -95,7 +95,7 @@ Déduit des réécritures de Quentin (passages de Claude dans le corps, juin-jui
 3. **Passe unifiée** (faite le 2026-10-04, commit `ae10d77`) : `Redaction/passe_unifiee/passe.py` lance toutes les générations décidées dans les fiches, avec des paramètres fixés ; ses résultats (`sortie/resume.md`, non versionné) documenteront toutes les parties du rapport, avec `% src : passe unifiée ae10d77`.
 4. **Sections manquantes**, une à la fois, dans l'ordre du document (Quentin, 2026-10-04), à partir de ces résultats. Tant qu'une capture prévue par une fiche n'est pas faite, le brouillon met un emplacement de figure (cadre vide, légende proposée) avec le nom du fichier attendu et la fiche en commentaire ; Quentin fait les captures quand il veut.
 5. Résumé et abstract en dernier.
-6. Plus tard : la version UGA condensée.
+6. La version UGA condensée (voir « Lecteurs et versions » et `plan_uga.md`).
 
 ## Gestion du contexte
 
@@ -125,10 +125,12 @@ Déduit des réécritures de Quentin (passages de Claude dans le corps, juin-jui
 - Borne des poids en d = 6 : le code utilise 6 (choix antérieur au calcul des bornes), l'ILP donne 9. Non corrigé, et *retiré du rapport* (Quentin, 2026-10-05, « pas pertinent ») : seule l'annexe A signale que la valeur du code diffère de celle du tableau.
 
 - Analogie partie contrôle / partie opérative (PC/PO) pour le réseau de contrôle et le réseau contrôlé (Quentin, 2026-10-03) : la présenter comme venant de l'architecture des processeurs, sans allusion à la façon dont Quentin l'a apprise (Quentin, 2026-10-05).
-- Génération en d = 4, 5 et 6 : Quentin doit lui trouver un endroit dans le rapport (2026-10-06). Elle justifiera « utilisable que jusqu'en dimension 3 » (3.1, programme de Laurent), dont le renvoi à 3.2 ne montre que d = 3 (commentaire `À FAIRE` dans le source).
+- Génération en d = 4 et 5 : placée en 3.2 Optimisation (Quentin, 2026-10-07), à partir du calcul du 2026-10-05 (treeinsolver sans vecteur trivial, 7 h 43). d = 6 n'y est pas traité. Pour le programme de Laurent (3.1, « utilisable que jusqu'en dimension 3 »), le renvoi à 3.2 ne montre toujours que d = 3 (commentaire `À FAIRE` dans le source).
 - La colonne `v_*` des CSV de MCSBN est la décomposition en TBN (`decomp_tbn = 1`), pas en SBN : tout pourcentage tiré de ces CSV se dit « en TBN » (comparer au tableau des échelles, qui est en SBN, donnerait une contradiction apparente).
 
 Décisions :
+
+- Résumé : retrouver l'essentiel du rapport plutôt que des aspects précis (Quentin, 2026-10-07). Ni le lien avec Wagner ni la non-exhaustivité de l'énumération ne sont essentiels au travail : ils ne figurent pas dans le résumé.
 
 - `CycleLenMSQ` (moyenne du carré des longueurs d'attracteurs) : choix jugé non pertinent avec le recul, mais on ne touche pas au code (Quentin, 2026-10-04) ; le rapport le dit.
 - Orthographe : « Ai-Ling » partout (Quentin, 2026-10-04).

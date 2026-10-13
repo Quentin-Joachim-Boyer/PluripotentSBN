@@ -209,6 +209,14 @@ Vérifié le 2026-10-03 :
 - Point de reproductibilité : DRGraph tire au hasard (GSL). Le placement ne sera identique d'une passe à l'autre que si sa graine est fixe. *Vérifié le 2026-10-04 :* deux placements du même CSV différaient, pour deux raisons. L'étape multiniveau tirait sa graine de l'heure et du numéro de processus (`genrandom.cpp`), et l'optimisation tourne sur 8 fils qui se partagent un générateur. *Corrigé (décidé par Quentin) :* `add_metagraph_layout.py` et `metagraph_layout` prennent `--seed <s>` (transmis par `GSL_RNG_SEED`, que `genrandom.cpp` respecte désormais) et `--threads <k>`. Avec `--threads 1 --seed 1`, deux placements sont identiques (environ 11 s en d = 3).
 - *Décidé (Quentin, 2026-10-04) :* d = 3 seulement pour l'instant ; le paysage hybride en d = 4 reste une option pour plus tard. Par défaut, comme les captures existantes : `PTBN_undercontrol_taggedtree`, coloration par la décomposition, sauf avis contraire.
 
+### M5. Métagraphe placé par un vrai algorithme force-directed
+- *Demandé (Quentin, 2026-10-07) :* à côté de M2, dont le placement vient de DRGraph, le même métagraphe placé par un algorithme force-directed, comme celui de `metagraphe.html`.
+- Données : `csv/3d_PTBN_undercontrol_taggedtree_output.csv.gz`, c'est-à-dire le CSV de M2 sans les colonnes `metagraph_x/y`. Sans elles, la page calcule le placement dans un worker (Fruchterman–Reingold avec Barnes-Hut, 320 itérations).
+- Vue : `metagraphe.html`, couleur par décomposition, comme M2.
+- Point de reproductibilité : l'initialisation du worker est aléatoire (`Math.random`, sans graine), donc deux exécutions donnent des placements différents. Pour une illustration, c'est sans conséquence.
+- *Décidé (Quentin, 2026-10-07) :* la dimension 3, pour comparer avec M2 sur les mêmes dynamiques (la dimension 2 a été écartée).
+- Fichier attendu : `figures/3d_M5_PTBN_undercontrol_taggedtree_metagraphe_fd.png`.
+
 ### M3. Équation définissant une arête du métagraphe
 - Hors génération. Définition tirée du code pour la rédaction : deux dynamiques sont reliées quand elles ne diffèrent que par la fonction d'un seul nœud j, et que l'on passe de l'une à l'autre en changeant un seul poids de la colonne j (dans les bornes). Sources : `add_metagraph_layout.py` (docstring), `sbf.get_neighbor_map`, `metagraphe.html` (`sbfNeighbors`).
 
